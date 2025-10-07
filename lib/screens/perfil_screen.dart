@@ -55,88 +55,95 @@ class _PerfilScreenState extends State<PerfilScreen> {
   }
 
   // 🔹 TRAER DATOS DEL BACKEND
-Future<void> _fetchUserData() async {
-  setState(() {
-    _isLoading = true;
-    _errorMessage = null;
-  });
+  Future<void> _fetchUserData() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
-  try {
-    final url = Uri.parse('http://192.168.1.13:3000/usuarios/obtenerUsuarioId/2');
-    final response = await http.get(url).timeout(
-      const Duration(seconds: 10),
-      onTimeout: () {
-        throw Exception('Tiempo de espera agotado. Verifica tu conexión.');
-      },
-    );
+    try {
+      final url = Uri.parse(
+        'http://192.168.1.13:3000/usuarios/obtenerUsuarioId/2',
+      );
+      final response = await http
+          .get(url)
+          .timeout(
+            const Duration(seconds: 10),
+            onTimeout: () {
+              throw Exception(
+                'Tiempo de espera agotado. Verifica tu conexión.',
+              );
+            },
+          );
 
-    if (response.statusCode == 200) {
-      final decoded = json.decode(response.body);
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
 
-      // ✅ El backend devuelve { "result": [ { usuario } ] }
-      final userList = decoded['result'] as List?;
-      final user = (userList != null && userList.isNotEmpty) ? userList[0] : null;
+        // ✅ El backend devuelve { "result": [ { usuario } ] }
+        final userList = decoded['result'] as List?;
+        final user = (userList != null && userList.isNotEmpty)
+            ? userList[0]
+            : null;
 
-      if (user != null && user is Map<String, dynamic>) {
-        // 🔹 Parsear fecha
-        String fechaNacimiento = '';
-        try {
-          if (user['fecha_nacimiento'] != null) {
-            fechaNacimiento = DateFormat('dd/MM/yyyy').format(
-              DateTime.parse(user['fecha_nacimiento']),
-            );
+        if (user != null && user is Map<String, dynamic>) {
+          // 🔹 Parsear fecha
+          String fechaNacimiento = '';
+          try {
+            if (user['fecha_nacimiento'] != null) {
+              fechaNacimiento = DateFormat(
+                'dd/MM/yyyy',
+              ).format(DateTime.parse(user['fecha_nacimiento']));
+            }
+          } catch (_) {
+            fechaNacimiento = '';
           }
-        } catch (_) {
-          fechaNacimiento = '';
+
+          // 🔹 Mapear id_genero a texto
+          String generoTexto = '';
+          switch (user['id_genero']) {
+            case 1:
+              generoTexto = 'Masculino';
+              break;
+            case 2:
+              generoTexto = 'Femenino';
+              break;
+            case 3:
+              generoTexto = 'No binario';
+              break;
+            default:
+              generoTexto = 'Prefiero no decirlo';
+          }
+
+          setState(() {
+            _dniController.text = user['dni']?.toString() ?? '';
+            _fechaController.text = fechaNacimiento;
+            _generoController.text = generoTexto;
+            _telefonoController.text = user['telefono_usuario'] ?? '';
+            _emailController.text = user['email_usuario'] ?? '';
+            _isLoading = false;
+          });
+
+          _saveOriginalValues();
+        } else {
+          setState(() {
+            _errorMessage = 'No se encontraron datos del usuario.';
+            _isLoading = false;
+          });
         }
-
-        // 🔹 Mapear id_genero a texto
-        String generoTexto = '';
-        switch (user['id_genero']) {
-          case 1:
-            generoTexto = 'Masculino';
-            break;
-          case 2:
-            generoTexto = 'Femenino';
-            break;
-          case 3:
-            generoTexto = 'No binario';
-            break;
-          default:
-            generoTexto = 'Prefiero no decirlo';
-        }
-
-        setState(() {
-          _dniController.text = user['dni']?.toString() ?? '';
-          _fechaController.text = fechaNacimiento;
-          _generoController.text = generoTexto;
-          _telefonoController.text = user['telefono_usuario'] ?? '';
-          _emailController.text = user['email_usuario'] ?? '';
-          _isLoading = false;
-        });
-
-        _saveOriginalValues();
       } else {
         setState(() {
-          _errorMessage = 'No se encontraron datos del usuario.';
+          _errorMessage = 'Error al cargar datos: ${response.statusCode}';
           _isLoading = false;
         });
       }
-    } else {
+    } catch (e) {
       setState(() {
-        _errorMessage = 'Error al cargar datos: ${response.statusCode}';
+        _errorMessage = 'Error de conexión: ${e.toString()}';
         _isLoading = false;
       });
+      debugPrint('Error al obtener datos: $e');
     }
-  } catch (e) {
-    setState(() {
-      _errorMessage = 'Error de conexión: ${e.toString()}';
-      _isLoading = false;
-    });
-    debugPrint('Error al obtener datos: $e');
   }
-}
-
 
   void _saveOriginalValues() {
     _originalValues = {
@@ -160,6 +167,19 @@ Future<void> _fetchUserData() async {
     _showAnimatedSnackBar("Cambios cancelados", color: Colors.grey);
   }
 
+  int _mapGeneroToId(String genero) {
+    switch (genero) {
+      case 'Masculino':
+        return 1;
+      case 'Femenino':
+        return 2;
+      case 'No binario':
+        return 3;
+      default:
+        return 4; // "Prefiero no decirlo" u "Otro"
+    }
+  }
+
   void _toggleEdit() {
     setState(() => _isEditing = !_isEditing);
     if (!_isEditing) {
@@ -171,9 +191,69 @@ Future<void> _fetchUserData() async {
     }
   }
 
+  Future<void> _guardarDatos() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    try {
+      final url = Uri.parse(
+        'http://192.168.1.13:3000/usuarios/actualizarUsuario/${2}',
+      );
+
+      final body = jsonEncode({
+        "dni": _dniController.text,
+        "fecha_nacimiento": _toDate(_fechaController.text),
+        "id_genero": _mapGeneroToId(_generoController.text),
+        "telefono_usuario": _telefonoController.text,
+        "email": _emailController.text,
+      });
+      final response = await http.put(
+        url,
+        headers: {"Content-Type": "application/json"},
+        body: body,
+      );
+      // .timeout(
+      //   const Duration(seconds: 10),
+      //   onTimeout: () {
+      //     throw Exception(
+      //       'Tiempo de espera agotado. Verifica tu conexiòn.',
+      //     );
+      //   },
+      // );
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        print(decoded);
+
+        await _fetchUserData();
+
+        setState(() {
+          // _errorMessage = 'Error al cargar datos: ${response.statusCode}';
+          _isLoading = false;
+          _isEditing = false;
+        });
+        _showAnimatedSnackBar(
+          "Perfil actualizado correctamente",
+          color: Colors.green,
+        );
+        _saveOriginalValues();
+      } else {
+        setState(() {
+          _errorMessage = 'Error al actualizar: ${response.statusCode}';
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Error de conexión: ${e.toString()}';
+        _isLoading = false;
+      });
+      debugPrint('Error al obtener datos: $e');
+    }
+  }
+
   void _showAnimatedSnackBar(String message, {Color color = Colors.green}) {
     final overlay = Overlay.of(context);
-    if (overlay == null) return;
 
     late OverlayEntry entry;
     entry = OverlayEntry(
@@ -259,9 +339,7 @@ Future<void> _fetchUserData() async {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      CircularProgressIndicator(
-                        color: Color(0xFF3F51B5),
-                      ),
+                      CircularProgressIndicator(color: Color(0xFF3F51B5)),
                       SizedBox(height: 16),
                       Text(
                         "Cargando datos del perfil...",
@@ -274,201 +352,181 @@ Future<void> _fetchUserData() async {
                   ),
                 )
               : _errorMessage != null
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(
-                            Icons.error_outline,
-                            size: 64,
-                            color: Colors.redAccent,
-                          ),
-                          const SizedBox(height: 16),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 32),
-                            child: Text(
-                              _errorMessage!,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Color(0xFF1E1E1E),
-                                fontSize: 16,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          ElevatedButton.icon(
-                            onPressed: _fetchUserData,
-                            icon: const Icon(Icons.refresh),
-                            label: const Text("Reintentar"),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF3F51B5),
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 30,
-                                vertical: 14,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                          ),
-                        ],
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        size: 64,
+                        color: Colors.redAccent,
                       ),
-                    )
-                  : SingleChildScrollView(
-                      controller: _scrollController,
-                      keyboardDismissBehavior:
-                          ScrollViewKeyboardDismissBehavior.onDrag,
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 20),
-                          Container(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.1),
-                                  blurRadius: 12,
-                                  offset: const Offset(0, 6),
-                                ),
-                              ],
-                            ),
-                            child: const CircleAvatar(
-                              radius: 70,
-                              backgroundImage: AssetImage(
-                                "assets/images/woman_profile.png",
-                              ),
-                              backgroundColor: Colors.white,
-                            ),
+                      const SizedBox(height: 16),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        child: Text(
+                          _errorMessage!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Color(0xFF1E1E1E),
+                            fontSize: 16,
                           ),
-                          const SizedBox(height: 24),
-                          const Text(
-                            "Perfil del Usuario",
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF1E1E1E),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton.icon(
+                        onPressed: _fetchUserData,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text("Reintentar"),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF3F51B5),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 30,
+                            vertical: 14,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : SingleChildScrollView(
+                  controller: _scrollController,
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 20),
+                      Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.1),
+                              blurRadius: 12,
+                              offset: const Offset(0, 6),
                             ),
+                          ],
+                        ),
+                        child: const CircleAvatar(
+                          radius: 70,
+                          backgroundImage: AssetImage(
+                            "assets/images/woman_profile.png",
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _emailController.text,
-                            style: TextStyle(fontSize: 14, color: Colors.grey[700]),
-                          ),
-                          const SizedBox(height: 24),
+                          backgroundColor: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      const Text(
+                        "Perfil del Usuario",
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1E1E1E),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _emailController.text,
+                        style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+                      ),
+                      const SizedBox(height: 24),
 
-                          // FORM
-                          Form(
-                            key: _formKey,
-                            child: Card(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              elevation: 5,
-                              shadowColor: Colors.black26,
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 20,
-                                  horizontal: 16,
-                                ),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    _infoField(
-                                      Icons.badge_rounded,
-                                      "DNI",
-                                      _dniController,
-                                    ),
-                                    _divider(),
-                                    _infoField(
-                                      Icons.cake_rounded,
-                                      "Fecha de Nacimiento",
-                                      _fechaController,
-                                    ),
-                                    _divider(),
-                                    _infoField(
-                                      Icons.person_rounded,
-                                      "Género",
-                                      _generoController,
-                                    ),
-                                    _divider(),
-                                    _infoField(
-                                      Icons.phone_rounded,
-                                      "Teléfono",
-                                      _telefonoController,
-                                    ),
-                                    _divider(),
-                                    _infoField(
-                                      Icons.email_rounded,
-                                      "Email",
-                                      _emailController,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
+                      // FORM
+                      Form(
+                        key: _formKey,
+                        child: Card(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
                           ),
-
-                          const SizedBox(height: 20),
-
-                          if (_isEditing)
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
+                          elevation: 5,
+                          shadowColor: Colors.black26,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 20,
+                              horizontal: 16,
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                OutlinedButton.icon(
-                                  onPressed: _restoreOriginalValues,
-                                  icon: const Icon(
-                                    Icons.cancel_rounded,
-                                    color: Colors.redAccent,
-                                  ),
-                                  label: const Text(
-                                    "Cancelar",
-                                    style: TextStyle(color: Colors.redAccent),
-                                  ),
-                                  style: OutlinedButton.styleFrom(
-                                    side: const BorderSide(color: Colors.redAccent),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 24,
-                                      vertical: 14,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
+                                _infoField(
+                                  Icons.badge_rounded,
+                                  "DNI",
+                                  _dniController,
                                 ),
-                                const SizedBox(width: 16),
-                                ElevatedButton.icon(
-                                  onPressed: () {
-                                    if (_formKey.currentState!.validate()) {
-                                      _toggleEdit();
-                                    }
-                                  },
-                                  icon: const Icon(
-                                    Icons.save_rounded,
-                                    color: Colors.white,
-                                  ),
-                                  label: const Text("Guardar"),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF3F51B5),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 30,
-                                      vertical: 14,
-                                    ),
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    elevation: 6,
-                                  ),
+                                _divider(),
+                                _infoField(
+                                  Icons.cake_rounded,
+                                  "Fecha de Nacimiento",
+                                  _fechaController,
+                                ),
+                                _divider(),
+                                _infoField(
+                                  Icons.person_rounded,
+                                  "Género",
+                                  _generoController,
+                                ),
+                                _divider(),
+                                _infoField(
+                                  Icons.phone_rounded,
+                                  "Teléfono",
+                                  _telefonoController,
+                                ),
+                                _divider(),
+                                _infoField(
+                                  Icons.email_rounded,
+                                  "Email",
+                                  _emailController,
                                 ),
                               ],
-                            )
-                          else
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      if (_isEditing)
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: _restoreOriginalValues,
+                              icon: const Icon(
+                                Icons.cancel_rounded,
+                                color: Colors.redAccent,
+                              ),
+                              label: const Text(
+                                "Cancelar",
+                                style: TextStyle(color: Colors.redAccent),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: Colors.redAccent),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
                             ElevatedButton.icon(
-                              onPressed: _toggleEdit,
-                              icon: const Icon(Icons.edit_rounded, color: Colors.white),
-                              label: const Text("Editar perfil"),
+                              onPressed: () {
+                                if (_formKey.currentState!.validate()) {
+                                  _guardarDatos();
+                                }
+                              },
+                              icon: const Icon(
+                                Icons.save_rounded,
+                                color: Colors.white,
+                              ),
+                              label: const Text("Guardar"),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF3F51B5),
                                 padding: const EdgeInsets.symmetric(
@@ -482,11 +540,34 @@ Future<void> _fetchUserData() async {
                                 elevation: 6,
                               ),
                             ),
+                          ],
+                        )
+                      else
+                        ElevatedButton.icon(
+                          onPressed: _toggleEdit,
+                          icon: const Icon(
+                            Icons.edit_rounded,
+                            color: Colors.white,
+                          ),
+                          label: const Text("Editar perfil"),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF3F51B5),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 30,
+                              vertical: 14,
+                            ),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            elevation: 6,
+                          ),
+                        ),
 
-                          const SizedBox(height: 40),
-                        ],
-                      ),
-                    ),
+                      const SizedBox(height: 40),
+                    ],
+                  ),
+                ),
         ),
       ),
     );
@@ -563,7 +644,7 @@ Future<void> _fetchUserData() async {
                         )
                       : label == "Género"
                       ? DropdownButtonFormField<String>(
-                          value: controller.text.isNotEmpty
+                          initialValue: controller.text.isNotEmpty
                               ? controller.text
                               : generos.first,
                           onChanged: (value) =>
