@@ -224,7 +224,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
         print(decoded);
-
+        print("aaaaaaaaaa");
         await _fetchUserData();
 
         setState(() {
