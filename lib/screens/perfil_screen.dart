@@ -64,7 +64,8 @@ class _PerfilScreenState extends State<PerfilScreen> {
     final int id = widget.userId ?? 2;
     try {
       final url = Uri.parse(
-        'http://192.168.1.13:3000/usuarios/obtenerUsuarioId/$id',
+        // 'http://192.168.1.13:3000/usuarios/obtenerUsuarioId/$id',
+        'http://localhost:3000/usuarios/obtenerUsuarioId/$id',
       );
       final response = await http
           .get(url)
@@ -205,7 +206,8 @@ class _PerfilScreenState extends State<PerfilScreen> {
     });
     try {
       final url = Uri.parse(
-        'http://192.168.1.13:3000/usuarios/actualizarUsuario/${widget.userId ?? 2}',
+        // 'http://192.168.1.13:3000/usuarios/actualizarUsuario/${widget.userId ?? 2}',
+        'http://localhost:3000/usuarios/actualizarUsuario/${widget.userId ?? 2}',
       );
 
       final body = jsonEncode({
@@ -645,7 +647,9 @@ class _PerfilScreenState extends State<PerfilScreen> {
                           ),
                         )
                       : label == "Género"
-                      ? DropdownButtonFormField<String>(
+                      ? SizedBox(
+                        child: DropdownButtonFormField<String>(
+                          isExpanded: true,
                           initialValue: controller.text.isNotEmpty
                               ? controller.text
                               : generos.first,
@@ -658,6 +662,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
                                   child: Text(
                                     g,
                                     style: const TextStyle(fontSize: 12),
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                               )
@@ -667,7 +672,8 @@ class _PerfilScreenState extends State<PerfilScreen> {
                             Icons.arrow_drop_down_rounded,
                             color: Colors.indigo,
                           ),
-                        )
+                        ),
+                      )
                       : TextFormField(
                           focusNode: _focusNodes[label],
                           controller: controller,
