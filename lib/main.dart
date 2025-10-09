@@ -11,11 +11,10 @@ class MainApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-       return MaterialApp(
+    return MaterialApp(
       title: 'Mi App',
       debugShowCheckedModeBanner: false,
 
-      // 👇👇 Agregá esto 👇👇
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,

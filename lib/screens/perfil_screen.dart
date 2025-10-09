@@ -4,7 +4,8 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 
 class PerfilScreen extends StatefulWidget {
-  const PerfilScreen({super.key});
+  final int? userId;
+  const PerfilScreen({super.key, this.userId});
 
   @override
   State<PerfilScreen> createState() => _PerfilScreenState();
@@ -60,10 +61,10 @@ class _PerfilScreenState extends State<PerfilScreen> {
       _isLoading = true;
       _errorMessage = null;
     });
-
+    final int id = widget.userId ?? 2;
     try {
       final url = Uri.parse(
-        'http://192.168.1.13:3000/usuarios/obtenerUsuarioId/2',
+        'http://192.168.1.13:3000/usuarios/obtenerUsuarioId/$id',
       );
       final response = await http
           .get(url)
@@ -79,17 +80,22 @@ class _PerfilScreenState extends State<PerfilScreen> {
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
 
-        // ✅ El backend devuelve { "result": [ { usuario } ] }
-        final userList = decoded['result'] as List?;
-        final user = (userList != null && userList.isNotEmpty)
-            ? userList[0]
-            : null;
+        // ✅ El backend devuelve { "result": [ { usuario } ] } o { "result": { ... } }
+        final dynamic result = decoded['result'];
+        Map<String, dynamic>? user;
 
-        if (user != null && user is Map<String, dynamic>) {
+        if (result is List && result.isNotEmpty) {
+          user = Map<String, dynamic>.from(result[0]);
+        } else if (result is Map) {
+          user = Map<String, dynamic>.from(result);
+        }
+
+        if (user != null) {
           // 🔹 Parsear fecha
           String fechaNacimiento = '';
           try {
-            if (user['fecha_nacimiento'] != null) {
+            if (user['fecha_nacimiento'] != null &&
+                (user['fecha_nacimiento'] as String).isNotEmpty) {
               fechaNacimiento = DateFormat(
                 'dd/MM/yyyy',
               ).format(DateTime.parse(user['fecha_nacimiento']));
@@ -115,7 +121,8 @@ class _PerfilScreenState extends State<PerfilScreen> {
           }
 
           setState(() {
-            _dniController.text = user['dni']?.toString() ?? '';
+            _userData = user; // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+            _dniController.text = user!['dni']?.toString() ?? '';
             _fechaController.text = fechaNacimiento;
             _generoController.text = generoTexto;
             _telefonoController.text = user['telefono_usuario'] ?? '';
@@ -198,7 +205,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
     });
     try {
       final url = Uri.parse(
-        'http://192.168.1.13:3000/usuarios/actualizarUsuario/${2}',
+        'http://192.168.1.13:3000/usuarios/actualizarUsuario/${widget.userId ?? 2}',
       );
 
       final body = jsonEncode({
@@ -206,29 +213,19 @@ class _PerfilScreenState extends State<PerfilScreen> {
         "fecha_nacimiento": _toDate(_fechaController.text),
         "id_genero": _mapGeneroToId(_generoController.text),
         "telefono_usuario": _telefonoController.text,
-        "email": _emailController.text,
+        "email": _emailController
+            .text, // si tu backend espera email_usuario, renombralo aquí
       });
       final response = await http.put(
         url,
         headers: {"Content-Type": "application/json"},
         body: body,
       );
-      // .timeout(
-      //   const Duration(seconds: 10),
-      //   onTimeout: () {
-      //     throw Exception(
-      //       'Tiempo de espera agotado. Verifica tu conexiòn.',
-      //     );
-      //   },
-      // );
+
       if (response.statusCode == 200) {
-        final decoded = json.decode(response.body);
-        print(decoded);
-        print("aaaaaaaaaa");
         await _fetchUserData();
 
         setState(() {
-          // _errorMessage = 'Error al cargar datos: ${response.statusCode}';
           _isLoading = false;
           _isEditing = false;
         });
@@ -321,6 +318,10 @@ class _PerfilScreenState extends State<PerfilScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final nombreCompleto = _userData != null
+        ? "${_userData!['nombre_usuario']} ${_userData!['apellido_usuario']}"
+        : "Cargando perfil...";
+
     return Scaffold(
       resizeToAvoidBottomInset: true,
       body: Container(
@@ -421,9 +422,10 @@ class _PerfilScreenState extends State<PerfilScreen> {
                         ),
                       ),
                       const SizedBox(height: 24),
-                      const Text(
-                        "Perfil del Usuario",
-                        style: TextStyle(
+                      // 🔹 AQUI VA EL NOMBRE COMPLETO EN LUGAR DE "Perfil del usuario"
+                      Text(
+                        nombreCompleto,
+                        style: const TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
                           color: Color(0xFF1E1E1E),
@@ -744,5 +746,38 @@ class _PerfilScreenState extends State<PerfilScreen> {
       node.dispose();
     }
     super.dispose();
+  }
+
+  Widget _buildInfoTile(String titulo, String valor) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.shade300,
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            titulo,
+            style: const TextStyle(fontSize: 14, color: Colors.grey),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            valor,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+          ),
+        ],
+      ),
+    );
   }
 }
