@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:go_app_flutter/screens/perfil_screen.dart';
+import 'package:go_app_flutter/screens/perfil/perfil_screen.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 void main() {
