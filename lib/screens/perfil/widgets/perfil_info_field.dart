@@ -10,6 +10,9 @@ class PerfilInfoField extends StatelessWidget {
   final Function()? onDateTap;
   final Function(String)? onGeneroChanged;
 
+  /// 🔹 Lista dinámica de géneros (traída del backend)
+  final List<Map<String, dynamic>>? generos;
+
   const PerfilInfoField({
     super.key,
     required this.icon,
@@ -19,17 +22,13 @@ class PerfilInfoField extends StatelessWidget {
     this.focusNode,
     this.onDateTap,
     this.onGeneroChanged,
+    this.generos, // 🔹 nuevo parámetro opcional
   });
 
   @override
   Widget build(BuildContext context) {
-    final List<String> generos = [
-      "Masculino",
-      "Femenino",
-      "No binario",
-      "Prefiero no decirlo",
-      "Otro",
-    ];
+    // Si no hay géneros cargados, se usa una lista vacía temporal
+    final List<Map<String, dynamic>> generosList = generos ?? [];
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -51,7 +50,7 @@ class PerfilInfoField extends StatelessWidget {
           Expanded(
             flex: 4,
             child: isEditing
-                ? _buildEditableField(context, generos)
+                ? _buildEditableField(context, generosList)
                 : Text(
                     controller.text,
                     textAlign: TextAlign.right,
@@ -66,7 +65,11 @@ class PerfilInfoField extends StatelessWidget {
     );
   }
 
-  Widget _buildEditableField(BuildContext context, List<String> generos) {
+  /// 🔹 Construye el campo editable según el tipo
+  Widget _buildEditableField(
+    BuildContext context,
+    List<Map<String, dynamic>> generosList,
+  ) {
     switch (label) {
       case "Fecha de Nacimiento":
         return GestureDetector(
@@ -89,27 +92,51 @@ class PerfilInfoField extends StatelessWidget {
         );
 
       case "Género":
+        // 🔹 Usa los géneros dinámicos si están disponibles
+        final items = generosList.isNotEmpty
+            ? generosList
+                  .map(
+                    (g) => DropdownMenuItem<String>(
+                      value: g['nombre_genero']?.toString().trim() ?? '',
+                      child: Text(
+                        g['nombre_genero']?.toString().trim() ?? '',
+                        style: const TextStyle(fontSize: 12),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList()
+            : [
+                const DropdownMenuItem<String>(
+                  value: '',
+                  child: Text(
+                    "Cargando...",
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ),
+              ];
+
+        // 🔹 Validar valor inicial (evita crash)
+        final currentValue = controller.text.trim();
+        final validValues = items.map((e) => e.value).toList();
+        final safeValue = validValues.contains(currentValue)
+            ? currentValue
+            : null;
+
         return DropdownButtonFormField<String>(
           isExpanded: true,
-          value: controller.text.isNotEmpty ? controller.text : generos.first,
+          value: safeValue,
           onChanged: (value) {
             if (value != null && onGeneroChanged != null) {
               onGeneroChanged!(value);
             }
           },
-          items: generos
-              .map(
-                (g) => DropdownMenuItem<String>(
-                  value: g,
-                  child: Text(
-                    g,
-                    style: const TextStyle(fontSize: 12),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              )
-              .toList(),
+          items: items,
           decoration: _inputDecoration(),
+          hint: const Text(
+            "Seleccionar género",
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
           icon: const Icon(Icons.arrow_drop_down_rounded, color: Colors.indigo),
         );
 

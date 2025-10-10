@@ -21,6 +21,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
   bool _isEditing = false;
   String? _errorMessage;
   Map<String, dynamic>? _userData;
+  List<Map<String, dynamic>> _generos = [];
 
   // Controladores
   final TextEditingController _dniController = TextEditingController();
@@ -41,6 +42,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
   void initState() {
     super.initState();
     _fetchUserData();
+    _fetchGeneros();
 
     // Scroll automático al editar campos
     for (var node in _focusNodes.entries) {
@@ -55,6 +57,18 @@ class _PerfilScreenState extends State<PerfilScreen> {
           });
         }
       });
+    }
+  }
+
+  Future<void> _fetchGeneros() async {
+    final service = PerfilService();
+    try {
+      final lista = await service.obtenerGeneros();
+      setState(() {
+        _generos = lista;
+      });
+    } catch (e) {
+      debugPrint('Error al obtener géneros: $e');
     }
   }
 
@@ -106,12 +120,16 @@ class _PerfilScreenState extends State<PerfilScreen> {
       fechaNacimiento = '';
     }
 
-    String generoTexto = switch (user['id_genero']) {
-      1 => 'Masculino',
-      2 => 'Femenino',
-      3 => 'No binario',
-      _ => 'Prefiero no decirlo',
-    };
+    String generoTexto = '';
+    if (_generos.isNotEmpty && user['id_genero'] != null) {
+      final generoEncontrado = _generos.firstWhere(
+        (g) => g['id_genero'] == user['id_genero'],
+        orElse: () => {'nombre_genero': 'Sin especificar'},
+      );
+      generoTexto = generoEncontrado['nombre_genero'] ?? 'Sin especificar';
+    } else {
+      generoTexto = 'Sin especificar';
+    }
 
     _dniController.text = user['dni']?.toString() ?? '';
     _fechaController.text = fechaNacimiento;
@@ -192,12 +210,13 @@ class _PerfilScreenState extends State<PerfilScreen> {
   }
 
   int _mapGeneroToId(String genero) {
-    return switch (genero) {
-      'Masculino' => 1,
-      'Femenino' => 2,
-      'No binario' => 3,
-      _ => 4,
-    };
+    final encontrado = _generos.firstWhere(
+      (g) =>
+          g['nombre_genero']?.toString().trim().toLowerCase() ==
+          genero.trim().toLowerCase(),
+      orElse: () => {'id_genero': 4},
+    );
+    return encontrado['id_genero'] ?? 4;
   }
 
   String _toDate(String value) {
@@ -269,6 +288,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
                         emailController: _emailController,
                         focusNodes: _focusNodes,
                         onGuardar: _guardarDatos,
+                        generos: _generos,
                         onCancelar: _restoreOriginalValues,
                         onEditar: _toggleEdit,
                       ),

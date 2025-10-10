@@ -16,6 +16,8 @@ class PerfilForm extends StatelessWidget {
   // FocusNodes (para scroll automático)
   final Map<String, FocusNode> focusNodes;
 
+  final List<Map<String, dynamic>> generos;
+
   // Callbacks
   final VoidCallback onGuardar;
   final VoidCallback onCancelar;
@@ -27,6 +29,7 @@ class PerfilForm extends StatelessWidget {
     required this.formKey,
     required this.dniController,
     required this.fechaController,
+    required this.generos,
     required this.generoController,
     required this.telefonoController,
     required this.emailController,
@@ -73,6 +76,7 @@ class PerfilForm extends StatelessWidget {
                     icon: Icons.person_rounded,
                     label: "Género",
                     controller: generoController,
+                    generos: generos,
                     isEditing: isEditing,
                     onGeneroChanged: (value) => generoController.text = value,
                   ),
