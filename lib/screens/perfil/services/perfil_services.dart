@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class PerfilService {
-  final String baseUrl = 'http://localhost:3000';
+  final String baseUrl = 'http://192.168.100.25:3000';
 
   /// 🔹 Obtiene un usuario por su ID desde el backend
   Future<Map<String, dynamic>?> obtenerUsuarioPorId(int id) async {
@@ -79,6 +79,6 @@ class PerfilService {
     } catch (e) {
       throw Exception('Error en obtenerGeneros: $e');
     }
-     return [];
+    return [];
   }
 }
