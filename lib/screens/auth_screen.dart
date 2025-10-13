@@ -1,0 +1,287 @@
+import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+
+class AuthScreen extends StatefulWidget {
+  const AuthScreen({super.key});
+
+  @override
+  State<AuthScreen> createState() => _AuthScreenState();
+}
+
+class _AuthScreenState extends State<AuthScreen> {
+  // Estado para controlar qué pestaña está seleccionada
+  int _selectedTab = 1; // 0 para Iniciar, 1 para Registrarse
+  // Estado para la visibilidad de las contraseñas
+  bool _isPasswordVisible = false;
+  bool _isConfirmPasswordVisible = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF1E1E2C), // Fondo oscuro
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 40.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // 1. Icono superior
+                const Icon(
+                  Icons.flutter_dash,
+                  size: 80,
+                  color: Colors.blueAccent,
+                ),
+                const SizedBox(height: 40),
+
+                // 2. Selector de Pestañas (Iniciar / Registrarse)
+                _buildTabSelector(),
+                const SizedBox(height: 24),
+
+                Text(
+                  _selectedTab == 1
+                      ? "Crea tu cuenta completando los siguientes"
+                      : "¡Bienvenido! Por favor, ingresa tus datos:",
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.grey, fontSize: 16),
+                ),
+                const SizedBox(height: 24),
+
+                // 3. FORMULARIO CONDICIONAL
+                // Muestra un formulario u otro dependiendo de la pestaña seleccionada
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child: _selectedTab == 1 ? _buildRegisterForm() : _buildLoginForm(),
+                ),
+                const SizedBox(height: 24),
+
+                // 4. Botón Principal (también condicional)
+                ElevatedButton(
+                  onPressed: () {},
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    backgroundColor: const Color(0xFF5A4FF1),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                  ),
+                  child: Text(
+                    _selectedTab == 1 ? 'Crear Cuenta' : 'Iniciar Sesión',
+                    style: const TextStyle(fontSize: 18, color: Colors.white),
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // 5. Separador "Or sign up/in with"
+                _buildDivider(),
+                const SizedBox(height: 24),
+
+                // 6. Botones de Redes Sociales (también condicionales)
+                _buildSocialButton(
+                  icon: FontAwesomeIcons.google,
+                  label: 'Continuar con Google',
+                  onPressed: () {},
+                ),
+                const SizedBox(height: 16),
+                
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // --- Widgets de Formularios ---
+
+  // Formulario para la pestaña de REGISTRO
+  Widget _buildRegisterForm() {
+    return Column(
+      key: const ValueKey('register'),
+      children: [
+        _buildTextField(hint: 'Email'),
+        const SizedBox(height: 16),
+        _buildPasswordField(
+          hint: 'Contraseña',
+          isVisible: _isPasswordVisible,
+          onToggleVisibility: () {
+            setState(() {
+              _isPasswordVisible = !_isPasswordVisible;
+            });
+          },
+        ),
+        const SizedBox(height: 16),
+        _buildPasswordField(
+          hint: 'Confirmar Contraseña',
+          isVisible: _isConfirmPasswordVisible,
+          onToggleVisibility: () {
+            setState(() {
+              _isConfirmPasswordVisible = !_isConfirmPasswordVisible;
+            });
+          },
+        ),
+      ],
+    );
+  }
+
+  // Formulario para la pestaña de LOGIN
+  Widget _buildLoginForm() {
+    return Column(
+      key: const ValueKey('login'),
+      children: [
+        _buildTextField(hint: 'Email'),
+        const SizedBox(height: 16),
+        _buildPasswordField(
+          hint: 'Contraseña',
+          isVisible: _isPasswordVisible,
+          onToggleVisibility: () {
+            setState(() {
+              _isPasswordVisible = !_isPasswordVisible;
+            });
+          },
+        ),
+        const SizedBox(height: 16),
+        // Botón de contraseña olvidada
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            TextButton(
+              onPressed: () {},
+              child: const Text(
+                '¿Olvidaste la Contraseña?',
+                style: TextStyle(color: Colors.blueAccent),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // --- Widgets Auxiliares Reutilizables ---
+
+  Widget _buildTabSelector() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _buildTabOption("Iniciar", 0),
+        const SizedBox(width: 40),
+        _buildTabOption("Registrarse", 1),
+      ],
+    );
+  }
+
+  Widget _buildTabOption(String text, int index) {
+    bool isSelected = _selectedTab == index;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedTab = index;
+        });
+      },
+      child: Column(
+        children: [
+          Text(
+            text,
+            style: TextStyle(
+              color: isSelected ? Colors.white : Colors.grey,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (isSelected)
+            Container(
+              height: 3,
+              width: 60,
+              decoration: BoxDecoration(
+                color: const Color(0xFF5A4FF1),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTextField({required String hint}) {
+    return TextField(
+      style: const TextStyle(color: Colors.white),
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: const TextStyle(color: Colors.grey),
+        filled: true,
+        fillColor: const Color(0xFF2A2A3A),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(30),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPasswordField({
+    required String hint,
+    required bool isVisible,
+    required VoidCallback onToggleVisibility,
+  }) {
+    return TextField(
+      obscureText: !isVisible,
+      style: const TextStyle(color: Colors.white),
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: const TextStyle(color: Colors.grey),
+        filled: true,
+        fillColor: const Color(0xFF2A2A3A),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(30),
+          borderSide: BorderSide.none,
+        ),
+        suffixIcon: IconButton(
+          icon: Icon(
+            isVisible ? Icons.visibility_off : Icons.visibility,
+            color: Colors.grey,
+          ),
+          onPressed: onToggleVisibility,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDivider() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Expanded(child: Divider(color: Colors.grey)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: Text(
+            _selectedTab == 1 ? 'O registrate con:' : 'O iniciar Sesión con:',
+            style: const TextStyle(color: Colors.grey),
+          ),
+        ),
+        const Expanded(child: Divider(color: Colors.grey)),
+      ],
+    );
+  }
+
+  Widget _buildSocialButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: FaIcon(icon, color: Colors.white),
+      label: Text(label, style: const TextStyle(color: Colors.white)),
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        side: const BorderSide(color: Colors.grey),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(30),
+        ),
+      ),
+    );
+  }
+}

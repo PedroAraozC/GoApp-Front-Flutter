@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:go_app_flutter/screens/perfil_screen.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+
+import 'screens/auth_screen.dart';
 
 void main() {
   runApp(const MainApp());
@@ -26,7 +27,7 @@ class MainApp extends StatelessWidget {
         Locale('en', 'US'), // Inglés (por si acaso)
       ],
 
-      home: const PerfilScreen(),
+      home: const AuthScreen(),
     );
   }
 }
