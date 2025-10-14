@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:go_app_flutter/screens/passwordRecovery/password_recovey.dart';
 import 'package:go_app_flutter/screens/perfil_screen.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+
 
 void main() {
   runApp(const MainApp());

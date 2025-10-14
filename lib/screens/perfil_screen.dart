@@ -11,7 +11,7 @@ class PerfilScreen extends StatefulWidget {
 }
 
 class _PerfilScreenState extends State<PerfilScreen> {
-  Map<String, dynamic>? _userData;
+  //Map<String, dynamic>? _userData;
   bool _isEditing = false;
   bool _isLoading = true; // 🔹 Indicador de carga
   String? _errorMessage; // 🔹 Mensaje de error
@@ -173,7 +173,6 @@ Future<void> _fetchUserData() async {
 
   void _showAnimatedSnackBar(String message, {Color color = Colors.green}) {
     final overlay = Overlay.of(context);
-    if (overlay == null) return;
 
     late OverlayEntry entry;
     entry = OverlayEntry(
@@ -563,7 +562,7 @@ Future<void> _fetchUserData() async {
                         )
                       : label == "Género"
                       ? DropdownButtonFormField<String>(
-                          value: controller.text.isNotEmpty
+                          initialValue: controller.text.isNotEmpty
                               ? controller.text
                               : generos.first,
                           onChanged: (value) =>
