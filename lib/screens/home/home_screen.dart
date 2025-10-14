@@ -1,9 +1,15 @@
 // homescreen.dart
+import 'dart:convert';
+import 'dart:math';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
+import 'package:http/http.dart' as http;
+import 'package:uuid/uuid.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -135,7 +141,6 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 20),
 
-              // Iniciar viaje -> abre la pantalla con origen auto + ruta a destino
               buildActionCard(
                 icon: Icons.play_arrow_rounded,
                 title: 'Iniciar viaje',
@@ -197,7 +202,7 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-/* =================== Iniciar Viaje (UN mapa + origen automático + ruta a destino) =================== */
+/* =================== Iniciar Viaje (mapa + origen auto + ruta + ETA + costo + conductor + AUTOCOMPLETE REST) =================== */
 class IniciarViajeScreen extends StatefulWidget {
   const IniciarViajeScreen({super.key});
   @override
@@ -205,17 +210,67 @@ class IniciarViajeScreen extends StatefulWidget {
 }
 
 class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
-  // ⚠️ PONÉ TU API KEY DE GOOGLE AQUÍ (con Directions API habilitado)
+  // ⚠️ Habilitadas: Maps SDK, Directions API, Distance Matrix API, Places API
   static const String kGoogleApiKey = 'AIzaSyAMP0ERTGQgCvTRknlbE7wA01WSvRtGHV4';
 
   final _origenCtrl = TextEditingController();
   final _destinoCtrl = TextEditingController();
 
-  GoogleMapController? _mapCtrl; // sin Completer
+  GoogleMapController? _mapCtrl;
   LatLng? _miUbicacion;
 
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
+
+  int _durationSeconds = 0;
+  int _distanceMeters = 0;
+  String _durationText = '';
+  String _distanceText = '';
+  bool get _routeReady => _durationSeconds > 0 && _distanceMeters > 0;
+
+  final double _baseFare = 300;
+  final double _perKm = 150;
+  final double _perMin = 20;
+  double _surge = 1.0;
+
+  double get _km => _distanceMeters / 1000.0;
+  double get _mins => _durationSeconds / 60.0;
+  double get _fare =>
+      ((_baseFare + (_km * _perKm) + (_mins * _perMin)) * _surge);
+
+  final List<_Driver> _drivers = const [
+    _Driver(
+      name: 'Luis R.',
+      rating: 4.9,
+      car: 'Toyota Etios',
+      etaMin: 3,
+      multiplier: 1.0,
+    ),
+    _Driver(
+      name: 'María S.',
+      rating: 4.8,
+      car: 'Chevrolet Onix',
+      etaMin: 4,
+      multiplier: 1.1,
+    ),
+    _Driver(
+      name: 'Jorge A.',
+      rating: 4.7,
+      car: 'VW Gol',
+      etaMin: 6,
+      multiplier: 0.95,
+    ),
+  ];
+  _Driver? _selectedDriver;
+
+  // Autocomplete REST
+  final _uuid = const Uuid();
+  String? _sessionToken;
+  Timer? _debounce;
+  List<_Prediction> _predicciones = [];
+  final FocusNode _destFocus = FocusNode();
+
+  bool get _hasBothMarkers => _origenMarker != null && _destinoMarker != null;
 
   @override
   void initState() {
@@ -228,10 +283,11 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
     _origenCtrl.dispose();
     _destinoCtrl.dispose();
     _mapCtrl?.dispose();
+    _debounce?.cancel();
+    _destFocus.dispose();
     super.dispose();
   }
 
-  // ---------- Ubicación actual + seteo automático de ORIGEN ----------
   Future<void> _initLocation() async {
     if (!await Geolocator.isLocationServiceEnabled()) {
       _msg('Activá los servicios de ubicación.');
@@ -250,7 +306,6 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
     );
     _miUbicacion = LatLng(pos.latitude, pos.longitude);
 
-    // Origen automático en mi ubicación
     final origen = Marker(
       markerId: const MarkerId('origen'),
       position: _miUbicacion!,
@@ -264,13 +319,19 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
       _origenCtrl.text =
           '${_miUbicacion!.latitude}, ${_miUbicacion!.longitude}';
       _polylines.clear();
+      _durationSeconds = 0;
+      _distanceMeters = 0;
+      _durationText = '';
+      _distanceText = '';
+      _selectedDriver = null;
+      _predicciones = [];
+      _sessionToken = null;
     });
 
     await Future.delayed(const Duration(milliseconds: 150));
     _mapCtrl?.animateCamera(CameraUpdate.newLatLngZoom(_miUbicacion!, 15));
   }
 
-  // ---------- Utilidades ----------
   void _msg(String t) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t)));
 
@@ -290,16 +351,17 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
     );
   }
 
-  Marker? get _origenMarker => _markers.cast<Marker?>().firstWhere(
-    (m) => m?.markerId.value == 'origen',
-    orElse: () => null,
-  );
-  Marker? get _destinoMarker => _markers.cast<Marker?>().firstWhere(
-    (m) => m?.markerId.value == 'destino',
-    orElse: () => null,
-  );
+  Marker? _getMarker(String id) {
+    try {
+      return _markers.firstWhere((m) => m.markerId.value == id);
+    } catch (_) {
+      return null;
+    }
+  }
 
-  // ---------- Buscar y marcar (origen/destino). Si es destino, dibuja ruta ----------
+  Marker? get _origenMarker => _getMarker('origen');
+  Marker? get _destinoMarker => _getMarker('destino');
+
   Future<void> _buscarYMarcar({
     required String texto,
     required bool esOrigen,
@@ -315,10 +377,8 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
         return;
       }
       final ll = LatLng(r.first.latitude, r.first.longitude);
-
       if (esOrigen) {
         _setOrigen(ll, texto);
-        // Si ya hay destino, reconstruir ruta
         if (_destinoMarker != null) await _construirRutaSiPosible();
       } else {
         _setDestino(ll, texto);
@@ -341,6 +401,11 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
       _markers.add(origen);
       _origenCtrl.text = etiqueta;
       _polylines.clear();
+      _durationSeconds = 0;
+      _distanceMeters = 0;
+      _durationText = '';
+      _distanceText = '';
+      _selectedDriver = null;
     });
     _mapCtrl?.animateCamera(CameraUpdate.newLatLngZoom(pos, 15));
   }
@@ -359,64 +424,211 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
     });
   }
 
-  // ---------- Construir polyline con Directions API ----------
   Future<void> _construirRutaSiPosible() async {
     final origen = _origenMarker;
     final destino = _destinoMarker;
     if (origen == null || destino == null) return;
 
-    final polylinePoints = PolylinePoints();
-    final result = await polylinePoints.getRouteBetweenCoordinates(
-      kGoogleApiKey,
-      PointLatLng(origen.position.latitude, origen.position.longitude),
-      PointLatLng(destino.position.latitude, destino.position.longitude),
-      travelMode: TravelMode.driving,
-    );
+    try {
+      final polylinePoints = PolylinePoints();
+      final result = await polylinePoints.getRouteBetweenCoordinates(
+        googleApiKey: kGoogleApiKey,
+        request: PolylineRequest(
+          origin: PointLatLng(
+            origen.position.latitude,
+            origen.position.longitude,
+          ),
+          destination: PointLatLng(
+            destino.position.latitude,
+            destino.position.longitude,
+          ),
+          mode: TravelMode.driving,
+        ),
+      );
 
-    if (result.points.isEmpty) {
-      _msg('No se pudo obtener la ruta');
+      if (result.errorMessage?.isNotEmpty == true) {
+        _msg('Directions error: ${result.errorMessage}');
+      }
+      if (result.points.isEmpty) {
+        _msg('No se pudo obtener la ruta');
+        return;
+      }
+
+      final pts = result.points
+          .map((p) => LatLng(p.latitude, p.longitude))
+          .toList();
+      final polyline = Polyline(
+        polylineId: const PolylineId('ruta'),
+        points: pts,
+        width: 6,
+        color: Theme.of(context).colorScheme.primary,
+        startCap: Cap.roundCap,
+        endCap: Cap.roundCap,
+        jointType: JointType.round,
+      );
+
+      await _fetchDistanceMatrix(
+        origin: origen.position,
+        destination: destino.position,
+      );
+
+      setState(() {
+        _polylines
+          ..clear()
+          ..add(polyline);
+      });
+
+      await _ajustarCamaraAOrigenDestino(origen.position, destino.position);
+    } catch (e) {
+      _msg('Error solicitando ruta: $e');
+    }
+  }
+
+  Future<void> _fetchDistanceMatrix({
+    required LatLng origin,
+    required LatLng destination,
+  }) async {
+    final url = Uri.parse(
+      'https://maps.googleapis.com/maps/api/distancematrix/json'
+      '?origins=${origin.latitude},${origin.longitude}'
+      '&destinations=${destination.latitude},${destination.longitude}'
+      '&mode=driving&units=metric&key=$kGoogleApiKey',
+    );
+    final resp = await http.get(url);
+    if (resp.statusCode != 200) {
+      _msg('Error Distance Matrix: ${resp.statusCode}');
+      return;
+    }
+    final data = json.decode(resp.body);
+    final rows = data['rows'] as List?;
+    if (rows == null || rows.isEmpty) return;
+    final elements = rows.first['elements'] as List?;
+    if (elements == null || elements.isEmpty) return;
+
+    final el = elements.first;
+    if (el['status'] != 'OK') {
+      _msg('Distance Matrix no disponible (status: ${el['status']}).');
       return;
     }
 
-    final pts = result.points
-        .map((p) => LatLng(p.latitude, p.longitude))
-        .toList();
-
-    final polyline = Polyline(
-      polylineId: const PolylineId('ruta'),
-      points: pts,
-      width: 6,
-      color: Theme.of(context).colorScheme.primary,
-      startCap: Cap.roundCap,
-      endCap: Cap.roundCap,
-      jointType: JointType.round,
-    );
-
     setState(() {
-      _polylines
-        ..clear()
-        ..add(polyline);
+      _distanceMeters = (el['distance']?['value'] ?? 0) as int;
+      _durationSeconds = (el['duration']?['value'] ?? 0) as int;
+      _distanceText = (el['distance']?['text'] ?? '') as String;
+      _durationText = (el['duration']?['text'] ?? '') as String;
+      _surge = _distanceMeters > 10000 ? 1.2 : 1.0;
+      _selectedDriver ??= _drivers.first;
     });
-
-    await _ajustarCamaraAOrigenDestino(origen.position, destino.position);
   }
 
   Future<void> _ajustarCamaraAOrigenDestino(LatLng o, LatLng d) async {
     if (_mapCtrl == null) return;
     final sw = LatLng(
-      _min(o.latitude, d.latitude),
-      _min(o.longitude, d.longitude),
+      min(o.latitude, d.latitude),
+      min(o.longitude, d.longitude),
     );
     final ne = LatLng(
-      _max(o.latitude, d.latitude),
-      _max(o.longitude, d.longitude),
+      max(o.latitude, d.latitude),
+      max(o.longitude, d.longitude),
     );
     final bounds = LatLngBounds(southwest: sw, northeast: ne);
     await _mapCtrl!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 60));
   }
 
-  double _min(double a, double b) => a < b ? a : b;
-  double _max(double a, double b) => a > b ? a : b;
+  // ================== AUTOCOMPLETE REST ==================
+  void _onDestinoChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () async {
+      if (value.trim().length < 3) {
+        setState(() => _predicciones = []);
+        return;
+      }
+      _sessionToken ??= _uuid.v4();
+      try {
+        final lat = _miUbicacion?.latitude;
+        final lng = _miUbicacion?.longitude;
+
+        // Endpoint legacy
+        final uri = Uri.parse(
+          'https://maps.googleapis.com/maps/api/place/autocomplete/json'
+          '?input=${Uri.encodeComponent(value)}'
+          '&language=es'
+          '&key=$kGoogleApiKey'
+          // sesion para mejores precios
+          '&sessiontoken=$_sessionToken'
+          // sesgo: país AR (cambiá si querés)
+          '&components=country:ar'
+          // bias por ubicación del usuario (opcional)
+          '${lat != null && lng != null ? '&location=$lat,$lng&radius=30000' : ''}',
+        );
+
+        final resp = await http.get(uri);
+        if (resp.statusCode != 200) {
+          _msg('Autocomplete error: ${resp.statusCode}');
+          return;
+        }
+        final data = json.decode(resp.body);
+        if ((data['status'] ?? '') == 'REQUEST_DENIED') {
+          _msg('Autocomplete denegado: revisá tu API Key y habilitaciones.');
+          return;
+        }
+        final preds =
+            (data['predictions'] as List?)
+                ?.map((p) => _Prediction.fromJson(p))
+                .toList() ??
+            [];
+
+        setState(() => _predicciones = preds);
+      } catch (e) {
+        _msg('Autocomplete error: $e');
+      }
+    });
+  }
+
+  Future<void> _seleccionarPrediccion(_Prediction p) async {
+    try {
+      if (p.placeId == null) return;
+
+      final uri = Uri.parse(
+        'https://maps.googleapis.com/maps/api/place/details/json'
+        '?place_id=${Uri.encodeComponent(p.placeId!)}'
+        '&fields=geometry/location'
+        '&language=es'
+        '&key=$kGoogleApiKey'
+        '${_sessionToken != null ? '&sessiontoken=$_sessionToken' : ''}',
+      );
+
+      final resp = await http.get(uri);
+      if (resp.statusCode != 200) {
+        _msg('Place Details error: ${resp.statusCode}');
+        return;
+      }
+      final data = json.decode(resp.body);
+      final loc = data['result']?['geometry']?['location'];
+      if (loc == null) {
+        _msg('No se pudo obtener ubicación del lugar');
+        return;
+      }
+      final destino = LatLng(
+        (loc['lat'] as num).toDouble(),
+        (loc['lng'] as num).toDouble(),
+      );
+
+      setState(() {
+        _predicciones = [];
+        _sessionToken = null;
+        _destFocus.unfocus();
+      });
+
+      _setDestino(
+        destino,
+        p.description ?? '${destino.latitude}, ${destino.longitude}',
+      );
+      await _construirRutaSiPosible();
+    } catch (e) {
+      _msg('Error al seleccionar lugar: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -434,8 +646,16 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
                 _polylines.clear();
                 _origenCtrl.clear();
                 _destinoCtrl.clear();
+                _durationSeconds = 0;
+                _distanceMeters = 0;
+                _durationText = '';
+                _distanceText = '';
+                _selectedDriver = null;
+                _surge = 1.0;
+                _predicciones = [];
+                _sessionToken = null;
               });
-              _initLocation(); // vuelve a setear origen automático
+              _initLocation();
             },
             icon: const Icon(Icons.layers_clear),
           ),
@@ -459,16 +679,19 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
                   markers: _markers,
                   polylines: _polylines,
                   onTap: (latLng) async {
-                    // Tap rápido: setea DESTINO (origen ya es automático)
-                    _setDestino(
-                      latLng,
-                      '${latLng.latitude}, ${latLng.longitude}',
-                    );
-                    await _construirRutaSiPosible();
+                    if (_predicciones.isNotEmpty) {
+                      setState(() => _predicciones = []);
+                    } else {
+                      _setDestino(
+                        latLng,
+                        '${latLng.latitude}, ${latLng.longitude}',
+                      );
+                      await _construirRutaSiPosible();
+                    }
                   },
                 ),
 
-                // Controles: origen (editable) + destino
+                // Controles de búsqueda
                 Positioned(
                   top: 12,
                   left: 12,
@@ -493,29 +716,80 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
                           esOrigen: false,
                         ),
                         prefix: Icons.place,
+                        onChanged: _onDestinoChanged,
+                        focusNode: _destFocus,
                       ),
+
+                      // Lista de predicciones
+                      if (_predicciones.isNotEmpty)
+                        Container(
+                          margin: const EdgeInsets.only(top: 8),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surface,
+                            borderRadius: BorderRadius.circular(10),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.1),
+                                blurRadius: 8,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          constraints: const BoxConstraints(maxHeight: 260),
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            itemCount: _predicciones.length,
+                            separatorBuilder: (_, __) =>
+                                const Divider(height: 1),
+                            itemBuilder: (ctx, i) {
+                              final p = _predicciones[i];
+                              return ListTile(
+                                dense: true,
+                                leading: const Icon(Icons.place_outlined),
+                                title: Text(p.mainText ?? p.description ?? ''),
+                                subtitle: Text(p.secondaryText ?? ''),
+                                onTap: () => _seleccionarPrediccion(p),
+                              );
+                            },
+                          ),
+                        ),
                     ],
                   ),
                 ),
 
-                // Confirmar
-                Positioned(
-                  bottom: 16,
-                  left: 16,
-                  right: 16,
-                  child: FilledButton.icon(
-                    onPressed: () {
-                      if (_origenMarker == null || _destinoMarker == null) {
-                        _msg('Seleccioná destino para continuar.');
-                        return;
-                      }
-                      _msg('Ruta lista ✅');
-                      // Aquí podrías navegar a confirmación o calcular precio/tiempo con Distance Matrix.
-                    },
-                    icon: const Icon(Icons.check),
-                    label: const Text('Confirmar viaje'),
+                // Panel inferior (ETA + costo + conductor)
+                if (_hasBothMarkers)
+                  Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: _RideBottomSheet(
+                        distanceText: _routeReady ? _distanceText : '—',
+                        durationText: _routeReady ? _durationText : '—',
+                        baseFare: _baseFare,
+                        perKm: _perKm,
+                        perMin: _perMin,
+                        km: _routeReady ? _km : 0,
+                        minutes: _routeReady ? _mins : 0,
+                        surge: _surge,
+                        drivers: _drivers,
+                        selected: _selectedDriver,
+                        onSurgeChanged: (v) => setState(() => _surge = v),
+                        onSelectDriver: (d) =>
+                            setState(() => _selectedDriver = d),
+                        onConfirm: () {
+                          final total =
+                              _fare * (_selectedDriver?.multiplier ?? 1.0);
+                          _msg(
+                            '¡Viaje solicitado! Conductor: ${_selectedDriver?.name ?? "—"}  •  Estimado: \$${total.toStringAsFixed(0)}',
+                          );
+                        },
+                        estimate: _routeReady
+                            ? _fare * (_selectedDriver?.multiplier ?? 1.0)
+                            : _baseFare,
+                      ),
+                    ),
                   ),
-                ),
               ],
             ),
     );
@@ -598,11 +872,17 @@ class _SearchField extends StatelessWidget {
   final TextEditingController controller;
   final VoidCallback onSearch;
   final IconData? prefix;
+
+  final ValueChanged<String>? onChanged;
+  final FocusNode? focusNode;
+
   const _SearchField({
     required this.hint,
     required this.controller,
     required this.onSearch,
     this.prefix,
+    this.onChanged,
+    this.focusNode,
   });
 
   @override
@@ -612,6 +892,7 @@ class _SearchField extends StatelessWidget {
       children: [
         Expanded(
           child: TextField(
+            focusNode: focusNode,
             controller: controller,
             decoration: InputDecoration(
               hintText: hint,
@@ -627,6 +908,7 @@ class _SearchField extends StatelessWidget {
               fillColor: cs.surface,
             ),
             onSubmitted: (_) => onSearch(),
+            onChanged: onChanged,
           ),
         ),
         const SizedBox(width: 8),
@@ -639,6 +921,209 @@ class _SearchField extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/* =================== Panel con costo y conductor =================== */
+class _RideBottomSheet extends StatelessWidget {
+  final String distanceText;
+  final String durationText;
+  final double baseFare;
+  final double perKm;
+  final double perMin;
+  final double km;
+  final double minutes;
+  final double surge;
+  final List<_Driver> drivers;
+  final _Driver? selected;
+  final ValueChanged<double> onSurgeChanged;
+  final ValueChanged<_Driver> onSelectDriver;
+  final VoidCallback onConfirm;
+  final double estimate;
+
+  const _RideBottomSheet({
+    required this.distanceText,
+    required this.durationText,
+    required this.baseFare,
+    required this.perKm,
+    required this.perMin,
+    required this.km,
+    required this.minutes,
+    required this.surge,
+    required this.drivers,
+    required this.selected,
+    required this.onSurgeChanged,
+    required this.onSelectDriver,
+    required this.onConfirm,
+    required this.estimate,
+    super.key,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Material(
+      elevation: 6,
+      borderRadius: BorderRadius.circular(16),
+      color: cs.surface,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: cs.outlineVariant,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.timer, color: cs.primary),
+                const SizedBox(width: 6),
+                Text(
+                  durationText,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(width: 12),
+                Icon(Icons.route, color: cs.primary),
+                const SizedBox(width: 6),
+                Text(distanceText),
+                const Spacer(),
+                Text(
+                  '\$${estimate.toStringAsFixed(0)}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 18,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Base \$${baseFare.toStringAsFixed(0)}  •  '
+                    '${km.toStringAsFixed(2)} km x \$${perKm.toStringAsFixed(0)}  •  '
+                    '${minutes.toStringAsFixed(0)} min x \$${perMin.toStringAsFixed(0)}',
+                    style: TextStyle(color: cs.onSurfaceVariant),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Text('Demanda (x):'),
+                const SizedBox(width: 8),
+                DropdownButton<double>(
+                  value: surge,
+                  items: const [
+                    DropdownMenuItem(value: 1.0, child: Text('1.0')),
+                    DropdownMenuItem(value: 1.1, child: Text('1.1')),
+                    DropdownMenuItem(value: 1.2, child: Text('1.2')),
+                    DropdownMenuItem(value: 1.5, child: Text('1.5')),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) onSurgeChanged(v);
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Text('Conductor:'),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: DropdownButton<_Driver>(
+                    isExpanded: true,
+                    value: selected,
+                    hint: const Text('Elegí un conductor'),
+                    items: drivers
+                        .map(
+                          (d) => DropdownMenuItem(
+                            value: d,
+                            child: Row(
+                              children: [
+                                const Icon(Icons.person),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    '${d.name}  •  ${d.car}  •  ⭐ ${d.rating}  •  ${d.etaMin} min',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (d) {
+                      if (d != null) onSelectDriver(d);
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: onConfirm,
+                icon: const Icon(Icons.local_taxi),
+                label: const Text('Confirmar viaje'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/* =================== Modelo simple de conductor =================== */
+class _Driver {
+  final String name;
+  final double rating;
+  final String car;
+  final int etaMin;
+  final double multiplier;
+  const _Driver({
+    required this.name,
+    required this.rating,
+    required this.car,
+    required this.etaMin,
+    required this.multiplier,
+  });
+}
+
+/* =================== Modelo simple de prediction (Autocomplete legacy) =================== */
+class _Prediction {
+  final String? description;
+  final String? placeId;
+  final String? mainText;
+  final String? secondaryText;
+
+  _Prediction({
+    this.description,
+    this.placeId,
+    this.mainText,
+    this.secondaryText,
+  });
+
+  factory _Prediction.fromJson(Map<String, dynamic> json) {
+    final sf = json['structured_formatting'] as Map<String, dynamic>?;
+    return _Prediction(
+      description: json['description'] as String?,
+      placeId: json['place_id'] as String?,
+      mainText: sf?['main_text'] as String?,
+      secondaryText: sf?['secondary_text'] as String?,
     );
   }
 }
