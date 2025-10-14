@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
-import 'screens/auth_screen.dart';
+import 'screens/auth/auth_screen.dart';
+import 'screens/auth/auth_screen2.dart';
 
 void main() {
   runApp(const MainApp());
@@ -27,7 +28,7 @@ class MainApp extends StatelessWidget {
         Locale('en', 'US'), // Inglés (por si acaso)
       ],
 
-      home: const AuthScreen(),
+      home: const AuthScreen2(),
     );
   }
 }

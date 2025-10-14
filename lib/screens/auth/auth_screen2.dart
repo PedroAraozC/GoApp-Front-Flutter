@@ -1,24 +1,125 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import '../auth/services/auth_service.dart';
+import '../auth/services/google_auth_service.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
-class AuthScreen extends StatefulWidget {
-  const AuthScreen({super.key});
+class AuthScreen2 extends StatefulWidget {
+  const AuthScreen2({super.key});
 
   @override
-  State<AuthScreen> createState() => _AuthScreenState();
+  State<AuthScreen2> createState() => _AuthScreen2State();
 }
 
-class _AuthScreenState extends State<AuthScreen> {
-  // Estado para controlar qué pestaña está seleccionada
-  int _selectedTab = 1; // 0 para Iniciar, 1 para Registrarse
-  // Estado para la visibilidad de las contraseñas
+class _AuthScreen2State extends State<AuthScreen2> {
+  int _selectedTab = 0; // 0 = Iniciar, 1 = Registrarse
   bool _isPasswordVisible = false;
   bool _isConfirmPasswordVisible = false;
+  bool _isLoading = false; // Estado para mostrar un indicador de carga
+
+  // 🔹 Controladores de texto
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+
+  // 🔹 Instancias de servicios
+  final _authService = AuthService();
+  final _authGoogleService = AuthGoogleService();
+  final _googleSignIn = GoogleSignIn();
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+  
+  // ===================================
+  // 🔹 Lógica de Autenticación
+  // ===================================
+  Future<void> _handleLogin() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Por favor completa todos los campos')),
+      );
+      setState(() => _isLoading = false);
+      return;
+    }
+
+    try {
+      final user = await _authService.login(email, password);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Bienvenido, ${user?['nombre_usuario'] ?? 'usuario'}')),
+      );
+      // 👉 Navegar al Home o pantalla principal:
+      // Navigator.pushReplacementNamed(context, '/home');
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: ${e.toString()}')),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _handleGoogleSignIn() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+
+    try {
+      // 1. Iniciar el flujo de Google Sign In
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+
+      if (googleUser == null) {
+        // El usuario canceló el proceso
+        setState(() => _isLoading = false);
+        return;
+      }
+      
+      // 2. Obtener el token de autenticación
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final String? idToken = googleAuth.idToken;
+
+      if (idToken == null) {
+          throw Exception('No se pudo obtener el token de Google.');
+      }
+      
+      // 3. Enviar el token al backend
+      final user = await _authGoogleService.loginWithGoogle(idToken);
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Bienvenido, ${user['nombre_usuario'] ?? 'usuario'}')),
+      );
+      
+      // 👉 Navegar al Home o pantalla principal:
+      // Navigator.pushReplacementNamed(context, '/home');
+
+    } catch (e) {
+      await _googleSignIn.signOut(); // Limpiar en caso de error
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al iniciar sesión con Google: ${e.toString()}')),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // (opcional) Placeholder para registro
+  void _handleRegister() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Función de registro no implementada aún')),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF1E1E2C), // Fondo oscuro
+      backgroundColor: const Color(0xFF1E1E2C),
       body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(
@@ -27,7 +128,6 @@ class _AuthScreenState extends State<AuthScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // 1. Icono superior
                 const Icon(
                   Icons.flutter_dash,
                   size: 80,
@@ -35,7 +135,6 @@ class _AuthScreenState extends State<AuthScreen> {
                 ),
                 const SizedBox(height: 40),
 
-                // 2. Selector de Pestañas (Iniciar / Registrarse)
                 _buildTabSelector(),
                 const SizedBox(height: 24),
 
@@ -48,17 +147,14 @@ class _AuthScreenState extends State<AuthScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // 3. FORMULARIO CONDICIONAL
-                // Muestra un formulario u otro dependiendo de la pestaña seleccionada
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 300),
                   child: _selectedTab == 1 ? _buildRegisterForm() : _buildLoginForm(),
                 ),
                 const SizedBox(height: 24),
 
-                // 4. Botón Principal (también condicional)
                 ElevatedButton(
-                  onPressed: () {},
+                  onPressed: _isLoading ? null : (_selectedTab == 0 ? _handleLogin : _handleRegister),
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     backgroundColor: const Color(0xFF5A4FF1),
@@ -66,25 +162,24 @@ class _AuthScreenState extends State<AuthScreen> {
                       borderRadius: BorderRadius.circular(30),
                     ),
                   ),
-                  child: Text(
-                    _selectedTab == 1 ? 'Crear Cuenta' : 'Iniciar Sesión',
-                    style: const TextStyle(fontSize: 18, color: Colors.white),
-                  ),
+                  child: _isLoading 
+                    ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3,))
+                    : Text(
+                        _selectedTab == 1 ? 'Crear Cuenta' : 'Iniciar Sesión',
+                        style: const TextStyle(fontSize: 18, color: Colors.white),
+                      ),
                 ),
                 const SizedBox(height: 24),
 
-                // 5. Separador "Or sign up/in with"
                 _buildDivider(),
                 const SizedBox(height: 24),
 
-                // 6. Botones de Redes Sociales (también condicionales)
                 _buildSocialButton(
                   icon: FontAwesomeIcons.google,
                   label: 'Continuar con Google',
-                  onPressed: () {},
+                  onPressed: _isLoading ? null : _handleGoogleSignIn,
                 ),
                 const SizedBox(height: 16),
-                
               ],
             ),
           ),
@@ -93,9 +188,9 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  // --- Widgets de Formularios ---
-
-  // Formulario para la pestaña de REGISTRO
+ // ==============================
+  // 🔹 Formularios y Widgets (sin cambios mayores)
+  // ==============================
   Widget _buildRegisterForm() {
     return Column(
       key: const ValueKey('register'),
@@ -125,16 +220,16 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  // Formulario para la pestaña de LOGIN
   Widget _buildLoginForm() {
     return Column(
       key: const ValueKey('login'),
       children: [
-        _buildTextField(hint: 'Email'),
+        _buildTextField(hint: 'Email', controller: _emailController),
         const SizedBox(height: 16),
         _buildPasswordField(
           hint: 'Contraseña',
           isVisible: _isPasswordVisible,
+          controller: _passwordController,
           onToggleVisibility: () {
             setState(() {
               _isPasswordVisible = !_isPasswordVisible;
@@ -142,7 +237,6 @@ class _AuthScreenState extends State<AuthScreen> {
           },
         ),
         const SizedBox(height: 16),
-        // Botón de contraseña olvidada
         Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
@@ -158,9 +252,8 @@ class _AuthScreenState extends State<AuthScreen> {
       ],
     );
   }
-
-  // --- Widgets Auxiliares Reutilizables ---
-
+  
+  // El resto de tus widgets auxiliares (_buildTabSelector, _buildTextField, etc.) van aquí sin cambios.
   Widget _buildTabSelector() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -205,8 +298,12 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  Widget _buildTextField({required String hint}) {
+  Widget _buildTextField({
+    required String hint,
+    TextEditingController? controller,
+  }) {
     return TextField(
+      controller: controller,
       style: const TextStyle(color: Colors.white),
       decoration: InputDecoration(
         hintText: hint,
@@ -225,8 +322,10 @@ class _AuthScreenState extends State<AuthScreen> {
     required String hint,
     required bool isVisible,
     required VoidCallback onToggleVisibility,
+    TextEditingController? controller,
   }) {
     return TextField(
+      controller: controller,
       obscureText: !isVisible,
       style: const TextStyle(color: Colors.white),
       decoration: InputDecoration(
@@ -257,7 +356,7 @@ class _AuthScreenState extends State<AuthScreen> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: Text(
-            _selectedTab == 1 ? 'O registrate con:' : 'O iniciar Sesión con:',
+            _selectedTab == 1 ? 'O regístrate con:' : 'O iniciar Sesión con:',
             style: const TextStyle(color: Colors.grey),
           ),
         ),
@@ -269,7 +368,7 @@ class _AuthScreenState extends State<AuthScreen> {
   Widget _buildSocialButton({
     required IconData icon,
     required String label,
-    required VoidCallback onPressed,
+    required VoidCallback? onPressed,
   }) {
     return OutlinedButton.icon(
       onPressed: onPressed,
