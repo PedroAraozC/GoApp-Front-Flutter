@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 class PerfilInfoField extends StatelessWidget {
   final IconData icon;
@@ -171,7 +170,7 @@ class PerfilInfoField extends StatelessWidget {
       isDense: true,
       filled: true,
       fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+      contentPadding: const EdgeInsets.symmetric(vertical: 15, horizontal: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: Colors.blueGrey, width: 0.6),

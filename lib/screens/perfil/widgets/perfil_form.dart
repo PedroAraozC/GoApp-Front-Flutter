@@ -50,7 +50,7 @@ class PerfilForm extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
             ),
             elevation: 5,
-            shadowColor: Colors.black26,
+            shadowColor: const Color.fromARGB(115, 0, 0, 0),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
               child: Column(
@@ -121,8 +121,8 @@ class PerfilForm extends StatelessWidget {
                       style: OutlinedButton.styleFrom(
                         side: const BorderSide(color: Colors.redAccent),
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 14,
+                          horizontal: 50,
+                          vertical: 24,
                         ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -139,8 +139,8 @@ class PerfilForm extends StatelessWidget {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF3F51B5),
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 30,
-                          vertical: 14,
+                          horizontal: 50,
+                          vertical: 24,
                         ),
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
@@ -158,8 +158,8 @@ class PerfilForm extends StatelessWidget {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF3F51B5),
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 30,
-                      vertical: 14,
+                      horizontal: 40,
+                      vertical: 24,
                     ),
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(

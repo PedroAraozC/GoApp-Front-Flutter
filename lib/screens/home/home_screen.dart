@@ -4,6 +4,7 @@ import 'dart:math';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:go_app_flutter/screens/perfil/perfil_screen.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
@@ -96,16 +97,19 @@ class HomeScreen extends StatelessWidget {
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const CuentaScreen()),
+                  MaterialPageRoute(builder: (_) => PerfilScreen()),
                 );
               },
               child: Row(
                 children: [
                   const Padding(
-                    padding: EdgeInsets.only(right: 8),
-                    child: Text(
-                      'Mi cuenta',
-                      style: TextStyle(fontWeight: FontWeight.w500),
+                    padding: EdgeInsets.only(right: 8, left: 6),
+                    child: Padding(
+                      padding: EdgeInsets.only(left: 8),
+                      child: Text(
+                        'Mi cuenta',
+                        style: TextStyle(fontWeight: FontWeight.w500),
+                      ),
                     ),
                   ),
                   CircleAvatar(
@@ -294,8 +298,9 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
       return;
     }
     var p = await Geolocator.checkPermission();
-    if (p == LocationPermission.denied)
+    if (p == LocationPermission.denied) {
       p = await Geolocator.requestPermission();
+    }
     if (p == LocationPermission.denied ||
         p == LocationPermission.deniedForever) {
       _msg('Permiso de ubicación denegado.');
@@ -957,7 +962,6 @@ class _RideBottomSheet extends StatelessWidget {
     required this.onSelectDriver,
     required this.onConfirm,
     required this.estimate,
-    super.key,
   });
 
   @override
