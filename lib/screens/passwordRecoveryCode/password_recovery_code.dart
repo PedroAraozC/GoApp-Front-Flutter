@@ -12,13 +12,61 @@ class RecuperarPasswordCodeScreen extends StatefulWidget {
 
 class _RecuperarPasswordCodeScreenState
     extends State<RecuperarPasswordCodeScreen> {
-  final List<TextEditingController> codeControllers = List.generate(
-    5,
-    (_) => TextEditingController(),
-  );
-  bool isLoading = false;
+  final List<TextEditingController> codeControllers =
+      List.generate(5, (_) => TextEditingController());
 
+  bool isLoading = false;
   final String codigoCorrecto = "12345";
+
+  int segundosRestantes = 50;
+  bool puedeReenviar = false;
+  Timer? temporizador;
+
+  @override
+  void initState() {
+    super.initState();
+    iniciarCuentaRegresiva();
+  }
+
+  @override
+  void dispose() {
+    temporizador?.cancel();
+    for (var c in codeControllers) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void iniciarCuentaRegresiva() {
+    temporizador?.cancel();
+    setState(() {
+      segundosRestantes = 50;
+      puedeReenviar = false;
+    });
+
+    temporizador = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (segundosRestantes > 0) {
+        setState(() {
+          segundosRestantes--;
+        });
+      } else {
+        timer.cancel();
+        setState(() {
+          puedeReenviar = true;
+        });
+      }
+    });
+  }
+
+  void reenviarCodigo() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Código reenviado correctamente ✅"),
+        duration: Duration(seconds: 2),
+      ),
+    );
+    iniciarCuentaRegresiva();
+  }
 
   Future<void> verificarCodigo() async {
     setState(() => isLoading = true);
@@ -28,15 +76,12 @@ class _RecuperarPasswordCodeScreenState
     await Future.delayed(const Duration(seconds: 1));
 
     if (codigoIngresado == codigoCorrecto) {
-      mostrarMensaje("El codigo de validación ha sido verificado correctamente.");
+      mostrarMensaje("El código de validación ha sido verificado correctamente.");
       for (var c in codeControllers) {
         c.clear();
       }
     } else {
-      mostrarMensaje(
-        "El código de validación que ha ingresado no es correcto.",
-        error: true,
-      );
+      mostrarMensaje("El código de validación ingresado no es correcto.", error: true);
       for (var c in codeControllers) {
         c.clear();
       }
@@ -172,11 +217,15 @@ class _RecuperarPasswordCodeScreenState
 
               Center(
                 child: GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: const Text(
-                    "Volver al inicio de sesión",
+                  onTap: puedeReenviar ? reenviarCodigo : null,
+                  child: Text(
+                    puedeReenviar
+                        ? "Volver a enviar código"
+                        : "Volver a enviar el código (${segundosRestantes}s)",
                     style: TextStyle(
-                      color: Color(0xFF6C63FF),
+                      color: puedeReenviar
+                          ? const Color(0xFF6C63FF)
+                          : Colors.grey,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
