@@ -3,15 +3,15 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
-class RecuperarPasswordScreen extends StatefulWidget {
-  const RecuperarPasswordScreen({super.key});
+class RecuperarPasswordCodeScreen extends StatefulWidget {
+  const RecuperarPasswordCodeScreen({super.key});
 
   @override
-  State<RecuperarPasswordScreen> createState() =>
-      _RecuperarPasswordScreenState();
+  State<RecuperarPasswordCodeScreen> createState() =>
+      _RecuperarPasswordCodeScreenState();
 }
 
-class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
+class _RecuperarPasswordCodeScreenState extends State<RecuperarPasswordCodeScreen> {
   final TextEditingController emailController = TextEditingController();
   final TextEditingController dniController = TextEditingController();
   bool isLoading = false;
