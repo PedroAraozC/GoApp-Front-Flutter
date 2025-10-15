@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'dart:async';
-
 import 'package:flutter/services.dart';
+import 'dart:async';
 
 class RecuperarPasswordCodeScreen extends StatefulWidget {
   const RecuperarPasswordCodeScreen({super.key});
@@ -11,35 +10,36 @@ class RecuperarPasswordCodeScreen extends StatefulWidget {
       _RecuperarPasswordCodeScreenState();
 }
 
-class _RecuperarPasswordCodeScreenState extends State<RecuperarPasswordCodeScreen> {
-  final TextEditingController emailController = TextEditingController();
-  final TextEditingController dniController = TextEditingController();
+class _RecuperarPasswordCodeScreenState
+    extends State<RecuperarPasswordCodeScreen> {
+  final List<TextEditingController> codeControllers = List.generate(
+    5,
+    (_) => TextEditingController(),
+  );
   bool isLoading = false;
 
-  Future<void> enviarRecuperacion() async {
+  final String codigoCorrecto = "12345";
+
+  Future<void> verificarCodigo() async {
     setState(() => isLoading = true);
 
-    final email = emailController.text.trim();
-    final dni = dniController.text.trim();
+    final codigoIngresado = codeControllers.map((c) => c.text).join();
 
-    // Validar email
-    if (email.isEmpty || !email.contains("@")) {
-      mostrarMensaje("Por favor ingresá un correo válido", error: true);
-      setState(() => isLoading = false);
-      return;
-    }
+    await Future.delayed(const Duration(seconds: 1));
 
-    await Future.delayed(const Duration(seconds: 2));
-
-    final exito = email == "usuario@ejemplo.com";
-    final exito2 = dni == "40274452";
-
-    if (exito && exito2) {
-      mostrarMensaje("Se envió el enlace de recuperación a tu correo");
-      emailController.clear();
-      dniController.clear();
+    if (codigoIngresado == codigoCorrecto) {
+      mostrarMensaje("El codigo de validación ha sido verificado correctamente.");
+      for (var c in codeControllers) {
+        c.clear();
+      }
     } else {
-      mostrarMensaje("El correo electrónico o DNI ingresado no está registrado.", error: true);
+      mostrarMensaje(
+        "El código de validación que ha ingresado no es correcto.",
+        error: true,
+      );
+      for (var c in codeControllers) {
+        c.clear();
+      }
     }
 
     setState(() => isLoading = false);
@@ -76,7 +76,7 @@ class _RecuperarPasswordCodeScreenState extends State<RecuperarPasswordCodeScree
               const SizedBox(height: 20),
 
               const Text(
-                "Recuperar contraseña",
+                "Verificar código",
                 style: TextStyle(
                   color: Colors.black87,
                   fontSize: 28,
@@ -85,70 +85,56 @@ class _RecuperarPasswordCodeScreenState extends State<RecuperarPasswordCodeScree
               ),
               const SizedBox(height: 12),
               const Text(
-                "Ingresá tu correo electrónico y te enviaremos un enlace para restablecer tu contraseña.",
-                style: TextStyle(
-                  color: Colors.black54,
-                  fontSize: 15,
-                ),
+                "Ingresá el código de 5 dígitos que te enviamos al correo.",
+                style: TextStyle(color: Colors.black54, fontSize: 15),
               ),
               const SizedBox(height: 40),
 
-              TextField(
-                controller: dniController,
-                keyboardType: TextInputType.number,
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly,
-                ],
-                style: const TextStyle(color: Colors.black87),
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: Colors.white,
-                  hintText: "Número de documento",
-                  hintStyle: const TextStyle(color: Colors.black38),
-                  prefixIcon: const Icon(Icons.badge,
-                      color: Colors.black45),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(
-                        color: Color(0xFF6C63FF), width: 1.5),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                      vertical: 18, horizontal: 16),
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: List.generate(5, (index) {
+                  return SizedBox(
+                    width: 50,
+                    child: TextField(
+                      controller: codeControllers[index],
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.center,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(1),
+                      ],
+                      style: const TextStyle(
+                        color: Colors.black87,
+                        fontSize: 22,
+                      ),
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: Color(0xFF6C63FF),
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                      onChanged: (value) {
+                        if (value.isNotEmpty && index < 4) {
+                          FocusScope.of(context).nextFocus();
+                        } else if (value.isEmpty && index > 0) {
+                          FocusScope.of(context).previousFocus();
+                        }
+                      },
+                    ),
+                  );
+                }),
               ),
 
-              const SizedBox(height: 20),
-
-              TextField(
-                controller: emailController,
-                keyboardType: TextInputType.emailAddress,
-                style: const TextStyle(color: Colors.black87),
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: Colors.white,
-                  hintText: "Correo electrónico",
-                  hintStyle: const TextStyle(color: Colors.black38),
-                  prefixIcon: const Icon(Icons.email_outlined,
-                      color: Colors.black45),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(
-                        color: Color(0xFF6C63FF), width: 1.5),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                      vertical: 18, horizontal: 16),
-                ),
-              ),
-
-              const SizedBox(height: 35),
+              const SizedBox(height: 40),
 
               SizedBox(
                 width: double.infinity,
@@ -161,7 +147,7 @@ class _RecuperarPasswordCodeScreenState extends State<RecuperarPasswordCodeScree
                     ),
                     elevation: 3,
                   ),
-                  onPressed: isLoading ? null : enviarRecuperacion,
+                  onPressed: isLoading ? null : verificarCodigo,
                   child: isLoading
                       ? const SizedBox(
                           height: 25,
@@ -172,7 +158,7 @@ class _RecuperarPasswordCodeScreenState extends State<RecuperarPasswordCodeScree
                           ),
                         )
                       : const Text(
-                          "Enviar enlace de recuperación",
+                          "Verificar código",
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 16,
