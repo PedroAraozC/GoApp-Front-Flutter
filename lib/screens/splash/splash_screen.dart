@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../home/home_screen.dart';
+import '../auth/auth_screen2.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -27,12 +29,18 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller.forward();
 
-    Future.delayed(const Duration(seconds: 3), () {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
-      );
-    });
+    Future.delayed(const Duration(seconds: 3), _checkAuthStatus);
+  }
+
+  Future<void> _checkAuthStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
+
+    if (isLoggedIn) {
+      Navigator.pushReplacementNamed(context, '/home');
+    } else {
+      Navigator.pushReplacementNamed(context, '/auth');
+    }
   }
 
   @override

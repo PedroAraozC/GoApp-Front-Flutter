@@ -923,60 +923,60 @@ class ViajesRealizadosScreen extends StatelessWidget {
 }
 
 /* =================== Cuenta =================== */
-class CuentaScreen extends StatelessWidget {
-  const CuentaScreen({super.key});
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Información de cuenta')),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: Card(
-            elevation: 1,
-            color: cs.surface,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: const Padding(
-              padding: EdgeInsets.all(20),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 36,
-                    backgroundImage: NetworkImage(
-                      'https://i.pravatar.cc/150?img=12',
-                    ),
-                  ),
-                  SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Braian Barrionuevo',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        SizedBox(height: 4),
-                        Text('braian@example.com'),
-                        SizedBox(height: 12),
-                        Text('Estado: Verificado ✅'),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
+// class CuentaScreen extends StatelessWidget {
+//   const CuentaScreen({super.key});
+//   @override
+//   Widget build(BuildContext context) {
+//     final cs = Theme.of(context).colorScheme;
+//     return Scaffold(
+//       appBar: AppBar(title: const Text('Información de cuenta')),
+//       body: Center(
+//         child: ConstrainedBox(
+//           constraints: const BoxConstraints(maxWidth: 520),
+//           child: Card(
+//             elevation: 1,
+//             color: cs.surface,
+//             shape: RoundedRectangleBorder(
+//               borderRadius: BorderRadius.circular(16),
+//             ),
+//             child: const Padding(
+//               padding: EdgeInsets.all(20),
+//               child: Row(
+//                 children: [
+//                   CircleAvatar(
+//                     radius: 36,
+//                     backgroundImage: NetworkImage(
+//                       'https://i.pravatar.cc/150?img=12',
+//                     ),
+//                   ),
+//                   SizedBox(width: 16),
+//                   Expanded(
+//                     child: Column(
+//                       crossAxisAlignment: CrossAxisAlignment.start,
+//                       children: [
+//                         Text(
+//                           'Braian Barrionuevo',
+//                           style: TextStyle(
+//                             fontSize: 18,
+//                             fontWeight: FontWeight.w700,
+//                           ),
+//                         ),
+//                         SizedBox(height: 4),
+//                         Text('braian@example.com'),
+//                         SizedBox(height: 12),
+//                         Text('Estado: Verificado ✅'),
+//                       ],
+//                     ),
+//                   ),
+//                 ],
+//               ),
+//             ),
+//           ),
+//         ),
+//       ),
+//     );
+//   }
+// }
 
 /* =================== Widgets auxiliares =================== */
 class _SearchField extends StatelessWidget {
