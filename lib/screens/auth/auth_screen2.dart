@@ -26,7 +26,11 @@ class _AuthScreen2State extends State<AuthScreen2> {
   // 🔹 Instancias de servicios
   final _authService = AuthService();
   final _authGoogleService = AuthGoogleService();
-  final _googleSignIn = GoogleSignIn();
+  final _googleSignIn = GoogleSignIn(
+     scopes: ['email', 'profile'],
+  serverClientId: '125703789007-m6785nj61t63qvdjkok8qokrd9tsdoog.apps.googleusercontent.com',
+
+  );
 
   @override
   void dispose() {

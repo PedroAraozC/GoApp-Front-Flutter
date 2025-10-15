@@ -304,8 +304,9 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
       return;
     }
     var p = await Geolocator.checkPermission();
-    if (p == LocationPermission.denied)
+    if (p == LocationPermission.denied) {
       p = await Geolocator.requestPermission();
+    }
     if (p == LocationPermission.denied ||
         p == LocationPermission.deniedForever) {
       _msg('Permiso de ubicación denegado.');
@@ -1110,7 +1111,6 @@ class _RideBottomSheet extends StatelessWidget {
     required this.onSelectDriver,
     required this.onConfirm,
     required this.estimate,
-    super.key,
   });
 
   @override

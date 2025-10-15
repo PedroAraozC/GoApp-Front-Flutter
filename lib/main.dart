@@ -15,7 +15,7 @@ class GoApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'GoApp Taxi',
+      title: 'Tucu Taxi',
       theme: ThemeData(
         colorSchemeSeed: const Color(0xFFFFCC00),
         useMaterial3: true,
