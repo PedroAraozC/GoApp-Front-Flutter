@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_app_flutter/screens/splash/splash_screen.dart';
 import 'screens/home/home_screen.dart';
 
 void main() {
@@ -17,7 +18,7 @@ class MiApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         useMaterial3: true,
       ),
-      home: const HomeScreen(), // <-- solo llama al HomeScreen
+      home: const SplashScreen(), // <-- solo llama al HomeScreen
     );
   }
 }

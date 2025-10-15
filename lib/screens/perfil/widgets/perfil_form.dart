@@ -41,6 +41,8 @@ class PerfilForm extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     return Form(
       key: formKey,
       child: Column(
@@ -121,8 +123,8 @@ class PerfilForm extends StatelessWidget {
                       style: OutlinedButton.styleFrom(
                         side: const BorderSide(color: Colors.redAccent),
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 50,
-                          vertical: 24,
+                          horizontal: 35,
+                          vertical: 18,
                         ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -137,10 +139,11 @@ class PerfilForm extends StatelessWidget {
                       icon: const Icon(Icons.save_rounded, color: Colors.white),
                       label: const Text("Guardar"),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF3F51B5),
+                        // backgroundColor: const Color(0xFF3F51B5),
+                        backgroundColor: cs.primary,
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 50,
-                          vertical: 24,
+                          horizontal: 40,
+                          vertical: 18,
                         ),
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
@@ -156,10 +159,11 @@ class PerfilForm extends StatelessWidget {
                   icon: const Icon(Icons.edit_rounded, color: Colors.white),
                   label: const Text("Editar perfil"),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF3F51B5),
+                    // backgroundColor: const Color(0xFF3F51B5),
+                    backgroundColor: cs.primary,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 40,
-                      vertical: 24,
+                      vertical: 18,
                     ),
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
