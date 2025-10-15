@@ -30,7 +30,7 @@ class MainApp extends StatelessWidget {
         Locale('en', 'US'), // Inglés (por si acaso)
       ],
 
-      home: const ChangePasswordScreen(),
+      home: const PerfilScreen(),
     );
   }
 }
