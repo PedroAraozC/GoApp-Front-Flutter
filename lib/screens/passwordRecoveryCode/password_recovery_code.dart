@@ -59,12 +59,13 @@ class _RecuperarPasswordCodeScreenState
   }
 
   void reenviarCodigo() {
-    ScaffoldMessenger.of(context).showSnackBar(
+    /*ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text("Código reenviado correctamente ✅"),
+        content: Text("El codigo de validación ha sido reenviad a tu dirección de correo electrónico."),
         duration: Duration(seconds: 2),
       ),
-    );
+    );*/
+    mostrarMensaje("El código de validación ha sido reenviado a tu dirección de correo electrónico.");
     iniciarCuentaRegresiva();
   }
 
