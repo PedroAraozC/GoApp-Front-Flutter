@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../home/home_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -27,12 +27,18 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller.forward();
 
-    Future.delayed(const Duration(seconds: 3), () {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
-      );
-    });
+    Future.delayed(const Duration(seconds: 3), _checkAuthStatus);
+  }
+
+  Future<void> _checkAuthStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
+
+    if (isLoggedIn) {
+      Navigator.pushReplacementNamed(context, '/home');
+    } else {
+      Navigator.pushReplacementNamed(context, '/auth');
+    }
   }
 
   @override
@@ -50,7 +56,7 @@ class _SplashScreenState extends State<SplashScreen>
           opacity: _fade,
           child: ScaleTransition(
             scale: _scale,
-            child: Image.asset('assets/images/splash_logo.png', width: 180),
+            child: Image.asset('assets/images/inicio_logo.png', width: 180),
           ),
         ),
       ),
