@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_app_flutter/screens/passwordRecovery/password_recovey.dart';
 import 'package:go_app_flutter/screens/perfil_screen.dart';
 import 'package:go_app_flutter/screens/passwordRecoveryCode/password_recovery_code.dart';
+import 'package:go_app_flutter/screens/passwordChange/password_change.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 
@@ -29,7 +30,7 @@ class MainApp extends StatelessWidget {
         Locale('en', 'US'), // Inglés (por si acaso)
       ],
 
-      home: const RecuperarPasswordCodeScreen(),
+      home: const ChangePasswordScreen(),
     );
   }
 }
