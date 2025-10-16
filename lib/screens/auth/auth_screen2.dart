@@ -42,6 +42,10 @@ class _AuthScreen2State extends State<AuthScreen2> {
   // ===================================
   // 🔹 Lógica de Autenticación
   // ===================================
+
+
+///////// desde aqui
+
   Future<void> _handleLogin() async {
     if (_isLoading) return;
     setState(() => _isLoading = true);
@@ -134,6 +138,9 @@ class _AuthScreen2State extends State<AuthScreen2> {
       setState(() => _isLoading = false);
     }
   }
+
+///////////// hasta aqui
+
 
   // (opcional) Placeholder para registro
   void _handleRegister() {
