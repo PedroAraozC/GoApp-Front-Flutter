@@ -27,9 +27,9 @@ class _AuthScreen2State extends State<AuthScreen2> {
   final _authService = AuthService();
   final _authGoogleService = AuthGoogleService();
   final _googleSignIn = GoogleSignIn(
-     scopes: ['email', 'profile'],
-  serverClientId: '125703789007-m6785nj61t63qvdjkok8qokrd9tsdoog.apps.googleusercontent.com',
-
+    scopes: ['email', 'profile'],
+    serverClientId:
+        '125703789007-m6785nj61t63qvdjkok8qokrd9tsdoog.apps.googleusercontent.com',
   );
 
   @override
@@ -59,7 +59,7 @@ class _AuthScreen2State extends State<AuthScreen2> {
 
     try {
       final user = await _authService.login(email, password);
-
+      print(user);
       if (user != null) {
         // 🎉 Login exitoso
         ScaffoldMessenger.of(context).showSnackBar(
@@ -71,7 +71,7 @@ class _AuthScreen2State extends State<AuthScreen2> {
         // ✅ Navegar a HomeScreen
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
+          MaterialPageRoute(builder: (_) => HomeScreen(user: user)),
         );
       } else {
         // ⚠️ Credenciales incorrectas
@@ -119,7 +119,10 @@ class _AuthScreen2State extends State<AuthScreen2> {
       // ✅ Navegar directamente al HomeScreen
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('isLoggedIn', true);
-      Navigator.pushReplacementNamed(context, '/home');
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => HomeScreen(user: user)),
+      );
     } catch (e) {
       await _googleSignIn.signOut();
       ScaffoldMessenger.of(context).showSnackBar(

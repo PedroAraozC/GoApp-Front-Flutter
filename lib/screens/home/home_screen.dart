@@ -10,9 +10,13 @@ import 'package:geocoding/geocoding.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
+import 'package:go_app_flutter/screens/auth/auth_screen2.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+  final Map<String, dynamic> user;
+  const HomeScreen({super.key, required this.user});
 
   @override
   Widget build(BuildContext context) {
@@ -96,7 +100,10 @@ class HomeScreen extends StatelessWidget {
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const PerfilScreen()),
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        PerfilScreen(userId: user['id_usuario'] as int?),
+                  ),
                 );
               },
               child: Row(
@@ -111,8 +118,8 @@ class HomeScreen extends StatelessWidget {
                   CircleAvatar(
                     radius: 18,
                     backgroundColor: cs.primaryContainer,
-                    backgroundImage: const NetworkImage(
-                      'https://i.pravatar.cc/150?img=12',
+                    backgroundImage: NetworkImage(
+                      user['foto_perfil'] ?? 'https://i.pravatar.cc/150?img=12',
                     ),
                     child: Container(),
                   ),
@@ -120,8 +127,14 @@ class HomeScreen extends StatelessWidget {
               ),
             ),
           ),
+          IconButton(
+            tooltip: 'Cerrar sesión',
+            icon: const Icon(Icons.logout),
+            onPressed: () => _logout(context),
+          ),
         ],
       ),
+
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -135,6 +148,8 @@ class HomeScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
+              Text('Datos del usuario: ${user.toString()}'),
+
               Text(
                 'Podés iniciar un viaje nuevo o consultar tu historial.',
                 style: Theme.of(context).textTheme.bodyMedium,
@@ -199,6 +214,29 @@ class HomeScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _logout(BuildContext context) async {
+    try {
+      // Limpia prefs (por si almacenás flags/tokens)
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+
+      // Desloguea Google si hubo sesión
+      final g = GoogleSignIn(scopes: ['email', 'profile']);
+      await g.signOut();
+      await g.disconnect();
+    } catch (_) {
+      // Ignorar errores silenciosamente
+    }
+
+    if (context.mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const AuthScreen2()),
+        (_) => false,
+      );
+    }
   }
 }
 

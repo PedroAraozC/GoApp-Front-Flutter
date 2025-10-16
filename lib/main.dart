@@ -30,7 +30,7 @@ class GoApp extends StatelessWidget {
       routes: {
         '/splash': (_) => const SplashScreen(),
         '/auth': (_) => const AuthScreen2(),
-        '/home': (_) => const HomeScreen(),
+        '/home': (_) => const HomeScreen(user: {}),
       },
     );
   }
