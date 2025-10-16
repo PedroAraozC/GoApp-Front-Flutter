@@ -12,7 +12,8 @@ import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+  List user;
+  const HomeScreen({super.key, super.user});
 
   @override
   Widget build(BuildContext context) {

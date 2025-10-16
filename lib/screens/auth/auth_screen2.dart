@@ -71,7 +71,7 @@ class _AuthScreen2State extends State<AuthScreen2> {
         // ✅ Navegar a HomeScreen
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
+          MaterialPageRoute(builder: (_) => const HomeScreen(user:user)),
         );
       } else {
         // ⚠️ Credenciales incorrectas
