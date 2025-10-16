@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:go_app_flutter/screens/perfil/perfil_screen.dart';
+import 'package:go_app_flutter/services/user_preferences.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
@@ -110,10 +111,10 @@ class HomeScreen extends StatelessWidget {
                 children: [
                   const Padding(
                     padding: EdgeInsets.only(right: 8),
-                    child: Text(
-                      'Mi cuenta',
-                      style: TextStyle(fontWeight: FontWeight.w500),
-                    ),
+                    // child: Text(
+                    //   'Mi cuenta',
+                    //   style: TextStyle(fontWeight: FontWeight.w500),
+                    // ),
                   ),
                   CircleAvatar(
                     radius: 18,
@@ -218,17 +219,12 @@ class HomeScreen extends StatelessWidget {
 
   Future<void> _logout(BuildContext context) async {
     try {
-      // Limpia prefs (por si almacenás flags/tokens)
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.clear();
+      await UserPreferences.clearUser(); // 👈 Limpia usuario persistido
 
-      // Desloguea Google si hubo sesión
       final g = GoogleSignIn(scopes: ['email', 'profile']);
       await g.signOut();
       await g.disconnect();
-    } catch (_) {
-      // Ignorar errores silenciosamente
-    }
+    } catch (_) {}
 
     if (context.mounted) {
       Navigator.pushAndRemoveUntil(
@@ -838,7 +834,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
                   ),
                   onMapCreated: (c) => _mapCtrl ??= c,
                   myLocationEnabled: true,
-                  myLocationButtonEnabled: true,
+                  myLocationButtonEnabled: false,
                   zoomControlsEnabled: true,
                   markers: _markers,
                   polylines: _polylines,
@@ -859,6 +855,24 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
                   },
                 ),
 
+                Positioned(
+                  bottom: 20,
+                  left: 20,
+                  child: FloatingActionButton.small(
+                    heroTag: 'btn_mi_ubicacion',
+                    backgroundColor: Colors.white,
+                    onPressed: () async {
+                      final pos = await Geolocator.getCurrentPosition(
+                        desiredAccuracy: LocationAccuracy.high,
+                      );
+                      final current = LatLng(pos.latitude, pos.longitude);
+                      _mapCtrl?.animateCamera(
+                        CameraUpdate.newLatLngZoom(current, 16),
+                      );
+                    },
+                    child: const Icon(Icons.my_location, color: Colors.black87),
+                  ),
+                ),
                 // ======= Controles de búsqueda + listas =======
                 Positioned(
                   top: 12,
@@ -1062,15 +1076,15 @@ class _SearchField extends StatelessWidget {
             onChanged: onChanged,
           ),
         ),
-        const SizedBox(width: 8),
-        SizedBox(
-          height: 44,
-          width: 44,
-          child: IconButton.filled(
-            onPressed: onSearch,
-            icon: const Icon(Icons.search),
-          ),
-        ),
+        // const SizedBox(width: 8),
+        // SizedBox(
+        //   height: 44,
+        //   width: 44,
+        //   child: IconButton.filled(
+        //     onPressed: onSearch,
+        //     icon: const Icon(Icons.search),
+        //   ),
+        // ),
       ],
     );
   }

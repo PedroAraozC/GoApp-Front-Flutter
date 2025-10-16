@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:go_app_flutter/services/user_preferences.dart';
 import '../auth/services/auth_service.dart';
 import '../auth/services/google_auth_service.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -43,8 +44,7 @@ class _AuthScreen2State extends State<AuthScreen2> {
   // 🔹 Lógica de Autenticación
   // ===================================
 
-
-///////// desde aqui
+  ///////// desde aqui
 
   Future<void> _handleLogin() async {
     if (_isLoading) return;
@@ -66,6 +66,7 @@ class _AuthScreen2State extends State<AuthScreen2> {
       print(user);
       if (user != null) {
         // 🎉 Login exitoso
+        await UserPreferences.saveUser(user);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Bienvenido, ${user['nombre_usuario'] ?? 'usuario'}'),
@@ -113,6 +114,7 @@ class _AuthScreen2State extends State<AuthScreen2> {
       }
 
       final user = await _authGoogleService.loginWithGoogle(idToken);
+      await UserPreferences.saveUser(user); // 👈 Persistir usuario Google
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -139,8 +141,7 @@ class _AuthScreen2State extends State<AuthScreen2> {
     }
   }
 
-///////////// hasta aqui
-
+  ///////////// hasta aqui
 
   // (opcional) Placeholder para registro
   void _handleRegister() {
