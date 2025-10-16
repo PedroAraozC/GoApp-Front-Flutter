@@ -78,8 +78,8 @@ class _PerfilScreenState extends State<PerfilScreen> {
       _isLoading = true;
       _errorMessage = null;
     });
-
-    final int id = widget.userId ?? 2;
+    print(widget.userId);
+    final int id = widget.userId!;
     final service = PerfilService();
 
     try {

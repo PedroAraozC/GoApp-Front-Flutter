@@ -1,24 +1,44 @@
 import 'package:flutter/material.dart';
-import 'package:go_app_flutter/screens/splash/splash_screen.dart';
+import 'screens/splash/splash_screen.dart';
+import 'screens/auth/auth_screen2.dart';
 import 'screens/home/home_screen.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'dart:io';
 
-void main() {
-  runApp(const MiApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  final file = File('.env');
+  print('Existe .env? ${await file.exists()}');
+  await dotenv.load(fileName: ".env");
+  runApp(const GoApp());
 }
 
-class MiApp extends StatelessWidget {
-  const MiApp({super.key});
+class GoApp extends StatelessWidget {
+  const GoApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'TaxiTuc',
       debugShowCheckedModeBanner: false,
+      title: 'Tucu Taxi',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
+        colorSchemeSeed: const Color(0xFFFFCC00),
         useMaterial3: true,
       ),
-      home: const SplashScreen(), // <-- solo llama al HomeScreen
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [Locale('es', 'ES'), Locale('en', 'US')],
+      initialRoute: '/splash',
+      routes: {
+        '/splash': (_) => const SplashScreen(),
+        '/auth': (_) => const AuthScreen2(),
+        '/home': (_) => const HomeScreen(user: {}),
+      },
     );
   }
 }
