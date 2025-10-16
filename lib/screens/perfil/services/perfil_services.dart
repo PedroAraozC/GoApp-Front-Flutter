@@ -79,6 +79,6 @@ class PerfilService {
     } catch (e) {
       throw Exception('Error en obtenerGeneros: $e');
     }
-     return [];
+    return [];
   }
 }

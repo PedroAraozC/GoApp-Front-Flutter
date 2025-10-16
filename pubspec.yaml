@@ -16,13 +16,35 @@ dependencies:
   google_sign_in: ^6.2.1
   http: ^1.5.0
   font_awesome_flutter: ^10.10.0
+  geolocator: ^10.1.0
+  geocoding: ^2.1.0
+  smooth_page_indicator: ^1.1.0
+  flutter_polyline_points: ^2.0.0
+  uuid: ^4.4.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.4.0
 
 flutter:
   uses-material-design: true
   assets:
     - assets/images/
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/app_icon.png"
+  min_sdk_android: 21 # o tu versión mínima
+
+# flutter_native_splash:
+#   color: "#000000"               # Color de fondo
+#   image: assets/images/splash_logo.png   # Tu logo central
+#   android_12:
+#     image: assets/images/splash_logo.png
+#     color: "#000000"
+
+

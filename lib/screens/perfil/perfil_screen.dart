@@ -41,8 +41,8 @@ class _PerfilScreenState extends State<PerfilScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchUserData();
     _fetchGeneros();
+    _fetchUserData();
 
     // Scroll automático al editar campos
     for (var node in _focusNodes.entries) {
@@ -83,6 +83,10 @@ class _PerfilScreenState extends State<PerfilScreen> {
     final service = PerfilService();
 
     try {
+      if (_generos.isEmpty) {
+        await _fetchGeneros();
+      }
+
       final user = await service.obtenerUsuarioPorId(id);
       if (user == null) {
         setState(() {
@@ -237,15 +241,16 @@ class _PerfilScreenState extends State<PerfilScreen> {
 
     return Scaffold(
       resizeToAvoidBottomInset: true,
+      appBar: AppBar(title: Text("Perfil del usuario")),
       body: Container(
         width: double.infinity,
         height: double.infinity,
         decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFFEEF2F3), Color(0xFFDDE1E7)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+          // gradient: LinearGradient(
+          //   colors: [Color(0xFFEEF2F3), Color(0xFFDDE1E7)],
+          //   begin: Alignment.topLeft,
+          //   end: Alignment.bottomRight,
+          // ),
         ),
         child: SafeArea(
           child: _isLoading
