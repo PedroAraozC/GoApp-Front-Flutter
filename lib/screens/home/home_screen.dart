@@ -1,22 +1,112 @@
-// homescreen.dart
+// lib/screens/home/homescreen.dart
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:go_app_flutter/screens/perfil/perfil_screen.dart';
+import 'package:go_app_flutter/services/user_preferences.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
+import 'package:go_app_flutter/screens/auth/auth_screen.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:go_app_flutter/screens/home/services/api_service.dart';
+import 'widgets/completar_datos_screen.dart';
 
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+/// =================================================================================
+///  HOME SCREEN (Stateful) + chequeo de datos y modal CompletarDatosScreen
+/// =================================================================================
+class HomeScreen extends StatefulWidget {
+  final Map<String, dynamic> user;
+  const HomeScreen({super.key, required this.user});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  /// Normaliza el mapa de usuario para usar claves consistentes en la app.
+  Map<String, dynamic> _normalizeUser(Map<String, dynamic> raw) {
+    return {
+      'id_usuario'      : raw['id_usuario'] ?? raw['id'] ?? raw['userId'],
+      'dni'             : raw['dni'],
+      'fecha_nacimiento': raw['fecha_nacimiento'],
+      'id_genero'       : raw['id_genero'],
+      'telefono'        : raw['telefono_usuario'] ?? raw['telefono'],
+      'email'           : raw['email_usuario'] ?? raw['email'],
+      'foto_perfil'     : raw['foto_perfil'] ?? raw['avatar'],
+      'nombre_usuario'  : raw['nombre_usuario'] ?? raw['nombre'],
+      'apellido_usuario': raw['apellido_usuario'] ?? raw['apellido'],
+      'token'           : raw['token'], // por si guardaste el token acá
+    };
+  }
+
+  /// Indica si faltan datos obligatorios antes de poder iniciar un viaje.
+  bool _needsProfileCompletion(Map<String, dynamic> u) {
+    final requiredKeys = ['dni', 'fecha_nacimiento', 'id_genero', 'telefono', 'email'];
+    for (final k in requiredKeys) {
+      final v = u[k];
+      if (v == null) return true;
+      if (v is String && v.trim().isEmpty) return true;
+    }
+    return false;
+  }
+
+  Future<void> _checkUserProfileAndNavigate(BuildContext context) async {
+    final userNorm = _normalizeUser(widget.user);
+
+    if (_needsProfileCompletion(userNorm)) {
+      final updated = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => CompletarDatosScreen(
+          user: userNorm,
+          api: ApiService(), // opcional
+        ),
+      );
+
+      if (updated == true && mounted) {
+        // (Opcional) Podés re-cargar el usuario desde tu backend y actualizar UserPreferences.
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const IniciarViajeScreen()),
+        );
+      }
+      return;
+    }
+
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const IniciarViajeScreen()),
+      );
+    }
+  }
+
+  Future<void> _logout(BuildContext context) async {
+    try {
+      await UserPreferences.clearUser();
+      final g = GoogleSignIn(scopes: ['email', 'profile']);
+      await g.signOut();
+      await g.disconnect();
+    } catch (_) {}
+    if (context.mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const AuthScreen2()),
+        (_) => false,
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final user = _normalizeUser(widget.user);
 
     Widget buildActionCard({
       required IconData icon,
@@ -96,29 +186,30 @@ class HomeScreen extends StatelessWidget {
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const PerfilScreen()),
+                  MaterialPageRoute(
+                    builder: (_) => PerfilScreen(userId: user['id_usuario'] as int?),
+                  ),
                 );
               },
               child: Row(
                 children: [
-                  const Padding(
-                    padding: EdgeInsets.only(right: 8),
-                    child: Text(
-                      'Mi cuenta',
-                      style: TextStyle(fontWeight: FontWeight.w500),
-                    ),
-                  ),
+                  const Padding(padding: EdgeInsets.only(right: 8)),
                   CircleAvatar(
                     radius: 18,
                     backgroundColor: cs.primaryContainer,
-                    backgroundImage: const NetworkImage(
-                      'https://i.pravatar.cc/150?img=12',
+                    backgroundImage: NetworkImage(
+                      user['foto_perfil'] ?? 'https://i.pravatar.cc/150?img=12',
                     ),
                     child: Container(),
                   ),
                 ],
               ),
             ),
+          ),
+          IconButton(
+            tooltip: 'Cerrar sesión',
+            icon: const Icon(Icons.logout),
+            onPressed: () => _logout(context),
           ),
         ],
       ),
@@ -131,8 +222,8 @@ class HomeScreen extends StatelessWidget {
               Text(
                 '¿Qué querés hacer hoy?',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+                      fontWeight: FontWeight.w700,
+                    ),
               ),
               const SizedBox(height: 12),
               Text(
@@ -145,10 +236,7 @@ class HomeScreen extends StatelessWidget {
                 icon: Icons.play_arrow_rounded,
                 title: 'Iniciar viaje',
                 subtitle: 'Configura origen, destino y comenzá',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const IniciarViajeScreen()),
-                ),
+                onTap: () => _checkUserProfileAndNavigate(context), // 👈 chequeo + modal
                 bg: cs.primary,
                 fg: cs.onPrimary,
                 filled: true,
@@ -202,7 +290,9 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-/* =================== Iniciar Viaje (mapa + origen auto + autocomplete origen/destino + ruta + ETA + costo + conductor) =================== */
+/// =================================================================================
+///  Iniciar Viaje (mapa + origen auto + autocomplete origen/destino + ruta + ETA)
+/// =================================================================================
 class IniciarViajeScreen extends StatefulWidget {
   const IniciarViajeScreen({super.key});
   @override
@@ -211,7 +301,7 @@ class IniciarViajeScreen extends StatefulWidget {
 
 class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
   // ⚠️ Habilitar: Maps SDK, Places API, Directions API, Distance Matrix API
-  static const String kGoogleApiKey = 'AIzaSyAMP0ERTGQgCvTRknlbE7wA01WSvRtGHV4';
+  static const String kGoogleApiKey = 'TU_API_KEY_DE_GOOGLE'; // poné la tuya
 
   final _origenCtrl = TextEditingController();
   final _destinoCtrl = TextEditingController();
@@ -239,32 +329,13 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
 
   double get _km => _distanceMeters / 1000.0;
   double get _mins => _durationSeconds / 60.0;
-  double get _fare =>
-      ((_baseFare + (_km * _perKm) + (_mins * _perMin)) * _surge);
+  double get _fare => ((_baseFare + (_km * _perKm) + (_mins * _perMin)) * _surge);
 
   // Conductores (mock)
   final List<_Driver> _drivers = const [
-    _Driver(
-      name: 'Luis R.',
-      rating: 4.9,
-      car: 'Toyota Etios',
-      etaMin: 3,
-      multiplier: 1.0,
-    ),
-    _Driver(
-      name: 'María S.',
-      rating: 4.8,
-      car: 'Chevrolet Onix',
-      etaMin: 4,
-      multiplier: 1.1,
-    ),
-    _Driver(
-      name: 'Jorge A.',
-      rating: 4.7,
-      car: 'VW Gol',
-      etaMin: 6,
-      multiplier: 0.95,
-    ),
+    _Driver(name: 'Luis R.',  rating: 4.9, car: 'Toyota Etios',   etaMin: 3, multiplier: 1.0),
+    _Driver(name: 'María S.', rating: 4.8, car: 'Chevrolet Onix', etaMin: 4, multiplier: 1.1),
+    _Driver(name: 'Jorge A.', rating: 4.7, car: 'VW Gol',         etaMin: 6, multiplier: 0.95),
   ];
   _Driver? _selectedDriver;
 
@@ -304,10 +375,10 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
       return;
     }
     var p = await Geolocator.checkPermission();
-    if (p == LocationPermission.denied)
+    if (p == LocationPermission.denied) {
       p = await Geolocator.requestPermission();
-    if (p == LocationPermission.denied ||
-        p == LocationPermission.deniedForever) {
+    }
+    if (p == LocationPermission.denied || p == LocationPermission.deniedForever) {
       _msg('Permiso de ubicación denegado.');
       return;
     }
@@ -426,10 +497,9 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
       markerId: const MarkerId('origen'),
       position: pos,
       infoWindow: InfoWindow(title: 'Origen', snippet: etiqueta),
-      draggable: true, // 🟢 Permitir arrastrar
+      draggable: true,
       icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
       onDragEnd: (newPos) async {
-        // Cuando se suelta el pin, actualizar dirección
         try {
           final placemarks = await placemarkFromCoordinates(
             newPos.latitude,
@@ -449,7 +519,6 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
           _msg('Error al actualizar dirección: $e');
         }
 
-        // Actualizar posición del marcador en el mapa
         setState(() {
           _markers.removeWhere((m) => m.markerId.value == 'origen');
           _markers.add(
@@ -487,7 +556,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
       markerId: const MarkerId('destino'),
       position: pos,
       infoWindow: InfoWindow(title: 'Destino', snippet: etiqueta),
-      draggable: true, // 🟢 Ahora también se puede mover
+      draggable: true,
       icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
       onDragEnd: (newPos) async {
         final placemarks = await placemarkFromCoordinates(
@@ -545,9 +614,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
         return;
       }
 
-      final pts = result.points
-          .map((p) => LatLng(p.latitude, p.longitude))
-          .toList();
+      final pts = result.points.map((p) => LatLng(p.latitude, p.longitude)).toList();
       final polyline = Polyline(
         polylineId: const PolylineId('ruta'),
         points: pts,
@@ -614,14 +681,8 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
 
   Future<void> _ajustarCamaraAOrigenDestino(LatLng o, LatLng d) async {
     if (_mapCtrl == null) return;
-    final sw = LatLng(
-      min(o.latitude, d.latitude),
-      min(o.longitude, d.longitude),
-    );
-    final ne = LatLng(
-      max(o.latitude, d.latitude),
-      max(o.longitude, d.longitude),
-    );
+    final sw = LatLng(min(o.latitude, d.latitude), min(o.longitude, d.longitude));
+    final ne = LatLng(max(o.latitude, d.latitude), max(o.longitude, d.longitude));
     final bounds = LatLngBounds(southwest: sw, northeast: ne);
     await _mapCtrl!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 60));
   }
@@ -641,7 +702,6 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
         return;
       }
 
-      // token de session por campo
       if (esOrigen) {
         _sessionTokenOrigin ??= _uuid.v4();
       } else {
@@ -651,7 +711,6 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
       try {
         final lat = _miUbicacion?.latitude;
         final lng = _miUbicacion?.longitude;
-
         final token = esOrigen ? _sessionTokenOrigin : _sessionTokenDest;
 
         final uri = Uri.parse(
@@ -660,9 +719,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
           '&language=es'
           '&key=$kGoogleApiKey'
           '&sessiontoken=$token'
-          // Sesgo por país (ajustá si querés)
           '&components=country:ar'
-          // Bias por ubicación del usuario (opcional)
           '${lat != null && lng != null ? '&location=$lat,$lng&radius=30000' : ''}',
         );
 
@@ -676,8 +733,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
           _msg('Autocomplete denegado: revisá tu API Key y habilitaciones.');
           return;
         }
-        final preds =
-            (data['predictions'] as List?)
+        final preds = (data['predictions'] as List?)
                 ?.map((p) => _Prediction.fromJson(p))
                 .toList() ??
             [];
@@ -799,25 +855,40 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
                   ),
                   onMapCreated: (c) => _mapCtrl ??= c,
                   myLocationEnabled: true,
-                  myLocationButtonEnabled: true,
+                  myLocationButtonEnabled: false,
                   zoomControlsEnabled: true,
                   markers: _markers,
                   polylines: _polylines,
                   onTap: (latLng) async {
-                    // Si hay listas abiertas, las cierro; si no, seteo destino por tap.
                     if (_predOrigen.isNotEmpty || _predDestino.isNotEmpty) {
                       setState(() {
                         _predOrigen = [];
                         _predDestino = [];
                       });
                     } else {
-                      _setDestino(
-                        latLng,
-                        '${latLng.latitude}, ${latLng.longitude}',
-                      );
+                      _setDestino(latLng, '${latLng.latitude}, ${latLng.longitude}');
                       await _construirRutaSiPosible();
                     }
                   },
+                ),
+
+                Positioned(
+                  bottom: 20,
+                  left: 20,
+                  child: FloatingActionButton.small(
+                    heroTag: 'btn_mi_ubicacion',
+                    backgroundColor: Colors.white,
+                    onPressed: () async {
+                      final pos = await Geolocator.getCurrentPosition(
+                        desiredAccuracy: LocationAccuracy.high,
+                      );
+                      final current = LatLng(pos.latitude, pos.longitude);
+                      _mapCtrl?.animateCamera(
+                        CameraUpdate.newLatLngZoom(current, 16),
+                      );
+                    },
+                    child: const Icon(Icons.my_location, color: Colors.black87),
+                  ),
                 ),
 
                 // ======= Controles de búsqueda + listas =======
@@ -887,11 +958,9 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
                         drivers: _drivers,
                         selected: _selectedDriver,
                         onSurgeChanged: (v) => setState(() => _surge = v),
-                        onSelectDriver: (d) =>
-                            setState(() => _selectedDriver = d),
+                        onSelectDriver: (d) => setState(() => _selectedDriver = d),
                         onConfirm: () {
-                          final total =
-                              _fare * (_selectedDriver?.multiplier ?? 1.0);
+                          final total = _fare * (_selectedDriver?.multiplier ?? 1.0);
                           _msg(
                             '¡Viaje solicitado! Conductor: ${_selectedDriver?.name ?? "—"}  •  Estimado: \$${total.toStringAsFixed(0)}',
                           );
@@ -908,7 +977,9 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
   }
 }
 
-/* =================== Viajes realizados =================== */
+/// =================================================================================
+///  Viajes realizados
+/// =================================================================================
 class ViajesRealizadosScreen extends StatelessWidget {
   const ViajesRealizadosScreen({super.key});
   @override
@@ -922,69 +993,14 @@ class ViajesRealizadosScreen extends StatelessWidget {
   }
 }
 
-/* =================== Cuenta =================== */
-class CuentaScreen extends StatelessWidget {
-  const CuentaScreen({super.key});
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Información de cuenta')),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: Card(
-            elevation: 1,
-            color: cs.surface,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: const Padding(
-              padding: EdgeInsets.all(20),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 36,
-                    backgroundImage: NetworkImage(
-                      'https://i.pravatar.cc/150?img=12',
-                    ),
-                  ),
-                  SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Braian Barrionuevo',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        SizedBox(height: 4),
-                        Text('braian@example.com'),
-                        SizedBox(height: 12),
-                        Text('Estado: Verificado ✅'),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/* =================== Widgets auxiliares =================== */
+/// =================================================================================
+///  Widgets auxiliares
+/// =================================================================================
 class _SearchField extends StatelessWidget {
   final String hint;
   final TextEditingController controller;
   final VoidCallback onSearch;
   final IconData? prefix;
-
   final ValueChanged<String>? onChanged;
   final FocusNode? focusNode;
 
@@ -1021,15 +1037,6 @@ class _SearchField extends StatelessWidget {
             ),
             onSubmitted: (_) => onSearch(),
             onChanged: onChanged,
-          ),
-        ),
-        const SizedBox(width: 8),
-        SizedBox(
-          height: 44,
-          width: 44,
-          child: IconButton.filled(
-            onPressed: onSearch,
-            icon: const Icon(Icons.search),
           ),
         ),
       ],
@@ -1078,7 +1085,9 @@ class _PredictionsList extends StatelessWidget {
   }
 }
 
-/* =================== Panel con costo y conductor =================== */
+/// =================================================================================
+///  Panel con costo y conductor
+/// =================================================================================
 class _RideBottomSheet extends StatelessWidget {
   final String distanceText;
   final String durationText;
@@ -1110,7 +1119,6 @@ class _RideBottomSheet extends StatelessWidget {
     required this.onSelectDriver,
     required this.onConfirm,
     required this.estimate,
-    super.key,
   });
 
   @override
@@ -1240,7 +1248,9 @@ class _RideBottomSheet extends StatelessWidget {
   }
 }
 
-/* =================== Modelos =================== */
+/// =================================================================================
+///  Modelos simples
+/// =================================================================================
 class _Driver {
   final String name;
   final double rating;

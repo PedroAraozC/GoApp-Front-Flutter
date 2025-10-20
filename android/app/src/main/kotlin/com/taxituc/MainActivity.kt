@@ -1,4 +1,4 @@
-package com.example.go_app_flutter
+package com.taxituc
 
 import io.flutter.embedding.android.FlutterActivity
 

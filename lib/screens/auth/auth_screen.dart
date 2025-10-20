@@ -1,31 +1,153 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:go_app_flutter/services/user_preferences.dart';
 import '../auth/services/auth_service.dart';
+import '../auth/services/google_auth_service.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import '../home/home_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-class AuthScreen extends StatefulWidget {
-  const AuthScreen({super.key});
+class AuthScreen2 extends StatefulWidget {
+  const AuthScreen2({super.key});
 
   @override
-  State<AuthScreen> createState() => _AuthScreenState();
+  State<AuthScreen2> createState() => _AuthScreen2State();
 }
 
-class _AuthScreenState extends State<AuthScreen> {
+class _AuthScreen2State extends State<AuthScreen2> {
   int _selectedTab = 0; // 0 = Iniciar, 1 = Registrarse
   bool _isPasswordVisible = false;
   bool _isConfirmPasswordVisible = false;
+  bool _isLoading = false; // Estado para mostrar un indicador de carga
 
   // 🔹 Controladores de texto
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
-  // 🔹 Instancia del servicio
+  // 🔹 Instancias de servicios
   final _authService = AuthService();
+  final _authGoogleService = AuthGoogleService();
+  final _googleSignIn = GoogleSignIn(
+    scopes: ['email', 'profile'],
+    serverClientId:
+        '125703789007-m6785nj61t63qvdjkok8qokrd9tsdoog.apps.googleusercontent.com',
+  );
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  // ===================================
+  // 🔹 Lógica de Autenticación
+  // ===================================
+
+  ///////// desde aqui
+
+  Future<void> _handleLogin() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Por favor completa todos los campos')),
+      );
+      setState(() => _isLoading = false);
+      return;
+    }
+
+    try {
+      final user = await _authService.login(email, password);
+      print(user);
+      if (user != null) {
+        // 🎉 Login exitoso
+        await UserPreferences.saveUser(user);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Bienvenido, ${user['nombre_usuario'] ?? 'usuario'}'),
+          ),
+        );
+
+        // ✅ Navegar a HomeScreen
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => HomeScreen(user: user)),
+        );
+      } else {
+        // ⚠️ Credenciales incorrectas
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Email o contraseña incorrectos')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al iniciar sesión: ${e.toString()}')),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _handleGoogleSignIn() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+
+    try {
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+
+      if (googleUser == null) {
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+      final String? idToken = googleAuth.idToken;
+
+      if (idToken == null) {
+        throw Exception('No se pudo obtener el token de Google.');
+      }
+
+      final user = await _authGoogleService.loginWithGoogle(idToken);
+      await UserPreferences.saveUser(user); // 👈 Persistir usuario Google
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Bienvenido, ${user['nombre_usuario'] ?? 'usuario'}'),
+        ),
+      );
+
+      // ✅ Navegar directamente al HomeScreen
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('isLoggedIn', true);
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => HomeScreen(user: user)),
+      );
+    } catch (e) {
+      await _googleSignIn.signOut();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al iniciar sesión con Google: ${e.toString()}'),
+        ),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  ///////////// hasta aqui
+
+  // (opcional) Placeholder para registro
+  void _handleRegister() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Función de registro no implementada aún')),
+    );
   }
 
   @override
@@ -35,7 +157,10 @@ class _AuthScreenState extends State<AuthScreen> {
       body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 40.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 24.0,
+              vertical: 40.0,
+            ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -61,12 +186,16 @@ class _AuthScreenState extends State<AuthScreen> {
 
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 300),
-                  child: _selectedTab == 1 ? _buildRegisterForm() : _buildLoginForm(),
+                  child: _selectedTab == 1
+                      ? _buildRegisterForm()
+                      : _buildLoginForm(),
                 ),
                 const SizedBox(height: 24),
 
                 ElevatedButton(
-                  onPressed: _selectedTab == 0 ? _handleLogin : _handleRegister,
+                  onPressed: _isLoading
+                      ? null
+                      : (_selectedTab == 0 ? _handleLogin : _handleRegister),
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     backgroundColor: const Color(0xFF5A4FF1),
@@ -74,10 +203,22 @@ class _AuthScreenState extends State<AuthScreen> {
                       borderRadius: BorderRadius.circular(30),
                     ),
                   ),
-                  child: Text(
-                    _selectedTab == 1 ? 'Crear Cuenta' : 'Iniciar Sesión',
-                    style: const TextStyle(fontSize: 18, color: Colors.white),
-                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 3,
+                          ),
+                        )
+                      : Text(
+                          _selectedTab == 1 ? 'Crear Cuenta' : 'Iniciar Sesión',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            color: Colors.white,
+                          ),
+                        ),
                 ),
                 const SizedBox(height: 24),
 
@@ -87,7 +228,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 _buildSocialButton(
                   icon: FontAwesomeIcons.google,
                   label: 'Continuar con Google',
-                  onPressed: () {},
+                  onPressed: _isLoading ? null : _handleGoogleSignIn,
                 ),
                 const SizedBox(height: 16),
               ],
@@ -99,49 +240,7 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   // ==============================
-  // 🔹 Lógica del botón Login
-  // ==============================
-  Future<void> _handleLogin() async {
-    final email = _emailController.text.trim();
-    final password = _passwordController.text.trim();
-
-    if (email.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor completa todos los campos')),
-      );
-      return;
-    }
-
-    try {
-      final user = await _authService.login(email, password);
-
-      if (user != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Bienvenido, ${user['nombre'] ?? 'usuario'}')),
-        );
-        // 👉 Navegar al Home o pantalla principal:
-        // Navigator.pushReplacementNamed(context, '/home');
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Credenciales incorrectas')),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al iniciar sesión: $e')),
-      );
-    }
-  }
-
-  // (opcional) Placeholder para registro
-  void _handleRegister() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Función de registro no implementada aún')),
-    );
-  }
-
-  // ==============================
-  // 🔹 Formularios
+  // 🔹 Formularios y Widgets (sin cambios mayores)
   // ==============================
   Widget _buildRegisterForm() {
     return Column(
@@ -205,9 +304,7 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  // ==============================
-  // 🔹 Widgets Auxiliares
-  // ==============================
+  // El resto de tus widgets auxiliares (_buildTabSelector, _buildTextField, etc.) van aquí sin cambios.
   Widget _buildTabSelector() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -310,7 +407,7 @@ class _AuthScreenState extends State<AuthScreen> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: Text(
-            _selectedTab == 1 ? 'O registrate con:' : 'O iniciar Sesión con:',
+            _selectedTab == 1 ? 'O regístrate con:' : 'O iniciar Sesión con:',
             style: const TextStyle(color: Colors.grey),
           ),
         ),
@@ -322,7 +419,7 @@ class _AuthScreenState extends State<AuthScreen> {
   Widget _buildSocialButton({
     required IconData icon,
     required String label,
-    required VoidCallback onPressed,
+    required VoidCallback? onPressed,
   }) {
     return OutlinedButton.icon(
       onPressed: onPressed,
@@ -331,9 +428,7 @@ class _AuthScreenState extends State<AuthScreen> {
       style: OutlinedButton.styleFrom(
         padding: const EdgeInsets.symmetric(vertical: 16),
         side: const BorderSide(color: Colors.grey),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
       ),
     );
   }
