@@ -34,6 +34,18 @@ class _CompletarDatosScreenState extends State<CompletarDatosScreen> {
 
   bool _saving = false;
 
+  String _clean(dynamic v) {
+  if (v == null) return '';
+  if (v is String) {
+    final s = v.trim();
+    if (s.isEmpty) return '';
+    if (s.toLowerCase() == 'null') return '';
+    return s;
+  }
+  return '$v';
+}
+
+/*
   @override
   void initState() {
     super.initState();
@@ -45,7 +57,25 @@ class _CompletarDatosScreenState extends State<CompletarDatosScreen> {
     _emailController    = TextEditingController(text: (u['email'] ?? u['email_usuario'] ?? '').toString());
     _idGeneroSeleccionado = u['id_genero'] as int?;
   }
+*/
+@override
+void initState() {
+  super.initState();
+  
+  final u = widget.user;
 
+  _dniController   = TextEditingController(text: _clean(u['dni'] ?? u['dni_usuario']));
+  _fechaController = TextEditingController(text: _clean(u['fecha_nacimiento'] ?? u['fechaNacimiento']));
+  _telefonoController   = TextEditingController(text: _clean(u['telefono'] ?? u['telefono_usuario']));
+  _emailController  = TextEditingController(text: _clean(u['email'] ?? u['email_usuario']));
+
+
+  print(_dniController.text);
+  print(_fechaController.text);
+  final gRaw = u['id_genero'];
+  _idGeneroSeleccionado = (gRaw is int) ? gRaw : int.tryParse('${gRaw ?? ''}');
+}
+  
   @override
   void dispose() {
     _dniController.dispose();
@@ -82,6 +112,12 @@ class _CompletarDatosScreenState extends State<CompletarDatosScreen> {
       if (!mounted) return;
       if (ok) {
         Navigator.pop(context, true); // ✔️ éxito
+        print("Correctou");
+        print(_dniController.text);
+        print(_fechaController.text);
+        print(_idGeneroSeleccionado);
+        print(_telefonoController.text);
+        print(_emailController.text);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('No se pudo guardar los cambios.')),
@@ -166,7 +202,7 @@ class _CompletarDatosScreenState extends State<CompletarDatosScreen> {
 
                 // Género
                 DropdownButtonFormField<int>(
-                  value: _idGeneroSeleccionado,
+                  initialValue: _idGeneroSeleccionado,
                   items: _generos
                       .map(
                         (g) => DropdownMenuItem<int>(

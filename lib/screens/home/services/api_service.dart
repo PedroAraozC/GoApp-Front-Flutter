@@ -10,21 +10,20 @@ class ApiService {
   Future<Map<String, dynamic>?> obtenerUsuarioPorId(int id) async {
     try {
       final url = Uri.parse('$BASE_URL/usuarios/obtenerUsuarioId/$id');
-      final response = await http
-          .get(url)
-          .timeout(
-            const Duration(seconds: 10),
-            onTimeout: () {
-              throw Exception(
-                'Tiempo de espera agotado. Verifica tu conexión.',
-              );
-            },
-          );
+      // obtenerUsuarioPorId
+final response = await http
+  .get(url, headers: {
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache',
+  })
+  .timeout(const Duration(seconds: 10), onTimeout: () {
+    throw Exception('Tiempo de espera agotado. Verifica tu conexión.');
+  });
 
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
         final result = decoded['result'];
-
+        
         if (result is List && result.isNotEmpty) {
           return Map<String, dynamic>.from(result[0]);
         } else if (result is Map) {
@@ -61,6 +60,7 @@ class ApiService {
       'telefono_usuario': telefonoUsuario,
       'email': email, // backend lo mapea a email_usuario en el UPDATE
     });
+    
     try {
       final url = Uri.parse('$BASE_URL/usuarios/actualizarUsuario/$idUsuario');
       final response = await http.put(

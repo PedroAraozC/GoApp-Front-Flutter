@@ -16,6 +16,8 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:go_app_flutter/screens/home/services/api_service.dart';
 import 'widgets/completar_datos_screen.dart';
 
+
+
 /// =================================================================================
 ///  HOME SCREEN (Stateful) + chequeo de datos y modal CompletarDatosScreen
 /// =================================================================================
@@ -29,48 +31,136 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   /// Normaliza el mapa de usuario para usar claves consistentes en la app.
-  Map<String, dynamic> _normalizeUser(Map<String, dynamic> raw) {
-    return {
-      'id_usuario'      : raw['id_usuario'] ?? raw['id'] ?? raw['userId'],
-      'dni'             : raw['dni'],
-      'fecha_nacimiento': raw['fecha_nacimiento'],
-      'id_genero'       : raw['id_genero'],
-      'telefono'        : raw['telefono_usuario'] ?? raw['telefono'],
-      'email'           : raw['email_usuario'] ?? raw['email'],
-      'foto_perfil'     : raw['foto_perfil'] ?? raw['avatar'],
-      'nombre_usuario'  : raw['nombre_usuario'] ?? raw['nombre'],
-      'apellido_usuario': raw['apellido_usuario'] ?? raw['apellido'],
-      'token'           : raw['token'], // por si guardaste el token acá
-    };
+  /// 
+  /// 
+  
+  // Limpia strings vacíos o "null"
+String? _clean(dynamic v) {
+  if (v == null) return null;
+  if (v is String) {
+    final s = v.trim();
+    if (s.isEmpty) return null;
+    if (s.toLowerCase() == 'null') return null;
+    return s;
   }
+  return '$v';
+}
+
+int? _toInt(dynamic v) => (v is int) ? v : int.tryParse('${v ?? ''}');
+
+// 🔒 Normaliza aceptando VARIANTES de claves que puede enviar el back
+Map<String, dynamic> _normalizeUser(Map<String, dynamic>? rawIn) {
+  final raw = {...?rawIn};
+
+  return {
+    'id_usuario': raw['id_usuario'] ?? raw['id'] ?? raw['userId'],
+    'dni': _clean(raw['dni'] ?? raw['dni_usuario'] ?? raw['documento']),
+    'fecha_nacimiento': _clean(
+      raw['fecha_nacimiento'] ??
+      raw['fechaNacimiento'] ??
+      raw['fecha_nac'] ??
+      raw['fechaNacimiento_usuario'],
+    ),
+    'id_genero': _toInt(raw['id_genero'] ?? raw['genero_id'] ?? raw['idGenero']),
+    'telefono': _clean(raw['telefono'] ?? raw['telefono_usuario'] ?? raw['tel']),
+    'email': _clean(raw['email'] ?? raw['email_usuario']),
+    'foto_perfil': raw['foto_perfil'] ?? raw['avatar'] ?? raw['imagen_perfil'],
+    'nombre_usuario': raw['nombre_usuario'] ?? raw['nombre'],
+    'apellido_usuario': raw['apellido_usuario'] ?? raw['apellido'],
+    'token': raw['token'],
+  };
+}
+
+// 🚫 NO pises con null: preferí SIEMPRE lo que venga del back si no es null
+Map<String, dynamic> _mergePreferBackend(
+  Map<String, dynamic> local,
+  Map<String, dynamic>? backend,
+) {
+  final merged = {...local};
+  for (final e in (backend ?? {}).entries) {
+    if (e.value != null) merged[e.key] = e.value;
+  }
+  return merged;
+}
 
   /// Indica si faltan datos obligatorios antes de poder iniciar un viaje.
+  // Mejora: tratar "null"/'' y 0 (para género) como faltantes
   bool _needsProfileCompletion(Map<String, dynamic> u) {
-    final requiredKeys = ['dni', 'fecha_nacimiento', 'id_genero', 'telefono', 'email'];
-    for (final k in requiredKeys) {
-      final v = u[k];
+    bool isEmptyVal(v) {
       if (v == null) return true;
-      if (v is String && v.trim().isEmpty) return true;
+      if (v is String) {
+        final s = v.trim().toLowerCase();
+        return s.isEmpty || s == 'null';
+      }
+      return false;
     }
+
+    final dni = u['dni'];
+    final nac = u['fecha_nacimiento'];
+    final gen = u['id_genero'];
+    final tel = u['telefono'];
+    final mail = u['email'];
+
+    if (isEmptyVal(dni)) return true;
+    if (isEmptyVal(nac)) return true;
+
+    // género puede venir como String o int; 0 lo tratamos como faltante
+    int? g = gen is int ? gen : int.tryParse('${gen ?? ''}');
+    if (g == null || g == 0) return true;
+
+    if (isEmptyVal(tel)) return true;
+    if (isEmptyVal(mail)) return true;
+
     return false;
   }
 
+  // En HomeScreen (reemplaza tu _checkUserProfileAndNavigate)
   Future<void> _checkUserProfileAndNavigate(BuildContext context) async {
-    final userNorm = _normalizeUser(widget.user);
+    final api = ApiService();
+    final local = _normalizeUser(widget.user);
+    print("INFO -------------");
+    print(local);
 
-    if (_needsProfileCompletion(userNorm)) {
-      final updated = await showModalBottomSheet<bool>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (_) => CompletarDatosScreen(
-          user: userNorm,
-          api: ApiService(), // opcional
-        ),
-      );
+    // 1) Si no tengo id, no puedo pedir al back.
+    final id = local['id_usuario'];
+    if (id == null) {
+      // fallback: usa lo local
+      if (_needsProfileCompletion(local)) {
+        final updated = await _openCompletarDatos(local, api);
+        if (updated == true && mounted) {
+          // refresco opcional acá si conseguís el id luego
+        }
+        return;
+      }
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const IniciarViajeScreen()),
+        );
+      }
+      return;
+    }
 
+    // 2) Refetch siempre antes de decidir
+    final fresh = await api.obtenerUsuarioPorId(id);
+    print('📡 Datos del backend (fresh): $fresh');
+    final userFresh = _normalizeUser({
+      ...?fresh,
+      ...local,
+    }); // local rellena faltantes
+    // (opcional) persistir
+    await UserPreferences.saveUser(userFresh);
+
+    if (_needsProfileCompletion(userFresh)) {
+      final updated = await _openCompletarDatos(userFresh, api);
       if (updated == true && mounted) {
-        // (Opcional) Podés re-cargar el usuario desde tu backend y actualizar UserPreferences.
+        // Tras guardar, vuelve a pedir para navegar con datos frescos
+        final fresh2 = await api.obtenerUsuarioPorId(id);
+
+        final userFresh2 = _normalizeUser({...?fresh2, ...userFresh});
+        print("Correctou");
+        await UserPreferences.saveUser(userFresh2);
+        if (!mounted) return;
         Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const IniciarViajeScreen()),
@@ -85,6 +175,15 @@ class _HomeScreenState extends State<HomeScreen> {
         MaterialPageRoute(builder: (_) => const IniciarViajeScreen()),
       );
     }
+  }
+
+  Future<bool?> _openCompletarDatos(Map<String, dynamic> user, ApiService api) {
+    return showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => CompletarDatosScreen(user: user, api: api),
+    );
   }
 
   Future<void> _logout(BuildContext context) async {
@@ -187,7 +286,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => PerfilScreen(userId: user['id_usuario'] as int?),
+                    builder: (_) =>
+                        PerfilScreen(userId: user['id_usuario'] as int?),
                   ),
                 );
               },
@@ -222,8 +322,8 @@ class _HomeScreenState extends State<HomeScreen> {
               Text(
                 '¿Qué querés hacer hoy?',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               const SizedBox(height: 12),
               Text(
@@ -236,7 +336,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 icon: Icons.play_arrow_rounded,
                 title: 'Iniciar viaje',
                 subtitle: 'Configura origen, destino y comenzá',
-                onTap: () => _checkUserProfileAndNavigate(context), // 👈 chequeo + modal
+                onTap: () =>
+                    _checkUserProfileAndNavigate(context), // 👈 chequeo + modal
                 bg: cs.primary,
                 fg: cs.onPrimary,
                 filled: true,
@@ -329,13 +430,32 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
 
   double get _km => _distanceMeters / 1000.0;
   double get _mins => _durationSeconds / 60.0;
-  double get _fare => ((_baseFare + (_km * _perKm) + (_mins * _perMin)) * _surge);
+  double get _fare =>
+      ((_baseFare + (_km * _perKm) + (_mins * _perMin)) * _surge);
 
   // Conductores (mock)
   final List<_Driver> _drivers = const [
-    _Driver(name: 'Luis R.',  rating: 4.9, car: 'Toyota Etios',   etaMin: 3, multiplier: 1.0),
-    _Driver(name: 'María S.', rating: 4.8, car: 'Chevrolet Onix', etaMin: 4, multiplier: 1.1),
-    _Driver(name: 'Jorge A.', rating: 4.7, car: 'VW Gol',         etaMin: 6, multiplier: 0.95),
+    _Driver(
+      name: 'Luis R.',
+      rating: 4.9,
+      car: 'Toyota Etios',
+      etaMin: 3,
+      multiplier: 1.0,
+    ),
+    _Driver(
+      name: 'María S.',
+      rating: 4.8,
+      car: 'Chevrolet Onix',
+      etaMin: 4,
+      multiplier: 1.1,
+    ),
+    _Driver(
+      name: 'Jorge A.',
+      rating: 4.7,
+      car: 'VW Gol',
+      etaMin: 6,
+      multiplier: 0.95,
+    ),
   ];
   _Driver? _selectedDriver;
 
@@ -378,7 +498,8 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
     if (p == LocationPermission.denied) {
       p = await Geolocator.requestPermission();
     }
-    if (p == LocationPermission.denied || p == LocationPermission.deniedForever) {
+    if (p == LocationPermission.denied ||
+        p == LocationPermission.deniedForever) {
       _msg('Permiso de ubicación denegado.');
       return;
     }
@@ -614,7 +735,9 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
         return;
       }
 
-      final pts = result.points.map((p) => LatLng(p.latitude, p.longitude)).toList();
+      final pts = result.points
+          .map((p) => LatLng(p.latitude, p.longitude))
+          .toList();
       final polyline = Polyline(
         polylineId: const PolylineId('ruta'),
         points: pts,
@@ -681,8 +804,14 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
 
   Future<void> _ajustarCamaraAOrigenDestino(LatLng o, LatLng d) async {
     if (_mapCtrl == null) return;
-    final sw = LatLng(min(o.latitude, d.latitude), min(o.longitude, d.longitude));
-    final ne = LatLng(max(o.latitude, d.latitude), max(o.longitude, d.longitude));
+    final sw = LatLng(
+      min(o.latitude, d.latitude),
+      min(o.longitude, d.longitude),
+    );
+    final ne = LatLng(
+      max(o.latitude, d.latitude),
+      max(o.longitude, d.longitude),
+    );
     final bounds = LatLngBounds(southwest: sw, northeast: ne);
     await _mapCtrl!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 60));
   }
@@ -733,7 +862,8 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
           _msg('Autocomplete denegado: revisá tu API Key y habilitaciones.');
           return;
         }
-        final preds = (data['predictions'] as List?)
+        final preds =
+            (data['predictions'] as List?)
                 ?.map((p) => _Prediction.fromJson(p))
                 .toList() ??
             [];
@@ -866,7 +996,10 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
                         _predDestino = [];
                       });
                     } else {
-                      _setDestino(latLng, '${latLng.latitude}, ${latLng.longitude}');
+                      _setDestino(
+                        latLng,
+                        '${latLng.latitude}, ${latLng.longitude}',
+                      );
                       await _construirRutaSiPosible();
                     }
                   },
@@ -958,9 +1091,11 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
                         drivers: _drivers,
                         selected: _selectedDriver,
                         onSurgeChanged: (v) => setState(() => _surge = v),
-                        onSelectDriver: (d) => setState(() => _selectedDriver = d),
+                        onSelectDriver: (d) =>
+                            setState(() => _selectedDriver = d),
                         onConfirm: () {
-                          final total = _fare * (_selectedDriver?.multiplier ?? 1.0);
+                          final total =
+                              _fare * (_selectedDriver?.multiplier ?? 1.0);
                           _msg(
                             '¡Viaje solicitado! Conductor: ${_selectedDriver?.name ?? "—"}  •  Estimado: \$${total.toStringAsFixed(0)}',
                           );
