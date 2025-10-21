@@ -12,8 +12,10 @@ class RecuperarPasswordCodeScreen extends StatefulWidget {
 
 class _RecuperarPasswordCodeScreenState
     extends State<RecuperarPasswordCodeScreen> {
-  final List<TextEditingController> codeControllers =
-      List.generate(5, (_) => TextEditingController());
+  final List<TextEditingController> codeControllers = List.generate(
+    5,
+    (_) => TextEditingController(),
+  );
 
   bool isLoading = false;
   final String codigoCorrecto = "12345";
@@ -65,7 +67,9 @@ class _RecuperarPasswordCodeScreenState
         duration: Duration(seconds: 2),
       ),
     );*/
-    mostrarMensaje("El código de validación ha sido reenviado a tu dirección de correo electrónico.");
+    mostrarMensaje(
+      "El código de validación ha sido reenviado a tu dirección de correo electrónico.",
+    );
     iniciarCuentaRegresiva();
   }
 
@@ -77,12 +81,17 @@ class _RecuperarPasswordCodeScreenState
     await Future.delayed(const Duration(seconds: 1));
 
     if (codigoIngresado == codigoCorrecto) {
-      mostrarMensaje("El código de validación ha sido verificado correctamente.");
+      mostrarMensaje(
+        "El código de validación ha sido verificado correctamente.",
+      );
       for (var c in codeControllers) {
         c.clear();
       }
     } else {
-      mostrarMensaje("El código de validación ingresado no es correcto.", error: true);
+      mostrarMensaje(
+        "El código de validación ingresado no es correcto.",
+        error: true,
+      );
       for (var c in codeControllers) {
         c.clear();
       }
