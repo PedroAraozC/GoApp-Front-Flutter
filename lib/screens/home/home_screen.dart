@@ -145,8 +145,8 @@ Map<String, dynamic> _mergePreferBackend(
     final fresh = await api.obtenerUsuarioPorId(id);
     print('📡 Datos del backend (fresh): $fresh');
     final userFresh = _normalizeUser({
-      ...?fresh,
       ...local,
+      ...?fresh
     }); // local rellena faltantes
     // (opcional) persistir
     await UserPreferences.saveUser(userFresh);
