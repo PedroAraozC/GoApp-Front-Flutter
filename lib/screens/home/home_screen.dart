@@ -3,14 +3,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:go_app_flutter/screens/perfil/perfil_screen.dart';
+import 'package:TaxiTuc/screens/perfil/perfil_screen.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
-import 'package:go_app_flutter/screens/auth/auth_screen2.dart';
+import 'package:TaxiTuc/screens/auth/auth_screen2.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -148,7 +148,6 @@ class HomeScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              Text('Datos del usuario: ${user.toString()}'),
 
               Text(
                 'Podés iniciar un viaje nuevo o consultar tu historial.',

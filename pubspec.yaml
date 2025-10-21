@@ -1,4 +1,4 @@
-name: go_app_flutter
+name: TaxiTuc
 description: "A new Flutter project."
 publish_to: 'none'
 version: 0.1.0
@@ -22,12 +22,12 @@ dependencies:
   flutter_polyline_points: ^2.0.0
   uuid: ^4.4.0
   font_awesome_flutter: ^10.10.0
+  flutter_launcher_icons: ^0.14.4
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
-  flutter_launcher_icons: ^0.13.1
   flutter_native_splash: ^2.4.0
 
 flutter:
@@ -38,14 +38,31 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/images/taxituc.ico.png"
+  image_path: "assets/images/app_icon.png"
   min_sdk_android: 21 # o tu versión mínima
 
 flutter_native_splash:
-#   color: "#000000"               # Color de fondo
-  image: assets/images/app_icon.png   # Tu logo central
-#   android_12:
-#     image: assets/images/splash_logo.png
-#     color: "#000000"
+  # Colores de fondo
+  #color: "#FFFFFF"           # claro
+  #color_dark: "#000000"      # oscuro
 
+  # Imagen principal
+  image: assets/images/splash_inicio.png
+  image_dark: assets/images/splash_inicio.png
 
+    # Android 12 (recomendado definir imágenes con padding)
+  android_12:
+    image: assets/images/splash_inicio.png
+    image_dark: assets/images/splash_inicio.png
+    icon_background_color: "#FFFFFF"
+    icon_background_color_dark: "#000000"
+
+  # Plataformas
+  android: true
+  ios: true
+  web: false
+
+  # Layout / modo de ajuste
+  fullscreen: true
+  android_gravity: center        # top, center, bottom, etc.
+  ios_content_mode: center 

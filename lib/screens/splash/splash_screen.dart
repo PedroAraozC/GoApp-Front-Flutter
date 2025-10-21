@@ -22,8 +22,10 @@ class _SplashScreenState extends State<SplashScreen>
       duration: const Duration(seconds: 2),
     );
     _fade = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
-    _scale = Tween<double>(begin: 0.8, end: 1.0)
-        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutBack));
+    _scale = Tween<double>(
+      begin: 0.8,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutBack));
 
     _controller.forward();
 
@@ -56,7 +58,7 @@ class _SplashScreenState extends State<SplashScreen>
           opacity: _fade,
           child: ScaleTransition(
             scale: _scale,
-            child: Image.asset('assets/images/inicio_logo.png', width: 180),
+            child: Image.asset('assets/images/taxituc_splash.png', width: 180),
           ),
         ),
       ),

@@ -15,17 +15,38 @@ class GoApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Tucu Taxi',
+      title: 'TaxiTuc',
+
+      // ✅ Respeta el tema del sistema (claro/oscuro)
+      themeMode: ThemeMode.system,
+
+      // ✅ Tema claro
       theme: ThemeData(
-        colorSchemeSeed: const Color(0xFFFFCC00),
         useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFFFFCC00), // amarillo TaxiTuc (seed)
+          brightness: Brightness.light,
+        ),
       ),
+
+      // ✅ Tema oscuro
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFFFFCC00),
+          brightness: Brightness.dark,
+        ),
+      ),
+
+      // Localización
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: const [Locale('es', 'ES'), Locale('en', 'US')],
+
+      // Rutas
       initialRoute: '/splash',
       routes: {
         '/splash': (_) => const SplashScreen(),
