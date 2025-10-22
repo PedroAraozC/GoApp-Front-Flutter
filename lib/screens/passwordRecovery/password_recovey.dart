@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-
 import 'package:flutter/services.dart';
+import '../../services/auth_service.dart';
+import '../passwordRecoveryCode/password_recovery_code.dart';
 
 class RecuperarPasswordScreen extends StatefulWidget {
   const RecuperarPasswordScreen({super.key});
@@ -22,24 +23,41 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
     final email = emailController.text.trim();
     final dni = dniController.text.trim();
 
-    // Validar email
     if (email.isEmpty || !email.contains("@")) {
       mostrarMensaje("Por favor ingresá un correo válido", error: true);
       setState(() => isLoading = false);
       return;
     }
 
-    await Future.delayed(const Duration(seconds: 2));
+    if (dni.isEmpty) {
+      mostrarMensaje("Por favor ingresá tu DNI", error: true);
+      setState(() => isLoading = false);
+      return;
+    }
 
-    final exito = email == "usuario@ejemplo.com";
-    final exito2 = dni == "40274452";
+    try {
+      final result = await AuthService.recuperarPassword(dni, email);
 
-    if (exito && exito2) {
-      mostrarMensaje("Se envió el enlace de recuperación a tu correo");
-      emailController.clear();
-      dniController.clear();
-    } else {
-      mostrarMensaje("El correo electrónico o DNI ingresado no está registrado.", error: true);
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        mostrarMensaje("Código enviado al correo");
+
+        // Navegar a la pantalla donde el usuario ingresa el código recibido
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => RecuperarPasswordCodeScreen(dni: dni, email: email),
+          ),
+        );
+      } else {
+        mostrarMensaje(
+          result['message'] ?? "Error al enviar código",
+          error: true,
+        );
+      }
+    } catch (e) {
+      mostrarMensaje("Error al conectar con el servidor", error: true);
     }
 
     setState(() => isLoading = false);
@@ -86,27 +104,21 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
               const SizedBox(height: 12),
               const Text(
                 "Ingresá tu correo electrónico y te enviaremos un enlace para restablecer tu contraseña.",
-                style: TextStyle(
-                  color: Colors.black54,
-                  fontSize: 15,
-                ),
+                style: TextStyle(color: Colors.black54, fontSize: 15),
               ),
               const SizedBox(height: 40),
 
               TextField(
                 controller: dniController,
                 keyboardType: TextInputType.number,
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly,
-                ],
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 style: const TextStyle(color: Colors.black87),
                 decoration: InputDecoration(
                   filled: true,
                   fillColor: Colors.white,
                   hintText: "Número de documento",
                   hintStyle: const TextStyle(color: Colors.black38),
-                  prefixIcon: const Icon(Icons.badge,
-                      color: Colors.black45),
+                  prefixIcon: const Icon(Icons.badge, color: Colors.black45),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                     borderSide: BorderSide.none,
@@ -114,10 +126,14 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                     borderSide: const BorderSide(
-                        color: Color(0xFF6C63FF), width: 1.5),
+                      color: Color(0xFF6C63FF),
+                      width: 1.5,
+                    ),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
-                      vertical: 18, horizontal: 16),
+                    vertical: 18,
+                    horizontal: 16,
+                  ),
                 ),
               ),
 
@@ -132,8 +148,10 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
                   fillColor: Colors.white,
                   hintText: "Correo electrónico",
                   hintStyle: const TextStyle(color: Colors.black38),
-                  prefixIcon: const Icon(Icons.email_outlined,
-                      color: Colors.black45),
+                  prefixIcon: const Icon(
+                    Icons.email_outlined,
+                    color: Colors.black45,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                     borderSide: BorderSide.none,
@@ -141,10 +159,14 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                     borderSide: const BorderSide(
-                        color: Color(0xFF6C63FF), width: 1.5),
+                      color: Color(0xFF6C63FF),
+                      width: 1.5,
+                    ),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
-                      vertical: 18, horizontal: 16),
+                    vertical: 18,
+                    horizontal: 16,
+                  ),
                 ),
               ),
 

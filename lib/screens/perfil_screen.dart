@@ -62,7 +62,7 @@ Future<void> _fetchUserData() async {
   });
 
   try {
-    final url = Uri.parse('http://192.168.1.13:3000/usuarios/obtenerUsuarioId/2');
+    final url = Uri.parse('http://186.123.85.22:3000/usuarios/obtenerUsuarioId/2');
     final response = await http.get(url).timeout(
       const Duration(seconds: 10),
       onTimeout: () {

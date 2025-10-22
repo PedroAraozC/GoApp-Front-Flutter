@@ -1,7 +1,14 @@
 import 'package:flutter/material.dart';
+import '../../services/auth_service.dart';
 
 class ChangePasswordScreen extends StatefulWidget {
-  const ChangePasswordScreen({super.key});
+  final String dni;
+  final String email;
+  const ChangePasswordScreen({
+    super.key,
+    required this.dni,
+    required this.email,
+  });
 
   @override
   State<ChangePasswordScreen> createState() => _ChangePasswordScreenState();
@@ -33,8 +40,10 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     }
 
     if (nueva.length < 6) {
-      mostrarMensaje("La nueva contraseña debe tener al menos 6 caracteres",
-          error: true);
+      mostrarMensaje(
+        "La nueva contraseña debe tener al menos 6 caracteres",
+        error: true,
+      );
       setState(() => isLoading = false);
       return;
     }
@@ -45,14 +54,29 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       return;
     }
 
-    await Future.delayed(const Duration(seconds: 2));
-
-    mostrarMensaje("Contraseña cambiada exitosamente");
-    currentPasswordController.clear();
-    newPasswordController.clear();
-    confirmPasswordController.clear();
+    final response = await AuthService.cambiarPassword(
+      dni: widget.dni,
+      email: widget.email,
+      actual: current,
+      nueva: nueva,
+    );
 
     setState(() => isLoading = false);
+
+    await Future.delayed(const Duration(seconds: 2));
+
+    if (response['success'] == true) {
+      mostrarMensaje("Contraseña cambiada exitosamente");
+      currentPasswordController.clear();
+      newPasswordController.clear();
+      confirmPasswordController.clear();
+
+      // Podés redirigir al login, por ejemplo:
+      //Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+      print("Te vas al login");
+    } else {
+      mostrarMensaje(response['message'] ?? "Error al cambiar la contraseña", error: true);
+    }
   }
 
   void mostrarMensaje(String mensaje, {bool error = false}) {
@@ -74,8 +98,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       backgroundColor: const Color(0xFFF5F5F5),
       body: SafeArea(
         child: Padding(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 24.0, vertical: 40.0),
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 40.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -97,10 +120,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
               const SizedBox(height: 12),
               const Text(
                 "Ingresá tu contraseña actual y establecé una nueva.",
-                style: TextStyle(
-                  color: Colors.black54,
-                  fontSize: 15,
-                ),
+                style: TextStyle(color: Colors.black54, fontSize: 15),
               ),
               const SizedBox(height: 40),
 
@@ -114,8 +134,10 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   fillColor: Colors.white,
                   hintText: "Contraseña actual",
                   hintStyle: const TextStyle(color: Colors.black38),
-                  prefixIcon:
-                      const Icon(Icons.lock_outline, color: Colors.black45),
+                  prefixIcon: const Icon(
+                    Icons.lock_outline,
+                    color: Colors.black45,
+                  ),
                   suffixIcon: IconButton(
                     icon: Icon(
                       showCurrentPassword
@@ -124,8 +146,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                       color: Colors.black45,
                     ),
                     onPressed: () {
-                      setState(() =>
-                          showCurrentPassword = !showCurrentPassword);
+                      setState(
+                        () => showCurrentPassword = !showCurrentPassword,
+                      );
                     },
                   ),
                   border: OutlineInputBorder(
@@ -135,10 +158,14 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                     borderSide: const BorderSide(
-                        color: Color(0xFF6C63FF), width: 1.5),
+                      color: Color(0xFF6C63FF),
+                      width: 1.5,
+                    ),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
-                      vertical: 18, horizontal: 16),
+                    vertical: 18,
+                    horizontal: 16,
+                  ),
                 ),
               ),
               const SizedBox(height: 20),
@@ -153,13 +180,13 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   fillColor: Colors.white,
                   hintText: "Nueva contraseña",
                   hintStyle: const TextStyle(color: Colors.black38),
-                  prefixIcon:
-                      const Icon(Icons.lock_reset, color: Colors.black45),
+                  prefixIcon: const Icon(
+                    Icons.lock_reset,
+                    color: Colors.black45,
+                  ),
                   suffixIcon: IconButton(
                     icon: Icon(
-                      showNewPassword
-                          ? Icons.visibility_off
-                          : Icons.visibility,
+                      showNewPassword ? Icons.visibility_off : Icons.visibility,
                       color: Colors.black45,
                     ),
                     onPressed: () {
@@ -173,10 +200,14 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                     borderSide: const BorderSide(
-                        color: Color(0xFF6C63FF), width: 1.5),
+                      color: Color(0xFF6C63FF),
+                      width: 1.5,
+                    ),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
-                      vertical: 18, horizontal: 16),
+                    vertical: 18,
+                    horizontal: 16,
+                  ),
                 ),
               ),
               const SizedBox(height: 20),
@@ -191,8 +222,10 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   fillColor: Colors.white,
                   hintText: "Confirmar nueva contraseña",
                   hintStyle: const TextStyle(color: Colors.black38),
-                  prefixIcon:
-                      const Icon(Icons.lock_person, color: Colors.black45),
+                  prefixIcon: const Icon(
+                    Icons.lock_person,
+                    color: Colors.black45,
+                  ),
                   suffixIcon: IconButton(
                     icon: Icon(
                       showConfirmPassword
@@ -201,8 +234,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                       color: Colors.black45,
                     ),
                     onPressed: () {
-                      setState(() =>
-                          showConfirmPassword = !showConfirmPassword);
+                      setState(
+                        () => showConfirmPassword = !showConfirmPassword,
+                      );
                     },
                   ),
                   border: OutlineInputBorder(
@@ -212,10 +246,14 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                     borderSide: const BorderSide(
-                        color: Color(0xFF6C63FF), width: 1.5),
+                      color: Color(0xFF6C63FF),
+                      width: 1.5,
+                    ),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
-                      vertical: 18, horizontal: 16),
+                    vertical: 18,
+                    horizontal: 16,
+                  ),
                 ),
               ),
               const SizedBox(height: 35),

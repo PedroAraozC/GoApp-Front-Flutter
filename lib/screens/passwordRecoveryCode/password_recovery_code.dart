@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
+import '../../services/auth_service.dart';
+import '../passwordChange/password_change.dart';
 
 class RecuperarPasswordCodeScreen extends StatefulWidget {
-  const RecuperarPasswordCodeScreen({super.key});
+  final String dni;
+  final String email;
+  const RecuperarPasswordCodeScreen({super.key, required this.dni, required this.email});
 
   @override
   State<RecuperarPasswordCodeScreen> createState() =>
@@ -18,7 +22,6 @@ class _RecuperarPasswordCodeScreenState
   );
 
   bool isLoading = false;
-  final String codigoCorrecto = "12345";
 
   int segundosRestantes = 50;
   bool puedeReenviar = false;
@@ -80,6 +83,7 @@ class _RecuperarPasswordCodeScreenState
 
     await Future.delayed(const Duration(seconds: 1));
 
+    /*
     if (codigoIngresado == codigoCorrecto) {
       mostrarMensaje(
         "El código de validación ha sido verificado correctamente.",
@@ -95,6 +99,26 @@ class _RecuperarPasswordCodeScreenState
       for (var c in codeControllers) {
         c.clear();
       }
+    }
+    */
+
+    try {
+      final response = await AuthService.verificarCodigo(widget.email, codigoIngresado);
+
+      if (response['success'] == true) {
+        mostrarMensaje("Código verificado correctamente");
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChangePasswordScreen(dni: widget.dni, email: widget.email),
+          ),
+        );
+      } else {
+        mostrarMensaje(response['message'] ?? "Código incorrecto", error: true);
+      }
+    } catch (e) {
+      mostrarMensaje("Error de conexión con el servidor.", error: true);
     }
 
     setState(() => isLoading = false);
