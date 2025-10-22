@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'screens/splash/splash_screen.dart';
-import 'screens/auth/auth_screen2.dart';
+import 'screens/auth/auth_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';

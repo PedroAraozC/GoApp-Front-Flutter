@@ -1,4 +1,4 @@
-// homescreen.dart
+// lib/screens/home/homescreen.dart
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
@@ -11,17 +11,204 @@ import 'package:geocoding/geocoding.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
-import 'package:go_app_flutter/screens/auth/auth_screen2.dart';
+import 'package:go_app_flutter/screens/auth/auth_screen.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:go_app_flutter/screens/home/services/api_service.dart';
+import 'widgets/completar_datos_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+/// =================================================================================
+///  HOME SCREEN (Stateful) + chequeo de datos y modal CompletarDatosScreen
+/// =================================================================================
+class HomeScreen extends StatefulWidget {
   final Map<String, dynamic> user;
   const HomeScreen({super.key, required this.user});
 
   @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  /// Normaliza el mapa de usuario para usar claves consistentes en la app.
+  ///
+  ///
+
+  // Limpia strings vacíos o "null"
+  String? _clean(dynamic v) {
+    if (v == null) return null;
+    if (v is String) {
+      final s = v.trim();
+      if (s.isEmpty) return null;
+      if (s.toLowerCase() == 'null') return null;
+      return s;
+    }
+    return '$v';
+  }
+
+  int? _toInt(dynamic v) => (v is int) ? v : int.tryParse('${v ?? ''}');
+
+  // 🔒 Normaliza aceptando VARIANTES de claves que puede enviar el back
+  Map<String, dynamic> _normalizeUser(Map<String, dynamic>? rawIn) {
+    final raw = {...?rawIn};
+
+    return {
+      'id_usuario': raw['id_usuario'] ?? raw['id'] ?? raw['userId'],
+      'dni': _clean(raw['dni'] ?? raw['dni_usuario'] ?? raw['documento']),
+      'fecha_nacimiento': _clean(
+        raw['fecha_nacimiento'] ??
+            raw['fechaNacimiento'] ??
+            raw['fecha_nac'] ??
+            raw['fechaNacimiento_usuario'],
+      ),
+      'id_genero': _toInt(
+        raw['id_genero'] ?? raw['genero_id'] ?? raw['idGenero'],
+      ),
+      'telefono': _clean(
+        raw['telefono'] ?? raw['telefono_usuario'] ?? raw['tel'],
+      ),
+      'email': _clean(raw['email'] ?? raw['email_usuario']),
+      'foto_perfil':
+          raw['foto_perfil'] ?? raw['avatar'] ?? raw['imagen_perfil'],
+      'nombre_usuario': raw['nombre_usuario'] ?? raw['nombre'],
+      'apellido_usuario': raw['apellido_usuario'] ?? raw['apellido'],
+      'token': raw['token'],
+    };
+  }
+
+  // 🚫 NO pises con null: preferí SIEMPRE lo que venga del back si no es null
+  Map<String, dynamic> _mergePreferBackend(
+    Map<String, dynamic> local,
+    Map<String, dynamic>? backend,
+  ) {
+    final merged = {...local};
+    for (final e in (backend ?? {}).entries) {
+      if (e.value != null) merged[e.key] = e.value;
+    }
+    return merged;
+  }
+
+  /// Indica si faltan datos obligatorios antes de poder iniciar un viaje.
+  // Mejora: tratar "null"/'' y 0 (para género) como faltantes
+  bool _needsProfileCompletion(Map<String, dynamic> u) {
+    bool isEmptyVal(v) {
+      if (v == null) return true;
+      if (v is String) {
+        final s = v.trim().toLowerCase();
+        return s.isEmpty || s == 'null';
+      }
+      return false;
+    }
+
+    final dni = u['dni'];
+    final nac = u['fecha_nacimiento'];
+    final gen = u['id_genero'];
+    final tel = u['telefono'];
+    final mail = u['email'];
+
+    if (isEmptyVal(dni)) return true;
+    if (isEmptyVal(nac)) return true;
+
+    // género puede venir como String o int; 0 lo tratamos como faltante
+    int? g = gen is int ? gen : int.tryParse('${gen ?? ''}');
+    if (g == null || g == 0) return true;
+
+    if (isEmptyVal(tel)) return true;
+    if (isEmptyVal(mail)) return true;
+
+    return false;
+  }
+
+  // En HomeScreen (reemplaza tu _checkUserProfileAndNavigate)
+  Future<void> _checkUserProfileAndNavigate(BuildContext context) async {
+    final api = ApiService();
+    final local = _normalizeUser(widget.user);
+    print("INFO -------------");
+    print(local);
+
+    // 1) Si no tengo id, no puedo pedir al back.
+    final id = local['id_usuario'];
+    if (id == null) {
+      // fallback: usa lo local
+      if (_needsProfileCompletion(local)) {
+        final updated = await _openCompletarDatos(local, api);
+        if (updated == true && mounted) {
+          // refresco opcional acá si conseguís el id luego
+        }
+        return;
+      }
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const IniciarViajeScreen()),
+        );
+      }
+      return;
+    }
+
+    // 2) Refetch siempre antes de decidir
+    final fresh = await api.obtenerUsuarioPorId(id);
+    print('📡 Datos del backend (fresh): $fresh');
+    final userFresh = _normalizeUser({
+      ...local,
+      ...?fresh,
+    }); // local rellena faltantes
+    // (opcional) persistir
+    await UserPreferences.saveUser(userFresh);
+
+    if (_needsProfileCompletion(userFresh)) {
+      final updated = await _openCompletarDatos(userFresh, api);
+      if (updated == true && mounted) {
+        // Tras guardar, vuelve a pedir para navegar con datos frescos
+        final fresh2 = await api.obtenerUsuarioPorId(id);
+
+        final userFresh2 = _normalizeUser({...?fresh2, ...userFresh});
+        print("Correctou");
+        await UserPreferences.saveUser(userFresh2);
+        if (!mounted) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const IniciarViajeScreen()),
+        );
+      }
+      return;
+    }
+
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const IniciarViajeScreen()),
+      );
+    }
+  }
+
+  Future<bool?> _openCompletarDatos(Map<String, dynamic> user, ApiService api) {
+    return showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => CompletarDatosScreen(user: user, api: api),
+    );
+  }
+
+  Future<void> _logout(BuildContext context) async {
+    try {
+      await UserPreferences.clearUser();
+      final g = GoogleSignIn(scopes: ['email', 'profile']);
+      await g.signOut();
+      await g.disconnect();
+    } catch (_) {}
+    if (context.mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const AuthScreen2()),
+        (_) => false,
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final user = _normalizeUser(widget.user);
 
     Widget buildActionCard({
       required IconData icon,
@@ -109,13 +296,7 @@ class HomeScreen extends StatelessWidget {
               },
               child: Row(
                 children: [
-                  const Padding(
-                    padding: EdgeInsets.only(right: 8),
-                    // child: Text(
-                    //   'Mi cuenta',
-                    //   style: TextStyle(fontWeight: FontWeight.w500),
-                    // ),
-                  ),
+                  const Padding(padding: EdgeInsets.only(right: 8)),
                   CircleAvatar(
                     radius: 18,
                     backgroundColor: cs.primaryContainer,
@@ -135,7 +316,6 @@ class HomeScreen extends StatelessWidget {
           ),
         ],
       ),
-
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -149,8 +329,6 @@ class HomeScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              Text('Datos del usuario: ${user.toString()}'),
-
               Text(
                 'Podés iniciar un viaje nuevo o consultar tu historial.',
                 style: Theme.of(context).textTheme.bodyMedium,
@@ -161,10 +339,8 @@ class HomeScreen extends StatelessWidget {
                 icon: Icons.play_arrow_rounded,
                 title: 'Iniciar viaje',
                 subtitle: 'Configura origen, destino y comenzá',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const IniciarViajeScreen()),
-                ),
+                onTap: () =>
+                    _checkUserProfileAndNavigate(context), // 👈 chequeo + modal
                 bg: cs.primary,
                 fg: cs.onPrimary,
                 filled: true,
@@ -216,27 +392,11 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
-
-  Future<void> _logout(BuildContext context) async {
-    try {
-      await UserPreferences.clearUser(); // 👈 Limpia usuario persistido
-
-      final g = GoogleSignIn(scopes: ['email', 'profile']);
-      await g.signOut();
-      await g.disconnect();
-    } catch (_) {}
-
-    if (context.mounted) {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const AuthScreen2()),
-        (_) => false,
-      );
-    }
-  }
 }
 
-/* =================== Iniciar Viaje (mapa + origen auto + autocomplete origen/destino + ruta + ETA + costo + conductor) =================== */
+/// =================================================================================
+///  Iniciar Viaje (mapa + origen auto + autocomplete origen/destino + ruta + ETA)
+/// =================================================================================
 class IniciarViajeScreen extends StatefulWidget {
   const IniciarViajeScreen({super.key});
   @override
@@ -245,7 +405,7 @@ class IniciarViajeScreen extends StatefulWidget {
 
 class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
   // ⚠️ Habilitar: Maps SDK, Places API, Directions API, Distance Matrix API
-  static const String kGoogleApiKey = 'AIzaSyAMP0ERTGQgCvTRknlbE7wA01WSvRtGHV4';
+  static const String kGoogleApiKey = 'TU_API_KEY_DE_GOOGLE'; // poné la tuya
 
   final _origenCtrl = TextEditingController();
   final _destinoCtrl = TextEditingController();
@@ -461,10 +621,9 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
       markerId: const MarkerId('origen'),
       position: pos,
       infoWindow: InfoWindow(title: 'Origen', snippet: etiqueta),
-      draggable: true, // 🟢 Permitir arrastrar
+      draggable: true,
       icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
       onDragEnd: (newPos) async {
-        // Cuando se suelta el pin, actualizar dirección
         try {
           final placemarks = await placemarkFromCoordinates(
             newPos.latitude,
@@ -484,7 +643,6 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
           _msg('Error al actualizar dirección: $e');
         }
 
-        // Actualizar posición del marcador en el mapa
         setState(() {
           _markers.removeWhere((m) => m.markerId.value == 'origen');
           _markers.add(
@@ -522,7 +680,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
       markerId: const MarkerId('destino'),
       position: pos,
       infoWindow: InfoWindow(title: 'Destino', snippet: etiqueta),
-      draggable: true, // 🟢 Ahora también se puede mover
+      draggable: true,
       icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
       onDragEnd: (newPos) async {
         final placemarks = await placemarkFromCoordinates(
@@ -676,7 +834,6 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
         return;
       }
 
-      // token de session por campo
       if (esOrigen) {
         _sessionTokenOrigin ??= _uuid.v4();
       } else {
@@ -686,7 +843,6 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
       try {
         final lat = _miUbicacion?.latitude;
         final lng = _miUbicacion?.longitude;
-
         final token = esOrigen ? _sessionTokenOrigin : _sessionTokenDest;
 
         final uri = Uri.parse(
@@ -695,9 +851,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
           '&language=es'
           '&key=$kGoogleApiKey'
           '&sessiontoken=$token'
-          // Sesgo por país (ajustá si querés)
           '&components=country:ar'
-          // Bias por ubicación del usuario (opcional)
           '${lat != null && lng != null ? '&location=$lat,$lng&radius=30000' : ''}',
         );
 
@@ -839,7 +993,6 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
                   markers: _markers,
                   polylines: _polylines,
                   onTap: (latLng) async {
-                    // Si hay listas abiertas, las cierro; si no, seteo destino por tap.
                     if (_predOrigen.isNotEmpty || _predDestino.isNotEmpty) {
                       setState(() {
                         _predOrigen = [];
@@ -873,6 +1026,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
                     child: const Icon(Icons.my_location, color: Colors.black87),
                   ),
                 ),
+
                 // ======= Controles de búsqueda + listas =======
                 Positioned(
                   top: 12,
@@ -961,7 +1115,9 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
   }
 }
 
-/* =================== Viajes realizados =================== */
+/// =================================================================================
+///  Viajes realizados
+/// =================================================================================
 class ViajesRealizadosScreen extends StatelessWidget {
   const ViajesRealizadosScreen({super.key});
   @override
@@ -975,69 +1131,14 @@ class ViajesRealizadosScreen extends StatelessWidget {
   }
 }
 
-/* =================== Cuenta =================== */
-// class CuentaScreen extends StatelessWidget {
-//   const CuentaScreen({super.key});
-//   @override
-//   Widget build(BuildContext context) {
-//     final cs = Theme.of(context).colorScheme;
-//     return Scaffold(
-//       appBar: AppBar(title: const Text('Información de cuenta')),
-//       body: Center(
-//         child: ConstrainedBox(
-//           constraints: const BoxConstraints(maxWidth: 520),
-//           child: Card(
-//             elevation: 1,
-//             color: cs.surface,
-//             shape: RoundedRectangleBorder(
-//               borderRadius: BorderRadius.circular(16),
-//             ),
-//             child: const Padding(
-//               padding: EdgeInsets.all(20),
-//               child: Row(
-//                 children: [
-//                   CircleAvatar(
-//                     radius: 36,
-//                     backgroundImage: NetworkImage(
-//                       'https://i.pravatar.cc/150?img=12',
-//                     ),
-//                   ),
-//                   SizedBox(width: 16),
-//                   Expanded(
-//                     child: Column(
-//                       crossAxisAlignment: CrossAxisAlignment.start,
-//                       children: [
-//                         Text(
-//                           'Braian Barrionuevo',
-//                           style: TextStyle(
-//                             fontSize: 18,
-//                             fontWeight: FontWeight.w700,
-//                           ),
-//                         ),
-//                         SizedBox(height: 4),
-//                         Text('braian@example.com'),
-//                         SizedBox(height: 12),
-//                         Text('Estado: Verificado ✅'),
-//                       ],
-//                     ),
-//                   ),
-//                 ],
-//               ),
-//             ),
-//           ),
-//         ),
-//       ),
-//     );
-//   }
-// }
-
-/* =================== Widgets auxiliares =================== */
+/// =================================================================================
+///  Widgets auxiliares
+/// =================================================================================
 class _SearchField extends StatelessWidget {
   final String hint;
   final TextEditingController controller;
   final VoidCallback onSearch;
   final IconData? prefix;
-
   final ValueChanged<String>? onChanged;
   final FocusNode? focusNode;
 
@@ -1076,15 +1177,6 @@ class _SearchField extends StatelessWidget {
             onChanged: onChanged,
           ),
         ),
-        // const SizedBox(width: 8),
-        // SizedBox(
-        //   height: 44,
-        //   width: 44,
-        //   child: IconButton.filled(
-        //     onPressed: onSearch,
-        //     icon: const Icon(Icons.search),
-        //   ),
-        // ),
       ],
     );
   }
@@ -1131,7 +1223,9 @@ class _PredictionsList extends StatelessWidget {
   }
 }
 
-/* =================== Panel con costo y conductor =================== */
+/// =================================================================================
+///  Panel con costo y conductor
+/// =================================================================================
 class _RideBottomSheet extends StatelessWidget {
   final String distanceText;
   final String durationText;
@@ -1292,7 +1386,9 @@ class _RideBottomSheet extends StatelessWidget {
   }
 }
 
-/* =================== Modelos =================== */
+/// =================================================================================
+///  Modelos simples
+/// =================================================================================
 class _Driver {
   final String name;
   final double rating;
