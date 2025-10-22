@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:go_app_flutter/services/user_preferences.dart';
 import '../auth/services/auth_service.dart';
 import '../auth/services/google_auth_service.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -27,9 +28,9 @@ class _AuthScreen2State extends State<AuthScreen2> {
   final _authService = AuthService();
   final _authGoogleService = AuthGoogleService();
   final _googleSignIn = GoogleSignIn(
-     scopes: ['email', 'profile'],
-  serverClientId: '125703789007-m6785nj61t63qvdjkok8qokrd9tsdoog.apps.googleusercontent.com',
-
+    scopes: ['email', 'profile'],
+    serverClientId:
+        '125703789007-m6785nj61t63qvdjkok8qokrd9tsdoog.apps.googleusercontent.com',
   );
 
   @override
@@ -42,6 +43,9 @@ class _AuthScreen2State extends State<AuthScreen2> {
   // ===================================
   // 🔹 Lógica de Autenticación
   // ===================================
+
+  ///////// desde aqui
+
   Future<void> _handleLogin() async {
     if (_isLoading) return;
     setState(() => _isLoading = true);
@@ -59,9 +63,10 @@ class _AuthScreen2State extends State<AuthScreen2> {
 
     try {
       final user = await _authService.login(email, password);
-
+      print(user);
       if (user != null) {
         // 🎉 Login exitoso
+        await UserPreferences.saveUser(user);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Bienvenido, ${user['nombre_usuario'] ?? 'usuario'}'),
@@ -71,7 +76,7 @@ class _AuthScreen2State extends State<AuthScreen2> {
         // ✅ Navegar a HomeScreen
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const HomeScreen(user:user)),
+          MaterialPageRoute(builder: (_) => HomeScreen(user: user)),
         );
       } else {
         // ⚠️ Credenciales incorrectas
@@ -109,6 +114,7 @@ class _AuthScreen2State extends State<AuthScreen2> {
       }
 
       final user = await _authGoogleService.loginWithGoogle(idToken);
+      await UserPreferences.saveUser(user); // 👈 Persistir usuario Google
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -119,7 +125,10 @@ class _AuthScreen2State extends State<AuthScreen2> {
       // ✅ Navegar directamente al HomeScreen
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('isLoggedIn', true);
-      Navigator.pushReplacementNamed(context, '/home');
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => HomeScreen(user: user)),
+      );
     } catch (e) {
       await _googleSignIn.signOut();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -131,6 +140,8 @@ class _AuthScreen2State extends State<AuthScreen2> {
       setState(() => _isLoading = false);
     }
   }
+
+  ///////////// hasta aqui
 
   // (opcional) Placeholder para registro
   void _handleRegister() {

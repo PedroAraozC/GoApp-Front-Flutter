@@ -4,16 +4,20 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:go_app_flutter/screens/perfil/perfil_screen.dart';
+import 'package:go_app_flutter/services/user_preferences.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
+import 'package:go_app_flutter/screens/auth/auth_screen2.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class HomeScreen extends StatelessWidget {
-  List user;
-  const HomeScreen({super.key, super.user});
+  final Map<String, dynamic> user;
+  const HomeScreen({super.key, required this.user});
 
   @override
   Widget build(BuildContext context) {
@@ -97,23 +101,26 @@ class HomeScreen extends StatelessWidget {
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const PerfilScreen()),
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        PerfilScreen(userId: user['id_usuario'] as int?),
+                  ),
                 );
               },
               child: Row(
                 children: [
                   const Padding(
                     padding: EdgeInsets.only(right: 8),
-                    child: Text(
-                      'Mi cuenta',
-                      style: TextStyle(fontWeight: FontWeight.w500),
-                    ),
+                    // child: Text(
+                    //   'Mi cuenta',
+                    //   style: TextStyle(fontWeight: FontWeight.w500),
+                    // ),
                   ),
                   CircleAvatar(
                     radius: 18,
                     backgroundColor: cs.primaryContainer,
-                    backgroundImage: const NetworkImage(
-                      'https://i.pravatar.cc/150?img=12',
+                    backgroundImage: NetworkImage(
+                      user['foto_perfil'] ?? 'https://i.pravatar.cc/150?img=12',
                     ),
                     child: Container(),
                   ),
@@ -121,8 +128,14 @@ class HomeScreen extends StatelessWidget {
               ),
             ),
           ),
+          IconButton(
+            tooltip: 'Cerrar sesión',
+            icon: const Icon(Icons.logout),
+            onPressed: () => _logout(context),
+          ),
         ],
       ),
+
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -136,6 +149,8 @@ class HomeScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
+              Text('Datos del usuario: ${user.toString()}'),
+
               Text(
                 'Podés iniciar un viaje nuevo o consultar tu historial.',
                 style: Theme.of(context).textTheme.bodyMedium,
@@ -200,6 +215,24 @@ class HomeScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _logout(BuildContext context) async {
+    try {
+      await UserPreferences.clearUser(); // 👈 Limpia usuario persistido
+
+      final g = GoogleSignIn(scopes: ['email', 'profile']);
+      await g.signOut();
+      await g.disconnect();
+    } catch (_) {}
+
+    if (context.mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const AuthScreen2()),
+        (_) => false,
+      );
+    }
   }
 }
 
@@ -801,7 +834,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
                   ),
                   onMapCreated: (c) => _mapCtrl ??= c,
                   myLocationEnabled: true,
-                  myLocationButtonEnabled: true,
+                  myLocationButtonEnabled: false,
                   zoomControlsEnabled: true,
                   markers: _markers,
                   polylines: _polylines,
@@ -822,6 +855,24 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
                   },
                 ),
 
+                Positioned(
+                  bottom: 20,
+                  left: 20,
+                  child: FloatingActionButton.small(
+                    heroTag: 'btn_mi_ubicacion',
+                    backgroundColor: Colors.white,
+                    onPressed: () async {
+                      final pos = await Geolocator.getCurrentPosition(
+                        desiredAccuracy: LocationAccuracy.high,
+                      );
+                      final current = LatLng(pos.latitude, pos.longitude);
+                      _mapCtrl?.animateCamera(
+                        CameraUpdate.newLatLngZoom(current, 16),
+                      );
+                    },
+                    child: const Icon(Icons.my_location, color: Colors.black87),
+                  ),
+                ),
                 // ======= Controles de búsqueda + listas =======
                 Positioned(
                   top: 12,
@@ -1025,15 +1076,15 @@ class _SearchField extends StatelessWidget {
             onChanged: onChanged,
           ),
         ),
-        const SizedBox(width: 8),
-        SizedBox(
-          height: 44,
-          width: 44,
-          child: IconButton.filled(
-            onPressed: onSearch,
-            icon: const Icon(Icons.search),
-          ),
-        ),
+        // const SizedBox(width: 8),
+        // SizedBox(
+        //   height: 44,
+        //   width: 44,
+        //   child: IconButton.filled(
+        //     onPressed: onSearch,
+        //     icon: const Icon(Icons.search),
+        //   ),
+        // ),
       ],
     );
   }

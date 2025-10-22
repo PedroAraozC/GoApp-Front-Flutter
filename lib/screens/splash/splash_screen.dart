@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:go_app_flutter/services/user_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:go_app_flutter/screens/home/home_screen.dart';
+import 'package:go_app_flutter/screens/auth/auth_screen2.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -22,8 +25,10 @@ class _SplashScreenState extends State<SplashScreen>
       duration: const Duration(seconds: 2),
     );
     _fade = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
-    _scale = Tween<double>(begin: 0.8, end: 1.0)
-        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutBack));
+    _scale = Tween<double>(
+      begin: 0.8,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutBack));
 
     _controller.forward();
 
@@ -31,13 +36,23 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _checkAuthStatus() async {
-    final prefs = await SharedPreferences.getInstance();
-    final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
+    final isLoggedIn = await UserPreferences.isLoggedIn();
 
     if (isLoggedIn) {
-      Navigator.pushReplacementNamed(context, '/home');
+      final user = await UserPreferences.getUser();
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => HomeScreen(user: user ?? {})),
+        );
+      }
     } else {
-      Navigator.pushReplacementNamed(context, '/auth');
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const AuthScreen2()),
+        );
+      }
     }
   }
 

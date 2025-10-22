@@ -7,7 +7,9 @@ class AuthGoogleService {
   // Iniciar sesión/Registrarse con Google
   Future<Map<String, dynamic>> loginWithGoogle(String idToken) async {
     final response = await http.post(
-      Uri.parse('$_baseUrl/usuarios/google_login'), // Nuevo endpoint para Google
+      Uri.parse(
+        '$_baseUrl/usuarios/google_login',
+      ), // Nuevo endpoint para Google
       headers: {'Content-Type': 'application/json'},
       body: json.encode({'token': idToken}),
     );

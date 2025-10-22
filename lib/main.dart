@@ -3,8 +3,15 @@ import 'screens/splash/splash_screen.dart';
 import 'screens/auth/auth_screen2.dart';
 import 'screens/home/home_screen.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'dart:io';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  final file = File('.env');
+  print('Existe .env? ${await file.exists()}');
+  await dotenv.load(fileName: ".env");
   runApp(const GoApp());
 }
 
@@ -30,7 +37,7 @@ class GoApp extends StatelessWidget {
       routes: {
         '/splash': (_) => const SplashScreen(),
         '/auth': (_) => const AuthScreen2(),
-        '/home': (_) => const HomeScreen(),
+        '/home': (_) => const HomeScreen(user: {}),
       },
     );
   }
