@@ -7,7 +7,11 @@ import '../passwordChange/password_change.dart';
 class RecuperarPasswordCodeScreen extends StatefulWidget {
   final String dni;
   final String email;
-  const RecuperarPasswordCodeScreen({super.key, required this.dni, required this.email});
+  const RecuperarPasswordCodeScreen({
+    super.key,
+    required this.dni,
+    required this.email,
+  });
 
   @override
   State<RecuperarPasswordCodeScreen> createState() =>
@@ -103,7 +107,10 @@ class _RecuperarPasswordCodeScreenState
     */
 
     try {
-      final response = await AuthService.verificarCodigo(widget.email, codigoIngresado);
+      final response = await AuthService.verificarCodigo(
+        widget.email,
+        codigoIngresado,
+      );
 
       if (response['success'] == true) {
         mostrarMensaje("Código verificado correctamente");
@@ -111,7 +118,8 @@ class _RecuperarPasswordCodeScreenState
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => ChangePasswordScreen(dni: widget.dni, email: widget.email),
+            builder: (context) =>
+                ChangePasswordScreen(dni: widget.dni, email: widget.email),
           ),
         );
       } else {

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_app_flutter/screens/passwordRecovery/password_recovey.dart';
 import 'screens/splash/splash_screen.dart';
-import 'screens/auth/auth_screen2.dart';
+import 'screens/auth/auth_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'package:go_app_flutter/screens/passwordRecoveryCode/password_recovery_code.dart';
 import 'package:go_app_flutter/screens/passwordChange/password_change.dart';

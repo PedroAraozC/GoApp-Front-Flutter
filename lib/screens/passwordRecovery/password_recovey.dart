@@ -47,7 +47,8 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => RecuperarPasswordCodeScreen(dni: dni, email: email),
+            builder: (context) =>
+                RecuperarPasswordCodeScreen(dni: dni, email: email),
           ),
         );
       } else {

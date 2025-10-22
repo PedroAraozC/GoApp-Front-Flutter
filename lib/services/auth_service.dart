@@ -1,10 +1,14 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AuthService {
-  static const String baseUrl = "http://192.168.100.10:3000";
+  static final baseUrl = dotenv.env['API_URL'];
 
-  static Future<Map<String, dynamic>> recuperarPassword(String dni, String email) async {
+  static Future<Map<String, dynamic>> recuperarPassword(
+    String dni,
+    String email,
+  ) async {
     final response = await http.post(
       Uri.parse('$baseUrl/usuarios/recoveryPassword'),
       headers: {"Content-Type": "application/json"},
@@ -15,11 +19,14 @@ class AuthService {
     print("STATUS: ${response.statusCode}");
     print("BODY: ${response.body}");
     */
-    
+
     return jsonDecode(response.body);
   }
 
-  static Future<Map<String, dynamic>> verificarCodigo(String email, String codigo) async {
+  static Future<Map<String, dynamic>> verificarCodigo(
+    String email,
+    String codigo,
+  ) async {
     final response = await http.post(
       Uri.parse('$baseUrl/usuarios/verificarCodigo'),
       headers: {"Content-Type": "application/json"},

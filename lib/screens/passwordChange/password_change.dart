@@ -61,9 +61,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       nueva: nueva,
     );
 
-    await Future.delayed(const Duration(seconds: 1)); 
+    await Future.delayed(const Duration(seconds: 1));
 
-    if(!mounted) return;
+    if (!mounted) return;
 
     if (response['success'] == true) {
       mostrarMensaje("Contraseña cambiada exitosamente");
@@ -74,13 +74,16 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       // Podés redirigir al login, por ejemplo:
       //Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
 
-      await Future.delayed(const Duration(seconds: 2)); 
+      await Future.delayed(const Duration(seconds: 2));
 
-      setState(() => isLoading = false); 
+      setState(() => isLoading = false);
       print("Te vas al login");
     } else {
-      mostrarMensaje(response['message'] ?? "Error al cambiar la contraseña", error: true);
-      setState(() => isLoading = false); 
+      mostrarMensaje(
+        response['message'] ?? "Error al cambiar la contraseña",
+        error: true,
+      );
+      setState(() => isLoading = false);
     }
   }
 
@@ -269,8 +272,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                 height: 50,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: 
-                        isLoading ? Colors.grey.shade400 : const Color(0xFF6C63FF),
+                    backgroundColor: isLoading
+                        ? Colors.grey.shade400
+                        : const Color(0xFF6C63FF),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
