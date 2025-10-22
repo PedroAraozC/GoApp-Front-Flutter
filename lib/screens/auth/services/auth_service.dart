@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class AuthService {
-  final String baseUrl = 'http://192.168.100.25:3000';
+  final String baseUrl = 'http://186.123.85.22:3000';
 
   /// 🔹 Obtiene un usuario y contraseña del BackEnd
   Future<Map<String, dynamic>?> login(String mail, String password) async {

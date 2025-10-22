@@ -14,9 +14,153 @@ import 'package:TaxiTuc/screens/auth/auth_screen2.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   final Map<String, dynamic> user;
   const HomeScreen({super.key, required this.user});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  late Map<String, dynamic> _user;
+
+  @override
+  void initState() {
+    super.initState();
+    _user = Map<String, dynamic>.from(widget.user); // copia local y mutable
+  }
+
+  // ==========================
+  // Helpers para validar perfil
+  // ==========================
+  bool _isNullOrEmpty(dynamic v) {
+    if (v == null) return true;
+    if (v is String)
+      return v.trim().isEmpty || v.trim().toLowerCase() == 'null';
+    // si es numérico, consideramos 0 como faltante para DNI/teléfono
+    if (v is num) return v == 0;
+    return false;
+  }
+
+  /// Devuelve qué campos faltan: DNI / Fecha de nacimiento / Teléfono
+  List<String> _missingProfileFields(Map<String, dynamic> u) {
+    final missing = <String>[];
+    if (_isNullOrEmpty(u['dni'])) missing.add('DNI');
+    if (_isNullOrEmpty(u['fecha_nacimiento']))
+      missing.add('Fecha de nacimiento');
+    if (_isNullOrEmpty(u['telefono_usuario']))
+      missing.add('Número de teléfono');
+    return missing;
+  }
+
+  Future<Map<String, dynamic>?> _openPerfilAndMaybeUpdate() async {
+    final updated = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PerfilScreen(userId: _user['id_usuario'] as int?),
+      ),
+    );
+    if (!mounted) return null;
+
+    if (updated != null) {
+      setState(() {
+        _user = Map<String, dynamic>.from(updated);
+      });
+    }
+    return updated; // puede ser null si Perfil no devolvió nada
+  }
+
+  Future<void> _handleStartTrip() async {
+    // 1) Verificar datos actuales
+    var missing = _missingProfileFields(_user);
+    if (missing.isEmpty) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const IniciarViajeScreen()),
+      );
+      return;
+    }
+
+    // 2) Modal con faltantes -> ir a Perfil y esperar resultado
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) {
+        return AlertDialog(
+          title: const Text('Faltan datos de tu perfil'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Para iniciar un viaje necesitás completar:'),
+              const SizedBox(height: 8),
+              ...missing.map(
+                (m) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline, size: 18),
+                      const SizedBox(width: 6),
+                      Text(m),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              child: const Text('Entendido'),
+              onPressed: () async {
+                Navigator.of(context).pop(); // cerrar modal
+                await _openPerfilAndMaybeUpdate(); // abrir perfil y esperar
+                // Al volver de Perfil, re-chequeamos
+                final againMissing = _missingProfileFields(_user);
+                if (againMissing.isEmpty && mounted) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const IniciarViajeScreen(),
+                    ),
+                  );
+                } else {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Aún faltan datos obligatorios. Completalos en tu perfil.',
+                        ),
+                      ),
+                    );
+                  }
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _logout() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+
+      final g = GoogleSignIn(scopes: ['email', 'profile']);
+      await g.signOut();
+      await g.disconnect();
+    } catch (_) {}
+
+    if (mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const AuthScreen2()),
+        (_) => false,
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -97,14 +241,8 @@ class HomeScreen extends StatelessWidget {
             padding: const EdgeInsets.only(right: 12),
             child: InkWell(
               borderRadius: BorderRadius.circular(999),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        PerfilScreen(userId: user['id_usuario'] as int?),
-                  ),
-                );
+              onTap: () async {
+                await _openPerfilAndMaybeUpdate();
               },
               child: Row(
                 children: [
@@ -119,7 +257,9 @@ class HomeScreen extends StatelessWidget {
                     radius: 18,
                     backgroundColor: cs.primaryContainer,
                     backgroundImage: NetworkImage(
-                      user['foto_perfil'] ?? 'https://i.pravatar.cc/150?img=12',
+                      (_user['foto_perfil'] as String?)?.isNotEmpty == true
+                          ? _user['foto_perfil']
+                          : 'https://i.pravatar.cc/150?img=12',
                     ),
                     child: Container(),
                   ),
@@ -130,11 +270,10 @@ class HomeScreen extends StatelessWidget {
           IconButton(
             tooltip: 'Cerrar sesión',
             icon: const Icon(Icons.logout),
-            onPressed: () => _logout(context),
+            onPressed: _logout,
           ),
         ],
       ),
-
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -148,7 +287,6 @@ class HomeScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-
               Text(
                 'Podés iniciar un viaje nuevo o consultar tu historial.',
                 style: Theme.of(context).textTheme.bodyMedium,
@@ -159,10 +297,7 @@ class HomeScreen extends StatelessWidget {
                 icon: Icons.play_arrow_rounded,
                 title: 'Iniciar viaje',
                 subtitle: 'Configura origen, destino y comenzá',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const IniciarViajeScreen()),
-                ),
+                onTap: _handleStartTrip, // <-- verificación + modal + re-check
                 bg: cs.primary,
                 fg: cs.onPrimary,
                 filled: true,
@@ -213,29 +348,6 @@ class HomeScreen extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  Future<void> _logout(BuildContext context) async {
-    try {
-      // Limpia prefs (por si almacenás flags/tokens)
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.clear();
-
-      // Desloguea Google si hubo sesión
-      final g = GoogleSignIn(scopes: ['email', 'profile']);
-      await g.signOut();
-      await g.disconnect();
-    } catch (_) {
-      // Ignorar errores silenciosamente
-    }
-
-    if (context.mounted) {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const AuthScreen2()),
-        (_) => false,
-      );
-    }
   }
 }
 
@@ -467,7 +579,6 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
       draggable: true, // 🟢 Permitir arrastrar
       icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
       onDragEnd: (newPos) async {
-        // Cuando se suelta el pin, actualizar dirección
         try {
           final placemarks = await placemarkFromCoordinates(
             newPos.latitude,
@@ -487,7 +598,6 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
           _msg('Error al actualizar dirección: $e');
         }
 
-        // Actualizar posición del marcador en el mapa
         setState(() {
           _markers.removeWhere((m) => m.markerId.value == 'origen');
           _markers.add(
@@ -679,7 +789,6 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
         return;
       }
 
-      // token de session por campo
       if (esOrigen) {
         _sessionTokenOrigin ??= _uuid.v4();
       } else {
@@ -698,9 +807,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
           '&language=es'
           '&key=$kGoogleApiKey'
           '&sessiontoken=$token'
-          // Sesgo por país (ajustá si querés)
           '&components=country:ar'
-          // Bias por ubicación del usuario (opcional)
           '${lat != null && lng != null ? '&location=$lat,$lng&radius=30000' : ''}',
         );
 
@@ -842,7 +949,6 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
                   markers: _markers,
                   polylines: _polylines,
                   onTap: (latLng) async {
-                    // Si hay listas abiertas, las cierro; si no, seteo destino por tap.
                     if (_predOrigen.isNotEmpty || _predDestino.isNotEmpty) {
                       setState(() {
                         _predOrigen = [];
@@ -959,62 +1065,6 @@ class ViajesRealizadosScreen extends StatelessWidget {
     );
   }
 }
-
-/* =================== Cuenta =================== */
-// class CuentaScreen extends StatelessWidget {
-//   const CuentaScreen({super.key});
-//   @override
-//   Widget build(BuildContext context) {
-//     final cs = Theme.of(context).colorScheme;
-//     return Scaffold(
-//       appBar: AppBar(title: const Text('Información de cuenta')),
-//       body: Center(
-//         child: ConstrainedBox(
-//           constraints: const BoxConstraints(maxWidth: 520),
-//           child: Card(
-//             elevation: 1,
-//             color: cs.surface,
-//             shape: RoundedRectangleBorder(
-//               borderRadius: BorderRadius.circular(16),
-//             ),
-//             child: const Padding(
-//               padding: EdgeInsets.all(20),
-//               child: Row(
-//                 children: [
-//                   CircleAvatar(
-//                     radius: 36,
-//                     backgroundImage: NetworkImage(
-//                       'https://i.pravatar.cc/150?img=12',
-//                     ),
-//                   ),
-//                   SizedBox(width: 16),
-//                   Expanded(
-//                     child: Column(
-//                       crossAxisAlignment: CrossAxisAlignment.start,
-//                       children: [
-//                         Text(
-//                           'Braian Barrionuevo',
-//                           style: TextStyle(
-//                             fontSize: 18,
-//                             fontWeight: FontWeight.w700,
-//                           ),
-//                         ),
-//                         SizedBox(height: 4),
-//                         Text('braian@example.com'),
-//                         SizedBox(height: 12),
-//                         Text('Estado: Verificado ✅'),
-//                       ],
-//                     ),
-//                   ),
-//                 ],
-//               ),
-//             ),
-//           ),
-//         ),
-//       ),
-//     );
-//   }
-// }
 
 /* =================== Widgets auxiliares =================== */
 class _SearchField extends StatelessWidget {

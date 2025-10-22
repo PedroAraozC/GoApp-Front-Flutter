@@ -20,7 +20,12 @@ class PerfilHeader extends StatelessWidget {
             shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF000000).withOpacity(0.1),
+                color: const Color.fromARGB(
+                  255,
+                  255,
+                  255,
+                  255,
+                ).withOpacity(0.1),
                 blurRadius: 12,
                 offset: const Offset(0, 6),
               ),
@@ -38,7 +43,7 @@ class PerfilHeader extends StatelessWidget {
           style: const TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.bold,
-            color: Color(0xFF1E1E1E),
+            color: Color.fromARGB(255, 255, 255, 255),
           ),
         ),
         const SizedBox(height: 4),
