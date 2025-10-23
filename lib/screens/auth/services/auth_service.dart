@@ -3,11 +3,13 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AuthService {
+
   final baseUrl = dotenv.env['API_URL'];
 
   /// 🔹 Obtiene un usuario y contraseña del BackEnd
   Future<Map<String, dynamic>?> login(String mail, String password) async {
     try {
+      
       final url = Uri.parse('$baseUrl/usuarios/login');
 
       final response = await http

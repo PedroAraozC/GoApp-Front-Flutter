@@ -4,7 +4,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AuthGoogleService {
   // Cambia esta URL por la de tu backend
-  final _baseUrl = dotenv.env['API_BASE_URL'];
+  final _baseUrl = dotenv.env['API_URL'];
 
   // Iniciar sesión/Registrarse con Google
   Future<Map<String, dynamic>> loginWithGoogle(String idToken) async {

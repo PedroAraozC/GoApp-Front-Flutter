@@ -3,22 +3,21 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:go_app_flutter/screens/perfil/perfil_screen.dart';
-import 'package:go_app_flutter/services/user_preferences.dart';
+import '../../screens/perfil/perfil_screen.dart';
+import '../../services/user_preferences.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
-import 'package:go_app_flutter/screens/auth/auth_screen.dart';
+import '../../screens/auth/auth_screen.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:go_app_flutter/screens/home/services/api_service.dart';
+import '../../screens/home/services/api_service.dart';
 import 'widgets/completar_datos_screen.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-/// =================================================================================
-///  HOME SCREEN (Stateful) + chequeo de datos y modal CompletarDatosScreen
-/// =================================================================================
 class HomeScreen extends StatefulWidget {
   final Map<String, dynamic> user;
   const HomeScreen({super.key, required this.user});
@@ -27,18 +26,18 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  /// Normaliza el mapa de usuario para usar claves consistentes en la app.
-  ///
-  ///
+final apiKey = dotenv.env['GOOGLE_API_KEY'];
 
-  // Limpia strings vacíos o "null"
+class _HomeScreenState extends State<HomeScreen> {
+  // ==============================
+  // Normalización y validaciones
+  // ==============================
+
   String? _clean(dynamic v) {
     if (v == null) return null;
     if (v is String) {
       final s = v.trim();
-      if (s.isEmpty) return null;
-      if (s.toLowerCase() == 'null') return null;
+      if (s.isEmpty || s.toLowerCase() == 'null') return null;
       return s;
     }
     return '$v';
@@ -46,10 +45,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   int? _toInt(dynamic v) => (v is int) ? v : int.tryParse('${v ?? ''}');
 
-  // 🔒 Normaliza aceptando VARIANTES de claves que puede enviar el back
   Map<String, dynamic> _normalizeUser(Map<String, dynamic>? rawIn) {
     final raw = {...?rawIn};
-
     return {
       'id_usuario': raw['id_usuario'] ?? raw['id'] ?? raw['userId'],
       'dni': _clean(raw['dni'] ?? raw['dni_usuario'] ?? raw['documento']),
@@ -74,20 +71,6 @@ class _HomeScreenState extends State<HomeScreen> {
     };
   }
 
-  // 🚫 NO pises con null: preferí SIEMPRE lo que venga del back si no es null
-  Map<String, dynamic> _mergePreferBackend(
-    Map<String, dynamic> local,
-    Map<String, dynamic>? backend,
-  ) {
-    final merged = {...local};
-    for (final e in (backend ?? {}).entries) {
-      if (e.value != null) merged[e.key] = e.value;
-    }
-    return merged;
-  }
-
-  /// Indica si faltan datos obligatorios antes de poder iniciar un viaje.
-  // Mejora: tratar "null"/'' y 0 (para género) como faltantes
   bool _needsProfileCompletion(Map<String, dynamic> u) {
     bool isEmptyVal(v) {
       if (v == null) return true;
@@ -98,41 +81,25 @@ class _HomeScreenState extends State<HomeScreen> {
       return false;
     }
 
-    final dni = u['dni'];
-    final nac = u['fecha_nacimiento'];
-    final gen = u['id_genero'];
-    final tel = u['telefono'];
-    final mail = u['email'];
-
-    if (isEmptyVal(dni)) return true;
-    if (isEmptyVal(nac)) return true;
-
-    // género puede venir como String o int; 0 lo tratamos como faltante
-    int? g = gen is int ? gen : int.tryParse('${gen ?? ''}');
+    if (isEmptyVal(u['dni'])) return true;
+    if (isEmptyVal(u['fecha_nacimiento'])) return true;
+    int? g = u['id_genero'] is int
+        ? u['id_genero']
+        : int.tryParse('${u['id_genero'] ?? ''}');
     if (g == null || g == 0) return true;
-
-    if (isEmptyVal(tel)) return true;
-    if (isEmptyVal(mail)) return true;
-
+    if (isEmptyVal(u['telefono'])) return true;
+    if (isEmptyVal(u['email'])) return true;
     return false;
   }
 
-  // En HomeScreen (reemplaza tu _checkUserProfileAndNavigate)
   Future<void> _checkUserProfileAndNavigate(BuildContext context) async {
     final api = ApiService();
     final local = _normalizeUser(widget.user);
-    print("INFO -------------");
-    print(local);
 
-    // 1) Si no tengo id, no puedo pedir al back.
     final id = local['id_usuario'];
     if (id == null) {
-      // fallback: usa lo local
       if (_needsProfileCompletion(local)) {
-        final updated = await _openCompletarDatos(local, api);
-        if (updated == true && mounted) {
-          // refresco opcional acá si conseguís el id luego
-        }
+        await _openCompletarDatos(local, api);
         return;
       }
       if (mounted) {
@@ -144,24 +111,15 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    // 2) Refetch siempre antes de decidir
     final fresh = await api.obtenerUsuarioPorId(id);
-    print('📡 Datos del backend (fresh): $fresh');
-    final userFresh = _normalizeUser({
-      ...local,
-      ...?fresh,
-    }); // local rellena faltantes
-    // (opcional) persistir
+    final userFresh = _normalizeUser({...local, ...?fresh});
     await UserPreferences.saveUser(userFresh);
 
     if (_needsProfileCompletion(userFresh)) {
       final updated = await _openCompletarDatos(userFresh, api);
       if (updated == true && mounted) {
-        // Tras guardar, vuelve a pedir para navegar con datos frescos
         final fresh2 = await api.obtenerUsuarioPorId(id);
-
         final userFresh2 = _normalizeUser({...?fresh2, ...userFresh});
-        print("Correctou");
         await UserPreferences.saveUser(userFresh2);
         if (!mounted) return;
         Navigator.push(
@@ -199,12 +157,15 @@ class _HomeScreenState extends State<HomeScreen> {
     if (context.mounted) {
       Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(builder: (_) => const AuthScreen2()),
+        MaterialPageRoute(builder: (_) => const AuthScreen()),
         (_) => false,
       );
     }
   }
 
+  // ==============================
+  // UI
+  // ==============================
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -330,25 +291,22 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 12),
               Text(
-                'Podés iniciar un viaje nuevo o consultar tu historial.',
+                'Podés iniciar un viaje nuevo o revisar tus viajes anteriores.',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 20),
-
               buildActionCard(
                 icon: Icons.play_arrow_rounded,
                 title: 'Iniciar viaje',
                 subtitle: 'Configura origen, destino y comenzá',
-                onTap: () =>
-                    _checkUserProfileAndNavigate(context), // 👈 chequeo + modal
+                onTap: () => _checkUserProfileAndNavigate(context),
                 bg: cs.primary,
                 fg: cs.onPrimary,
                 filled: true,
               ),
-
               buildActionCard(
                 icon: Icons.history_rounded,
-                title: 'Viajes realizados',
+                title: 'Mis viajes',
                 subtitle: 'Mirá tu historial y detalles',
                 onTap: () => Navigator.push(
                   context,
@@ -395,7 +353,7 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 /// =================================================================================
-///  Iniciar Viaje (mapa + origen auto + autocomplete origen/destino + ruta + ETA)
+///  Iniciar Viaje (idéntico al primero, sin cambios visuales)
 /// =================================================================================
 class IniciarViajeScreen extends StatefulWidget {
   const IniciarViajeScreen({super.key});
@@ -404,8 +362,7 @@ class IniciarViajeScreen extends StatefulWidget {
 }
 
 class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
-  // ⚠️ Habilitar: Maps SDK, Places API, Directions API, Distance Matrix API
-  static const String kGoogleApiKey = 'TU_API_KEY_DE_GOOGLE'; // poné la tuya
+  static String kGoogleApiKey = '${apiKey}';
 
   final _origenCtrl = TextEditingController();
   final _destinoCtrl = TextEditingController();
@@ -520,8 +477,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
       );
       if (placemarks.isNotEmpty) {
         final p = placemarks.first;
-        direccion =
-            "${p.street ?? ''} ${p.subThoroughfare ?? ''}, ${p.locality ?? ''}, ${p.administrativeArea ?? ''}";
+        direccion = _formatDireccion(p);
       }
     } catch (e) {
       direccion =
@@ -533,7 +489,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
       markerId: const MarkerId('origen'),
       position: _miUbicacion!,
       infoWindow: const InfoWindow(title: 'Origen', snippet: 'Mi ubicación'),
-      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
+      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
     );
 
     setState(() {
@@ -621,7 +577,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
       markerId: const MarkerId('origen'),
       position: pos,
       infoWindow: InfoWindow(title: 'Origen', snippet: etiqueta),
-      draggable: true,
+      draggable: true, // 🟢 Permitir arrastrar
       icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
       onDragEnd: (newPos) async {
         try {
@@ -632,8 +588,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
           );
           if (placemarks.isNotEmpty) {
             final p = placemarks.first;
-            final nuevaDir =
-                "${p.street ?? ''} ${p.subThoroughfare ?? ''}, ${p.locality ?? ''}, ${p.administrativeArea ?? ''}";
+            final nuevaDir = _formatDireccion(p);
             setState(() {
               _origenCtrl.text = nuevaDir;
             });
@@ -680,7 +635,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
       markerId: const MarkerId('destino'),
       position: pos,
       infoWindow: InfoWindow(title: 'Destino', snippet: etiqueta),
-      draggable: true,
+      draggable: true, // 🟢 Ahora también se puede mover
       icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
       onDragEnd: (newPos) async {
         final placemarks = await placemarkFromCoordinates(
@@ -690,8 +645,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
         );
         if (placemarks.isNotEmpty) {
           final p = placemarks.first;
-          final nuevaDir =
-              "${p.street ?? ''} ${p.subThoroughfare ?? ''}, ${p.locality ?? ''}, ${p.administrativeArea ?? ''}";
+          final nuevaDir = _formatDireccion(p);
           setState(() {
             _destinoCtrl.text = nuevaDir;
           });
@@ -843,6 +797,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
       try {
         final lat = _miUbicacion?.latitude;
         final lng = _miUbicacion?.longitude;
+
         final token = esOrigen ? _sessionTokenOrigin : _sessionTokenDest;
 
         final uri = Uri.parse(
@@ -988,22 +943,43 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
                   ),
                   onMapCreated: (c) => _mapCtrl ??= c,
                   myLocationEnabled: true,
-                  myLocationButtonEnabled: false,
+                  myLocationButtonEnabled: true,
                   zoomControlsEnabled: true,
                   markers: _markers,
                   polylines: _polylines,
                   onTap: (latLng) async {
+                    // Si hay predicciones abiertas, las cerramos
                     if (_predOrigen.isNotEmpty || _predDestino.isNotEmpty) {
                       setState(() {
                         _predOrigen = [];
                         _predDestino = [];
                       });
                     } else {
-                      _setDestino(
-                        latLng,
-                        '${latLng.latitude}, ${latLng.longitude}',
-                      );
-                      await _construirRutaSiPosible();
+                      try {
+                        // 🔹 Obtener dirección a partir de coordenadas
+                        final placemarks = await placemarkFromCoordinates(
+                          latLng.latitude,
+                          latLng.longitude,
+                          localeIdentifier: "es_AR",
+                        );
+
+                        String direccion;
+                        if (placemarks.isNotEmpty) {
+                          final p = placemarks.first;
+                          direccion = _formatDireccion(p);
+                        } else {
+                          direccion =
+                              "${latLng.latitude.toStringAsFixed(5)}, ${latLng.longitude.toStringAsFixed(5)}";
+                        }
+
+                        // 🔹 Colocar marcador de destino con dirección legible
+                        _setDestino(latLng, direccion);
+
+                        // 🔹 Construir la ruta si el origen ya está establecido
+                        await _construirRutaSiPosible();
+                      } catch (e) {
+                        _msg("No se pudo obtener la dirección del punto: $e");
+                      }
                     }
                   },
                 ),
@@ -1115,9 +1091,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
   }
 }
 
-/// =================================================================================
-///  Viajes realizados
-/// =================================================================================
+/* =================== Viajes realizados =================== */
 class ViajesRealizadosScreen extends StatelessWidget {
   const ViajesRealizadosScreen({super.key});
   @override
@@ -1131,14 +1105,13 @@ class ViajesRealizadosScreen extends StatelessWidget {
   }
 }
 
-/// =================================================================================
-///  Widgets auxiliares
-/// =================================================================================
+/* =================== Widgets auxiliares =================== */
 class _SearchField extends StatelessWidget {
   final String hint;
   final TextEditingController controller;
   final VoidCallback onSearch;
   final IconData? prefix;
+
   final ValueChanged<String>? onChanged;
   final FocusNode? focusNode;
 
@@ -1177,6 +1150,15 @@ class _SearchField extends StatelessWidget {
             onChanged: onChanged,
           ),
         ),
+        const SizedBox(width: 8),
+        // SizedBox(
+        //   height: 44,
+        //   width: 44,
+        //   child: IconButton.filled(
+        //     onPressed: onSearch,
+        //     icon: const Icon(Icons.search),
+        //   ),
+        // ),
       ],
     );
   }
@@ -1223,9 +1205,7 @@ class _PredictionsList extends StatelessWidget {
   }
 }
 
-/// =================================================================================
-///  Panel con costo y conductor
-/// =================================================================================
+/* =================== Panel con costo y conductor =================== */
 class _RideBottomSheet extends StatelessWidget {
   final String distanceText;
   final String durationText;
@@ -1386,9 +1366,7 @@ class _RideBottomSheet extends StatelessWidget {
   }
 }
 
-/// =================================================================================
-///  Modelos simples
-/// =================================================================================
+/* =================== Modelos =================== */
 class _Driver {
   final String name;
   final double rating;
@@ -1426,4 +1404,22 @@ class _Prediction {
       secondaryText: sf?['secondary_text'] as String?,
     );
   }
+}
+
+String _formatDireccion(Placemark p) {
+  final calle = p.street?.trim() ?? '';
+  final numero = p.subThoroughfare?.trim() ?? '';
+
+  // Evita duplicar el número si ya está incluido en la calle
+  final contieneNumero = numero.isNotEmpty && calle.contains(numero);
+  final direccionBase = contieneNumero ? calle : '$calle $numero';
+
+  final localidad = p.locality?.trim() ?? '';
+  final provincia = p.administrativeArea?.trim() ?? '';
+
+  return [
+    direccionBase,
+    localidad,
+    provincia,
+  ].where((s) => s.isNotEmpty).join(', ');
 }

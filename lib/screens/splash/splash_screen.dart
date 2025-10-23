@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:go_app_flutter/services/user_preferences.dart';
+import '../../services/user_preferences.dart';
 //import 'package:shared_preferences/shared_preferences.dart';
-import 'package:go_app_flutter/screens/home/home_screen.dart';
-import 'package:go_app_flutter/screens/auth/auth_screen.dart';
+import '../../screens/home/home_screen.dart';
+import '../../screens/auth/auth_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -50,7 +50,7 @@ class _SplashScreenState extends State<SplashScreen>
       if (mounted) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const AuthScreen2()),
+          MaterialPageRoute(builder: (_) => const AuthScreen()),
         );
       }
     }
@@ -71,7 +71,7 @@ class _SplashScreenState extends State<SplashScreen>
           opacity: _fade,
           child: ScaleTransition(
             scale: _scale,
-            child: Image.asset('assets/images/inicio_logo.png', width: 180),
+            child: Image.asset('assets/images/taxituc_splash.png', width: 180),
           ),
         ),
       ),

@@ -1,6 +1,6 @@
 // lib/screens/home/completar_datos_screen.dart
 import 'package:flutter/material.dart';
-import 'package:go_app_flutter/screens/home/services/api_service.dart';
+import '../../home/services/api_service.dart';
 import '../../perfil/services/perfil_services.dart';
 
 class CompletarDatosScreen extends StatefulWidget {

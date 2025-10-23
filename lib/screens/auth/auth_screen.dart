@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:go_app_flutter/services/user_preferences.dart';
+import '../../services/user_preferences.dart';
 import '../auth/services/auth_service.dart';
 import '../auth/services/google_auth_service.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -8,14 +8,14 @@ import '../home/home_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-class AuthScreen2 extends StatefulWidget {
-  const AuthScreen2({super.key});
+class AuthScreen extends StatefulWidget {
+  const AuthScreen({super.key});
 
   @override
-  State<AuthScreen2> createState() => _AuthScreen2State();
+  State<AuthScreen> createState() => _AuthScreenState();
 }
 
-class _AuthScreen2State extends State<AuthScreen2> {
+class _AuthScreenState extends State<AuthScreen> {
   int _selectedTab = 0; // 0 = Iniciar, 1 = Registrarse
   bool _isPasswordVisible = false;
   bool _isConfirmPasswordVisible = false;
@@ -44,7 +44,6 @@ class _AuthScreen2State extends State<AuthScreen2> {
     );
   }
 
-  @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
