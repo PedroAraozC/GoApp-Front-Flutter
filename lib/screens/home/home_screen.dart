@@ -250,11 +250,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) =>
-                        PerfilScreen(userId: user['id_usuario'] as int?),
+                    builder: (_) => PerfilScreen(
+                      userId: user['id_usuario'] as int?,
+                      initialUser: user,
+                    ),
                   ),
                 );
               },
+
               child: Row(
                 children: [
                   const Padding(padding: EdgeInsets.only(right: 8)),
@@ -904,30 +907,30 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
       appBar: AppBar(
         title: const Text('Iniciar viaje'),
         actions: [
-          IconButton(
-            tooltip: 'Limpiar',
-            onPressed: () {
-              setState(() {
-                _markers.clear();
-                _polylines.clear();
-                _origenCtrl.clear();
-                _destinoCtrl.clear();
-                _durationSeconds = 0;
-                _distanceMeters = 0;
-                _durationText = '';
-                _distanceText = '';
-                _selectedDriver = null;
-                _surge = 1.0;
+          // IconButton(
+          //   tooltip: 'Limpiar',
+          //   onPressed: () {
+          //     setState(() {
+          //       _markers.clear();
+          //       _polylines.clear();
+          //       _origenCtrl.clear();
+          //       _destinoCtrl.clear();
+          //       _durationSeconds = 0;
+          //       _distanceMeters = 0;
+          //       _durationText = '';
+          //       _distanceText = '';
+          //       _selectedDriver = null;
+          //       _surge = 1.0;
 
-                _predOrigen = [];
-                _predDestino = [];
-                _sessionTokenOrigin = null;
-                _sessionTokenDest = null;
-              });
-              _initLocation();
-            },
-            icon: const Icon(Icons.layers_clear),
-          ),
+          //       _predOrigen = [];
+          //       _predDestino = [];
+          //       _sessionTokenOrigin = null;
+          //       _sessionTokenDest = null;
+          //     });
+          //     _initLocation();
+          //   },
+          //   icon: const Icon(Icons.layers_clear),
+          // ),
         ],
       ),
       backgroundColor: cs.surface,

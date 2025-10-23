@@ -27,21 +27,22 @@ class PerfilInfoField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final List<Map<String, dynamic>> generosList = generos ?? [];
+    final scheme = Theme.of(context).colorScheme;
+    final generosList = generos ?? [];
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Icon(icon, color: Colors.blueGrey[700]),
+          Icon(icon, color: scheme.primary),
           const SizedBox(width: 16),
           Expanded(
             flex: 3,
             child: Text(
               label,
               style: TextStyle(
-                color: Colors.grey[800],
+                color: scheme.onSurfaceVariant,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -58,9 +59,9 @@ class PerfilInfoField extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       softWrap: false,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF1E1E1E),
+                        color: scheme.onSurface,
                       ),
                     ),
                   ),
@@ -75,6 +76,8 @@ class PerfilInfoField extends StatelessWidget {
     BuildContext context,
     List<Map<String, dynamic>> generosList,
   ) {
+    final scheme = Theme.of(context).colorScheme;
+
     switch (label) {
       case "Fecha de Nacimiento":
         return SizedBox(
@@ -86,11 +89,11 @@ class PerfilInfoField extends StatelessWidget {
                 controller: controller,
                 textAlign: TextAlign.right,
                 readOnly: true,
-                style: const TextStyle(fontSize: 12),
-                decoration: _inputDecoration().copyWith(
-                  suffixIcon: const Icon(
+                style: TextStyle(fontSize: 12, color: scheme.onSurface),
+                decoration: _inputDecoration(context).copyWith(
+                  suffixIcon: Icon(
                     Icons.calendar_today_rounded,
-                    color: Colors.indigo,
+                    color: scheme.primary,
                     size: 20,
                   ),
                 ),
@@ -107,18 +110,21 @@ class PerfilInfoField extends StatelessWidget {
                     value: g['nombre_genero']?.toString().trim() ?? '',
                     child: Text(
                       g['nombre_genero']?.toString().trim() ?? '',
-                      style: const TextStyle(fontSize: 12),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurface,
+                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 )
                 .toList()
             : [
-                const DropdownMenuItem<String>(
+                DropdownMenuItem<String>(
                   value: '',
                   child: Text(
                     "Cargando...",
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                    style: TextStyle(fontSize: 12, color: scheme.outline),
                   ),
                 ),
               ];
@@ -132,20 +138,19 @@ class PerfilInfoField extends StatelessWidget {
           height: kInputHeight,
           child: DropdownButtonFormField<String>(
             isExpanded: true,
-            initialValue: safeValue,
+            value: safeValue,
             onChanged: (value) {
               if (value != null && onGeneroChanged != null) {
                 onGeneroChanged!(value);
               }
             },
             items: items,
-            decoration: _inputDecoration(),
-            hint: const Text(
+            decoration: _inputDecoration(context),
+            hint: Text(
               "Seleccionar género",
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+              style: TextStyle(fontSize: 12, color: scheme.outline),
             ),
-            icon:
-                const Icon(Icons.arrow_drop_down_rounded, color: Colors.indigo),
+            icon: Icon(Icons.arrow_drop_down_rounded, color: scheme.primary),
           ),
         );
 
@@ -159,8 +164,8 @@ class PerfilInfoField extends StatelessWidget {
             keyboardType: label == "Email"
                 ? TextInputType.emailAddress
                 : TextInputType.number,
-            style: const TextStyle(fontSize: 12),
-            decoration: _inputDecoration(),
+            style: TextStyle(fontSize: 12, color: scheme.onSurface),
+            decoration: _inputDecoration(context),
             validator: (value) {
               if (value == null || value.isEmpty) return "Campo obligatorio";
               if (label == "Email") {
@@ -176,21 +181,22 @@ class PerfilInfoField extends StatelessWidget {
     }
   }
 
-  /// 🔹 Decoración común
-  InputDecoration _inputDecoration() {
+  /// 🔹 Decoración común adaptada al tema del sistema
+  InputDecoration _inputDecoration(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return InputDecoration(
       isDense: true,
       filled: true,
-      fillColor: Colors.white,
+      fillColor: scheme.surfaceContainerHighest,
       contentPadding:
           const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.blueGrey, width: 0.6),
+        borderSide: BorderSide(color: scheme.outlineVariant, width: 0.6),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.indigoAccent, width: 1.2),
+        borderSide: BorderSide(color: scheme.primary, width: 1.2),
       ),
     );
   }

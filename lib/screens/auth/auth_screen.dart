@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import '../../services/user_preferences.dart';
 import '../auth/services/auth_service.dart';
 import '../auth/services/google_auth_service.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../home/home_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+
+// ====== Colores de marca ======
+const Color kTaxiYellow = Color.fromARGB(255, 235, 213, 18);
+const Color kGoogleRed = Color(0xFFDB4437);
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -19,43 +22,37 @@ class _AuthScreenState extends State<AuthScreen> {
   int _selectedTab = 0; // 0 = Iniciar, 1 = Registrarse
   bool _isPasswordVisible = false;
   bool _isConfirmPasswordVisible = false;
-  bool _isLoading = false; // Estado para mostrar un indicador de carga
+  bool _isLoading = false;
 
   late final String? srvClientId;
   late GoogleSignIn _googleSignIn;
 
-  // 🔹 Controladores de texto
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
-  // 🔹 Instancias de servicios
   final _authService = AuthService();
   final _authGoogleService = AuthGoogleService();
 
   @override
   void initState() {
     super.initState();
-
     srvClientId = dotenv.env['SERVER_CLIENT_ID'];
-
     _googleSignIn = GoogleSignIn(
       serverClientId: srvClientId,
       scopes: ['email', 'profile'],
     );
   }
 
+  @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
-  // ===================================
-  // 🔹 Lógica de Autenticación
-  // ===================================
-
-  ///////// desde aqui
-
+  // ======================
+  // Iniciar sesión normal
+  // ======================
   Future<void> _handleLogin() async {
     if (_isLoading) return;
     setState(() => _isLoading = true);
@@ -73,175 +70,211 @@ class _AuthScreenState extends State<AuthScreen> {
 
     try {
       final user = await _authService.login(email, password);
-      print(user);
       if (user != null) {
-        // 🎉 Login exitoso
-        await UserPreferences.saveUser(user);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Bienvenido, ${user['nombre_usuario'] ?? 'usuario'}'),
-          ),
+          SnackBar(content: Text('Bienvenido, ${user['nombre_usuario']}')),
         );
 
-        // ✅ Navegar a HomeScreen
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('isLoggedIn', true);
+        await prefs.setInt('id_usuario', user['id_usuario']);
+        await prefs.setString('token', user['token'] ?? '');
+        await prefs.setString('nombre_usuario', user['nombre_usuario']);
+        await prefs.setString('email_usuario', user['email_usuario']);
+
+        if (!mounted) return;
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => HomeScreen(user: user)),
         );
       } else {
-        // ⚠️ Credenciales incorrectas
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Email o contraseña incorrectos')),
         );
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al iniciar sesión: ${e.toString()}')),
+        SnackBar(content: Text('Error al iniciar sesión: $e')),
       );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
+  // ======================
+  // Iniciar sesión con Google
+  // ======================
   Future<void> _handleGoogleSignIn() async {
     if (_isLoading) return;
     setState(() => _isLoading = true);
 
     try {
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-
       if (googleUser == null) {
         setState(() => _isLoading = false);
         return;
       }
 
-      final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
-      final String? idToken = googleAuth.idToken;
+      final googleAuth = await googleUser.authentication;
+      final idToken = googleAuth.idToken;
+      if (idToken == null) throw Exception('No se pudo obtener el token.');
 
-      if (idToken == null) {
-        throw Exception('No se pudo obtener el token de Google.');
-      }
+      // Llamada al backend
+      final response = await _authGoogleService.loginWithGoogle(idToken);
+      final user = response['result'];
+      final token = response['token'];
 
-      final user = await _authGoogleService.loginWithGoogle(idToken);
-      await UserPreferences.saveUser(user); // 👈 Persistir usuario Google
+      debugPrint('✅ Usuario desde backend: $user');
+      debugPrint('🔑 Token JWT: $token');
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Bienvenido, ${user['nombre_usuario'] ?? 'usuario'}'),
-        ),
-      );
-
-      // ✅ Navegar directamente al HomeScreen
+      // Guardamos datos
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('isLoggedIn', true);
+      await prefs.setInt('id_usuario', user['id_usuario'] ?? 0);
+      await prefs.setString('nombre_usuario', user['nombre_usuario'] ?? '');
+      await prefs.setString('apellido_usuario', user['apellido_usuario'] ?? '');
+      await prefs.setString('email_usuario', user['email_usuario'] ?? '');
+      await prefs.setString('telefono_usuario', user['telefono_usuario'] ?? '');
+      await prefs.setString('foto_perfil', user['foto_perfil'] ?? '');
+      await prefs.setString('token', token ?? '');
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Bienvenido, ${user['nombre_usuario']}')),
+      );
+
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => HomeScreen(user: user)),
       );
     } catch (e) {
       await _googleSignIn.signOut();
+      debugPrint('❌ Error Google SignIn: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al iniciar sesión con Google: ${e.toString()}'),
-        ),
+        SnackBar(content: Text('Error al iniciar sesión con Google: $e')),
       );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  ///////////// hasta aqui
-
-  // (opcional) Placeholder para registro
+  // ======================
+  // Registro (aún no implementado)
+  // ======================
   void _handleRegister() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Función de registro no implementada aún')),
     );
   }
 
+  // ======================
+  // UI
+  // ======================
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
+    final textColor = scheme.onSurface;
+    final hintColor = scheme.onSurfaceVariant;
+    final fieldFill = isDark
+        ? scheme.surfaceVariant.withOpacity(0.35)
+        : scheme.surfaceVariant;
+    final dividerColor = scheme.outlineVariant;
+    final linkColor = scheme.primary;
+    final iconDefault = scheme.onSurface;
+    final suffixIconCols = scheme.onSurfaceVariant;
+
     return Scaffold(
-      backgroundColor: const Color(0xFF1E1E2C),
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 24.0,
-              vertical: 40.0,
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Icon(
-                  Icons.flutter_dash,
-                  size: 80,
-                  color: Colors.blueAccent,
+        child: IconTheme.merge(
+          data: IconThemeData(color: iconDefault),
+          child: DefaultTextStyle(
+            style: TextStyle(color: textColor),
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24.0,
+                  vertical: 40.0,
                 ),
-                const SizedBox(height: 40),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Icon(Icons.local_taxi, size: 80, color: kTaxiYellow),
+                    const SizedBox(height: 40),
 
-                _buildTabSelector(),
-                const SizedBox(height: 24),
+                    _buildTabSelector(textColor),
+                    const SizedBox(height: 24),
 
-                Text(
-                  _selectedTab == 1
-                      ? "Crea tu cuenta completando los siguientes"
-                      : "¡Bienvenido! Por favor, ingresa tus datos:",
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.grey, fontSize: 16),
-                ),
-                const SizedBox(height: 24),
-
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 300),
-                  child: _selectedTab == 1
-                      ? _buildRegisterForm()
-                      : _buildLoginForm(),
-                ),
-                const SizedBox(height: 24),
-
-                ElevatedButton(
-                  onPressed: _isLoading
-                      ? null
-                      : (_selectedTab == 0 ? _handleLogin : _handleRegister),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    backgroundColor: const Color(0xFF5A4FF1),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
+                    Text(
+                      _selectedTab == 1
+                          ? "Crea tu cuenta completando los siguientes datos:"
+                          : "¡Bienvenido! Por favor, ingresa tus datos:",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: textColor, fontSize: 16),
                     ),
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 3,
-                          ),
-                        )
-                      : Text(
-                          _selectedTab == 1 ? 'Crear Cuenta' : 'Iniciar Sesión',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            color: Colors.white,
-                          ),
+                    const SizedBox(height: 24),
+
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 300),
+                      child: _selectedTab == 1
+                          ? _buildRegisterForm(
+                              textColor, hintColor, fieldFill, suffixIconCols)
+                          : _buildLoginForm(
+                              textColor,
+                              hintColor,
+                              fieldFill,
+                              suffixIconCols,
+                              linkColor),
+                    ),
+                    const SizedBox(height: 24),
+
+                    ElevatedButton(
+                      onPressed: _isLoading
+                          ? null
+                          : (_selectedTab == 0
+                              ? _handleLogin
+                              : _handleRegister),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        backgroundColor: kTaxiYellow,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30),
                         ),
-                ),
-                const SizedBox(height: 24),
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 3,
+                              ),
+                            )
+                          : Text(
+                              _selectedTab == 0
+                                  ? 'Iniciar Sesión'
+                                  : 'Registrarse',
+                              style: const TextStyle(fontSize: 18),
+                            ),
+                    ),
+                    const SizedBox(height: 24),
 
-                _buildDivider(),
-                const SizedBox(height: 24),
+                    _buildDivider(dividerColor, textColor),
+                    const SizedBox(height: 24),
 
-                _buildSocialButton(
-                  icon: FontAwesomeIcons.google,
-                  label: 'Continuar con Google',
-                  onPressed: _isLoading ? null : _handleGoogleSignIn,
+                    _buildSocialButton(
+                      icon: FontAwesomeIcons.google,
+                      label: 'Continuar con Google',
+                      onPressed: _isLoading ? null : _handleGoogleSignIn,
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                 ),
-                const SizedBox(height: 16),
-              ],
+              ),
             ),
           ),
         ),
@@ -250,63 +283,47 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   // ==============================
-  // 🔹 Formularios y Widgets (sin cambios mayores)
+  // Widgets auxiliares
   // ==============================
-  Widget _buildRegisterForm() {
+
+  Widget _buildRegisterForm(
+      Color textColor, Color hintColor, Color fillColor, Color suffixIconColor) {
     return Column(
       key: const ValueKey('register'),
       children: [
-        _buildTextField(hint: 'Email'),
+        _buildTextField('Email', null, textColor, hintColor, fillColor),
         const SizedBox(height: 16),
-        _buildPasswordField(
-          hint: 'Contraseña',
-          isVisible: _isPasswordVisible,
-          onToggleVisibility: () {
-            setState(() {
-              _isPasswordVisible = !_isPasswordVisible;
-            });
-          },
-        ),
+        _buildPasswordField('Contraseña', _isPasswordVisible, () {
+          setState(() => _isPasswordVisible = !_isPasswordVisible);
+        }, null, textColor, hintColor, fillColor, suffixIconColor),
         const SizedBox(height: 16),
-        _buildPasswordField(
-          hint: 'Confirmar Contraseña',
-          isVisible: _isConfirmPasswordVisible,
-          onToggleVisibility: () {
-            setState(() {
-              _isConfirmPasswordVisible = !_isConfirmPasswordVisible;
-            });
-          },
-        ),
+        _buildPasswordField('Confirmar Contraseña', _isConfirmPasswordVisible,
+            () {
+          setState(() =>
+              _isConfirmPasswordVisible = !_isConfirmPasswordVisible);
+        }, null, textColor, hintColor, fillColor, suffixIconColor),
       ],
     );
   }
 
-  Widget _buildLoginForm() {
+  Widget _buildLoginForm(Color textColor, Color hintColor, Color fillColor,
+      Color suffixIconColor, Color linkColor) {
     return Column(
       key: const ValueKey('login'),
       children: [
-        _buildTextField(hint: 'Email', controller: _emailController),
+        _buildTextField('Email', _emailController, textColor, hintColor, fillColor),
         const SizedBox(height: 16),
-        _buildPasswordField(
-          hint: 'Contraseña',
-          isVisible: _isPasswordVisible,
-          controller: _passwordController,
-          onToggleVisibility: () {
-            setState(() {
-              _isPasswordVisible = !_isPasswordVisible;
-            });
-          },
-        ),
+        _buildPasswordField('Contraseña', _isPasswordVisible, () {
+          setState(() => _isPasswordVisible = !_isPasswordVisible);
+        }, _passwordController, textColor, hintColor, fillColor, suffixIconColor),
         const SizedBox(height: 16),
         Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
             TextButton(
               onPressed: () {},
-              child: const Text(
-                '¿Olvidaste la Contraseña?',
-                style: TextStyle(color: Colors.blueAccent),
-              ),
+              style: TextButton.styleFrom(foregroundColor: linkColor),
+              child: const Text('¿Olvidaste la Contraseña?'),
             ),
           ],
         ),
@@ -314,32 +331,27 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  // El resto de tus widgets auxiliares (_buildTabSelector, _buildTextField, etc.) van aquí sin cambios.
-  Widget _buildTabSelector() {
+  Widget _buildTabSelector(Color textColor) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        _buildTabOption("Iniciar", 0),
+        _buildTabOption("Iniciar", 0, textColor),
         const SizedBox(width: 40),
-        _buildTabOption("Registrarse", 1),
+        _buildTabOption("Registrarse", 1, textColor),
       ],
     );
   }
 
-  Widget _buildTabOption(String text, int index) {
-    bool isSelected = _selectedTab == index;
+  Widget _buildTabOption(String text, int index, Color textColor) {
+    final bool isSelected = _selectedTab == index;
     return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedTab = index;
-        });
-      },
+      onTap: () => setState(() => _selectedTab = index),
       child: Column(
         children: [
           Text(
             text,
             style: TextStyle(
-              color: isSelected ? Colors.white : Colors.grey,
+              color: textColor,
               fontSize: 24,
               fontWeight: FontWeight.bold,
             ),
@@ -350,7 +362,7 @@ class _AuthScreenState extends State<AuthScreen> {
               height: 3,
               width: 60,
               decoration: BoxDecoration(
-                color: const Color(0xFF5A4FF1),
+                color: kTaxiYellow,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -359,41 +371,44 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  Widget _buildTextField({
-    required String hint,
-    TextEditingController? controller,
-  }) {
+  Widget _buildTextField(String hint, TextEditingController? controller,
+      Color textColor, Color hintColor, Color fillColor) {
     return TextField(
       controller: controller,
-      style: const TextStyle(color: Colors.white),
+      style: TextStyle(color: textColor),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: Colors.grey),
+        hintStyle: TextStyle(color: hintColor),
         filled: true,
-        fillColor: const Color(0xFF2A2A3A),
+        fillColor: fillColor,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(30),
           borderSide: BorderSide.none,
         ),
       ),
+      keyboardType:
+          hint.toLowerCase().contains('email') ? TextInputType.emailAddress : null,
     );
   }
 
-  Widget _buildPasswordField({
-    required String hint,
-    required bool isVisible,
-    required VoidCallback onToggleVisibility,
-    TextEditingController? controller,
-  }) {
+  Widget _buildPasswordField(
+      String hint,
+      bool isVisible,
+      VoidCallback onToggleVisibility,
+      TextEditingController? controller,
+      Color textColor,
+      Color hintColor,
+      Color fillColor,
+      Color suffixIconColor) {
     return TextField(
       controller: controller,
       obscureText: !isVisible,
-      style: const TextStyle(color: Colors.white),
+      style: TextStyle(color: textColor),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: Colors.grey),
+        hintStyle: TextStyle(color: hintColor),
         filled: true,
-        fillColor: const Color(0xFF2A2A3A),
+        fillColor: fillColor,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(30),
           borderSide: BorderSide.none,
@@ -401,7 +416,7 @@ class _AuthScreenState extends State<AuthScreen> {
         suffixIcon: IconButton(
           icon: Icon(
             isVisible ? Icons.visibility_off : Icons.visibility,
-            color: Colors.grey,
+            color: suffixIconColor,
           ),
           onPressed: onToggleVisibility,
         ),
@@ -409,19 +424,19 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  Widget _buildDivider() {
+  Widget _buildDivider(Color dividerColor, Color textColor) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        const Expanded(child: Divider(color: Colors.grey)),
+        Expanded(child: Divider(color: dividerColor)),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: Text(
             _selectedTab == 1 ? 'O regístrate con:' : 'O iniciar Sesión con:',
-            style: const TextStyle(color: Colors.grey),
+            style: TextStyle(color: textColor),
           ),
         ),
-        const Expanded(child: Divider(color: Colors.grey)),
+        Expanded(child: Divider(color: dividerColor)),
       ],
     );
   }
@@ -433,11 +448,14 @@ class _AuthScreenState extends State<AuthScreen> {
   }) {
     return OutlinedButton.icon(
       onPressed: onPressed,
-      icon: FaIcon(icon, color: Colors.white),
-      label: Text(label, style: const TextStyle(color: Colors.white)),
+      icon: const FaIcon(FontAwesomeIcons.google, color: kGoogleRed),
+      label: const Text(
+        'Continuar con Google',
+        style: TextStyle(color: kGoogleRed),
+      ),
       style: OutlinedButton.styleFrom(
         padding: const EdgeInsets.symmetric(vertical: 16),
-        side: const BorderSide(color: Colors.grey),
+        side: const BorderSide(color: kGoogleRed),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
       ),
     );

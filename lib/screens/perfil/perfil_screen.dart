@@ -1,16 +1,16 @@
-// lib/screens/perfil/perfil_screen.dart
-import 'package:TaxiTuc/screens/passwordRecovery/password_recovey.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../home/home_screen.dart';
+import '../perfil/services/perfil_services.dart';
 import 'datos_screen.dart';
 import 'pagos_screen.dart';
 import 'viajes_screen.dart';
 import 'ayuda_screen.dart';
+import '../passwordRecovery/password_recovey.dart';
 
 class PerfilScreen extends StatefulWidget {
   final int? userId;
-  const PerfilScreen({super.key, this.userId});
+  final Map<String, dynamic>? initialUser;
+  const PerfilScreen({super.key, this.userId, this.initialUser});
 
   @override
   State<PerfilScreen> createState() => _PerfilScreenState();
@@ -23,19 +23,40 @@ class _PerfilScreenState extends State<PerfilScreen> {
   @override
   void initState() {
     super.initState();
-    _loadUser();
+    user = widget.initialUser; //
+    _fetchUserFromBackend();
   }
 
-  Future<void> _loadUser() async {
-    final prefs = await SharedPreferences.getInstance();
-    print('aaaaaaaaaaaaaaaaaaa ${prefs.getString('nombre_usuario')}');
-    final nombre = prefs.getString('nombre_usuario') ?? 'Usuario';
-    final apellido = prefs.getString('apellido_usuario') ?? '';
-    final foto = prefs.getString('foto_perfil');
-    setState(() {
-      user = {'nombre': nombre, 'apellido': apellido, 'foto': foto};
-      loading = false;
-    });
+  Future<void> _fetchUserFromBackend() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final idUsuario = prefs.getInt('id_usuario');
+      final token = prefs.getString('token');
+
+      if (idUsuario == null || token == null) {
+        debugPrint('❌ No hay datos guardados en SharedPreferences');
+        setState(() => loading = false);
+        return;
+      }
+
+      final service = PerfilService();
+      final data = await service.obtenerUsuarioPorId(idUsuario);
+
+      debugPrint('📦 Usuario obtenido del backend: $data');
+
+      if (data != null) {
+        setState(() {
+          user = data;
+          loading = false;
+        });
+      } else {
+        debugPrint('⚠️ Usuario no encontrado en backend');
+        setState(() => loading = false);
+      }
+    } catch (e) {
+      debugPrint('❌ Error al cargar usuario: $e');
+      setState(() => loading = false);
+    }
   }
 
   void _navigateTo(Widget page) {
@@ -44,42 +65,45 @@ class _PerfilScreenState extends State<PerfilScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     if (loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
+
+    final foto =
+        (user?['foto_perfil'] != null &&
+            (user?['foto_perfil'] as String).isNotEmpty)
+        ? NetworkImage(user!['foto_perfil'])
+        : const NetworkImage('https://i.pravatar.cc/150?img=5');
+
+    final nombre = user?['nombre_usuario'] ?? 'Usuario';
+    final email = user?['email_usuario'] ?? '';
 
     return Scaffold(
       appBar: AppBar(title: const Text('Perfil')),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+          padding: const EdgeInsets.all(16),
           child: Column(
             children: [
-              // ======= Imagen + nombre =======
-              CircleAvatar(
-                radius: 50,
-                backgroundImage:
-                    (user?['foto'] != null &&
-                        (user?['foto'] as String).isNotEmpty)
-                    ? NetworkImage(user!['foto_perfil'])
-                    : const NetworkImage('https://i.pravatar.cc/150?img=5'),
-              ),
+              CircleAvatar(radius: 50, backgroundImage: foto),
               const SizedBox(height: 12),
               Text(
-                '${user?['nombre_usuario']} ${user?['apellido_usuario']}',
+                nombre,
                 style: Theme.of(
                   context,
                 ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
               ),
+              if (email.isNotEmpty)
+                Text(email, style: Theme.of(context).textTheme.bodyMedium),
               const SizedBox(height: 24),
               const Divider(),
 
-              // ======= Opciones del menú =======
               _buildMenuItem(
                 icon: Icons.person_outline,
                 text: 'Mis datos personales',
-                onTap: () => _navigateTo(DatosScreen(userId: widget.userId)),
+                onTap: () => _navigateTo(
+                  DatosScreen(userId: user?['id_usuario'], initialUser: user),
+                ),
               ),
               _buildMenuItem(
                 icon: Icons.history_rounded,
@@ -113,9 +137,8 @@ class _PerfilScreenState extends State<PerfilScreen> {
     required String text,
     required VoidCallback onTap,
   }) {
-    final cs = Theme.of(context).colorScheme;
     return ListTile(
-      leading: Icon(icon, color: cs.primary),
+      leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
       title: Text(text),
       trailing: const Icon(Icons.chevron_right),
       onTap: onTap,
