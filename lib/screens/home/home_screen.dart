@@ -495,6 +495,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
       icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
     );
 
+    if (!mounted) return;
     setState(() {
       _markers.removeWhere((m) => m.markerId.value == 'origen');
       _markers.add(origen);
