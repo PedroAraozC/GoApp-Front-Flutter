@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:taxi_tuc/screens/passwordRecovery/password_recovey.dart';
 import '../auth/services/auth_service.dart';
 import '../auth/services/google_auth_service.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -77,23 +78,30 @@ class _AuthScreenState extends State<AuthScreen> {
 
     try {
       final user = await _authService.login(email, password);
+
       if (user != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Bienvenido, ${user['nombre_usuario']}')),
-        );
+        if (user['auth_provider'] != 'manual') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Debes iniciar sesión con Google.')),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Bienvenido, ${user['nombre_usuario']}')),
+          );
 
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool('isLoggedIn', true);
-        await prefs.setInt('id_usuario', user['id_usuario']);
-        await prefs.setString('token', user['token'] ?? '');
-        await prefs.setString('nombre_usuario', user['nombre_usuario']);
-        await prefs.setString('email_usuario', user['email_usuario']);
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool('isLoggedIn', true);
+          await prefs.setInt('id_usuario', user['id_usuario']);
+          await prefs.setString('token', user['token'] ?? '');
+          await prefs.setString('nombre_usuario', user['nombre_usuario']);
+          await prefs.setString('email_usuario', user['email_usuario']);
 
-        if (!mounted) return;
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => HomeScreen(user: user)),
-        );
+          if (!mounted) return;
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => HomeScreen(user: user)),
+          );
+        }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Email o contraseña incorrectos')),
@@ -134,26 +142,42 @@ class _AuthScreenState extends State<AuthScreen> {
       debugPrint('✅ Usuario desde backend: $user');
       debugPrint('🔑 Token JWT: $token');
 
-      // Guardamos datos
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('isLoggedIn', true);
-      await prefs.setInt('id_usuario', user['id_usuario'] ?? 0);
-      await prefs.setString('nombre_usuario', user['nombre_usuario'] ?? '');
-      await prefs.setString('apellido_usuario', user['apellido_usuario'] ?? '');
-      await prefs.setString('email_usuario', user['email_usuario'] ?? '');
-      await prefs.setString('telefono_usuario', user['telefono_usuario'] ?? '');
-      await prefs.setString('foto_perfil', user['foto_perfil'] ?? '');
-      await prefs.setString('token', token ?? '');
+      if (user['auth_provider'] != 'google') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Debes ingresar la contraseña de tu cuenta para poder ingresar.',
+            ),
+          ),
+        );
+      } else {
+        // Guardamos datos
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('isLoggedIn', true);
+        await prefs.setInt('id_usuario', user['id_usuario'] ?? 0);
+        await prefs.setString('nombre_usuario', user['nombre_usuario'] ?? '');
+        await prefs.setString(
+          'apellido_usuario',
+          user['apellido_usuario'] ?? '',
+        );
+        await prefs.setString('email_usuario', user['email_usuario'] ?? '');
+        await prefs.setString(
+          'telefono_usuario',
+          user['telefono_usuario'] ?? '',
+        );
+        await prefs.setString('foto_perfil', user['foto_perfil'] ?? '');
+        await prefs.setString('token', token ?? '');
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Bienvenido, ${user['nombre_usuario']}')),
-      );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Bienvenido, ${user['nombre_usuario']}')),
+        );
 
-      if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => HomeScreen(user: user)),
-      );
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => HomeScreen(user: user)),
+        );
+      }
     } catch (e) {
       await _googleSignIn.signOut();
       debugPrint('❌ Error Google SignIn: $e');
@@ -442,7 +466,7 @@ class _AuthScreenState extends State<AuthScreen> {
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
             TextButton(
-              onPressed: () {},
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RecuperarPasswordScreen())),
               style: TextButton.styleFrom(foregroundColor: linkColor),
               child: const Text('¿Olvidaste la Contraseña?'),
             ),

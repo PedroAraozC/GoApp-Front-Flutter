@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:taxi_tuc/screens/auth/auth_screen.dart';
 import '../../services/auth_service.dart';
 
 class ChangePasswordScreen extends StatefulWidget {
@@ -73,6 +74,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
 
       await Future.delayed(const Duration(seconds: 2));
       setState(() => isLoading = false);
+
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const AuthScreen()));
     } else {
       mostrarMensaje(
         response['message'] ?? "Error al cambiar la contraseña",
