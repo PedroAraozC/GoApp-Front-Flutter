@@ -36,6 +36,7 @@ flutter:
   assets:
     - assets/images/
     - .env
+    - assets/images/pin_negro.png
 
 flutter_launcher_icons:
   android: true

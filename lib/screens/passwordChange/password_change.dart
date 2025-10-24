@@ -75,7 +75,10 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       await Future.delayed(const Duration(seconds: 2));
       setState(() => isLoading = false);
 
-      Navigator.push(context, MaterialPageRoute(builder: (_) => const AuthScreen()));
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const AuthScreen()),
+      );
     } else {
       mostrarMensaje(
         response['message'] ?? "Error al cambiar la contraseña",
@@ -105,218 +108,221 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      backgroundColor: colorScheme.background,
+      backgroundColor: colorScheme.surface,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 40.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              IconButton(
-                icon: Icon(
-                  Icons.arrow_back_ios,
-                  color: colorScheme.onBackground.withOpacity(0.7),
+        child: SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 40.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                IconButton(
+                  icon: Icon(
+                    Icons.arrow_back_ios,
+                    color: colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                  onPressed: () => Navigator.pop(context),
                 ),
-                onPressed: () => Navigator.pop(context),
-              ),
-              const SizedBox(height: 20),
+                const SizedBox(height: 20),
 
-              Text(
-                "Cambiar contraseña",
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: colorScheme.onBackground,
+                Text(
+                  "Cambiar contraseña",
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.onSurface,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                "Ingresá tu contraseña actual y establecé una nueva.",
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onBackground.withOpacity(0.7),
+                const SizedBox(height: 12),
+                Text(
+                  "Ingresá tu contraseña actual y establecé una nueva.",
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 40),
+                const SizedBox(height: 40),
 
-              // Contraseña actual
-              TextField(
-                controller: currentPasswordController,
-                obscureText: !showCurrentPassword,
-                style: TextStyle(color: colorScheme.onSurface),
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: colorScheme.brightness == Brightness.dark
-                      ? Colors.grey[800]
-                      : Colors.white,
-                  hintText: "Contraseña actual",
-                  hintStyle: TextStyle(
-                    color: colorScheme.onSurface.withOpacity(0.6),
-                  ),
-                  prefixIcon: Icon(
-                    Icons.lock_outline,
-                    color: colorScheme.onSurface.withOpacity(0.6),
-                  ),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      showCurrentPassword
-                          ? Icons.visibility_off
-                          : Icons.visibility,
-                      color: colorScheme.onSurface.withOpacity(0.6),
+                // Contraseña actual
+                TextField(
+                  controller: currentPasswordController,
+                  obscureText: !showCurrentPassword,
+                  style: TextStyle(color: colorScheme.onSurface),
+                  decoration: InputDecoration(
+                    filled: true,
+                    fillColor: colorScheme.brightness == Brightness.dark
+                        ? Colors.grey[800]
+                        : Colors.white,
+                    hintText: "Contraseña actual",
+                    hintStyle: TextStyle(
+                      color: colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
-                    onPressed: () {
-                      setState(
-                        () => showCurrentPassword = !showCurrentPassword,
-                      );
-                    },
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(
-                      color: colorScheme.primary,
-                      width: 1.5,
+                    prefixIcon: Icon(
+                      Icons.lock_outline,
+                      color: colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    vertical: 18,
-                    horizontal: 16,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // Nueva contraseña
-              TextField(
-                controller: newPasswordController,
-                obscureText: !showNewPassword,
-                style: TextStyle(color: colorScheme.onSurface),
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: colorScheme.brightness == Brightness.dark
-                      ? Colors.grey[800]
-                      : Colors.white,
-                  hintText: "Nueva contraseña",
-                  hintStyle: TextStyle(
-                    color: colorScheme.onSurface.withOpacity(0.6),
-                  ),
-                  prefixIcon: Icon(
-                    Icons.lock_reset,
-                    color: colorScheme.onSurface.withOpacity(0.6),
-                  ),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      showNewPassword ? Icons.visibility_off : Icons.visibility,
-                      color: colorScheme.onSurface.withOpacity(0.6),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        showCurrentPassword
+                            ? Icons.visibility_off
+                            : Icons.visibility,
+                        color: colorScheme.onSurface.withValues(alpha: 0.6),
+                      ),
+                      onPressed: () {
+                        setState(
+                          () => showCurrentPassword = !showCurrentPassword,
+                        );
+                      },
                     ),
-                    onPressed: () {
-                      setState(() => showNewPassword = !showNewPassword);
-                    },
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(
-                      color: colorScheme.primary,
-                      width: 1.5,
-                    ),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    vertical: 18,
-                    horizontal: 16,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // Confirmar contraseña
-              TextField(
-                controller: confirmPasswordController,
-                obscureText: !showConfirmPassword,
-                style: TextStyle(color: colorScheme.onSurface),
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: colorScheme.brightness == Brightness.dark
-                      ? Colors.grey[800]
-                      : Colors.white,
-                  hintText: "Confirmar nueva contraseña",
-                  hintStyle: TextStyle(
-                    color: colorScheme.onSurface.withOpacity(0.6),
-                  ),
-                  prefixIcon: Icon(
-                    Icons.lock_person,
-                    color: colorScheme.onSurface.withOpacity(0.6),
-                  ),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      showConfirmPassword
-                          ? Icons.visibility_off
-                          : Icons.visibility,
-                      color: colorScheme.onSurface.withOpacity(0.6),
-                    ),
-                    onPressed: () {
-                      setState(
-                        () => showConfirmPassword = !showConfirmPassword,
-                      );
-                    },
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(
-                      color: colorScheme.primary,
-                      width: 1.5,
-                    ),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    vertical: 18,
-                    horizontal: 16,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 35),
-
-              // Botón cambiar
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isLoading
-                        ? Colors.grey.shade400
-                        : colorScheme.primary,
-                    shape: RoundedRectangleBorder(
+                    border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide.none,
                     ),
-                    elevation: 3,
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(
+                        color: colorScheme.primary,
+                        width: 1.5,
+                      ),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: 18,
+                      horizontal: 16,
+                    ),
                   ),
-                  onPressed: isLoading ? null : cambiarContrasena,
-                  child: isLoading
-                      ? const SizedBox(
-                          height: 25,
-                          width: 25,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2.5,
-                          ),
-                        )
-                      : Text(
-                          "Cambiar contraseña",
-                          style: theme.textTheme.labelLarge?.copyWith(
-                            color: colorScheme.onPrimary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 20),
+
+                // Nueva contraseña
+                TextField(
+                  controller: newPasswordController,
+                  obscureText: !showNewPassword,
+                  style: TextStyle(color: colorScheme.onSurface),
+                  decoration: InputDecoration(
+                    filled: true,
+                    fillColor: colorScheme.brightness == Brightness.dark
+                        ? Colors.grey[800]
+                        : Colors.white,
+                    hintText: "Nueva contraseña",
+                    hintStyle: TextStyle(
+                      color: colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
+                    prefixIcon: Icon(
+                      Icons.lock_reset,
+                      color: colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        showNewPassword ? Icons.visibility_off : Icons.visibility,
+                        color: colorScheme.onSurface.withValues(alpha: 0.6),
+                      ),
+                      onPressed: () {
+                        setState(() => showNewPassword = !showNewPassword);
+                      },
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(
+                        color: colorScheme.primary,
+                        width: 1.5,
+                      ),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: 18,
+                      horizontal: 16,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Confirmar contraseña
+                TextField(
+                  controller: confirmPasswordController,
+                  obscureText: !showConfirmPassword,
+                  style: TextStyle(color: colorScheme.onSurface),
+                  decoration: InputDecoration(
+                    filled: true,
+                    fillColor: colorScheme.brightness == Brightness.dark
+                        ? Colors.grey[800]
+                        : Colors.white,
+                    hintText: "Confirmar nueva contraseña",
+                    hintStyle: TextStyle(
+                      color: colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
+                    prefixIcon: Icon(
+                      Icons.lock_person,
+                      color: colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        showConfirmPassword
+                            ? Icons.visibility_off
+                            : Icons.visibility,
+                        color: colorScheme.onSurface.withValues(alpha: 0.6),
+                      ),
+                      onPressed: () {
+                        setState(
+                          () => showConfirmPassword = !showConfirmPassword,
+                        );
+                      },
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(
+                        color: colorScheme.primary,
+                        width: 1.5,
+                      ),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: 18,
+                      horizontal: 16,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 35),
+
+                // Botón cambiar
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isLoading
+                          ? Colors.grey.shade400
+                          : colorScheme.primary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      elevation: 3,
+                    ),
+                    onPressed: isLoading ? null : cambiarContrasena,
+                    child: isLoading
+                        ? const SizedBox(
+                            height: 25,
+                            width: 25,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2.5,
+                            ),
+                          )
+                        : Text(
+                            "Cambiar contraseña",
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              color: colorScheme.onPrimary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

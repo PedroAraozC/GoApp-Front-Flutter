@@ -64,8 +64,6 @@ class _CompletarDatosScreenState extends State<CompletarDatosScreen> {
       text: _clean(u['email'] ?? u['email_usuario']),
     );
 
-    print(_dniController.text);
-    print(_fechaController.text);
     final gRaw = u['id_genero'];
     _idGeneroSeleccionado = (gRaw is int)
         ? gRaw
@@ -120,12 +118,6 @@ class _CompletarDatosScreenState extends State<CompletarDatosScreen> {
       if (!mounted) return;
       if (ok) {
         Navigator.pop(context, true); // ✔️ éxito
-        print("Correctou");
-        print(_dniController.text);
-        print(_fechaController.text);
-        print(_idGeneroSeleccionado);
-        print(_telefonoController.text);
-        print(_emailController.text);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('No se pudo guardar los cambios.')),
@@ -191,8 +183,19 @@ class _CompletarDatosScreenState extends State<CompletarDatosScreen> {
                   controller: _dniController,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(labelText: 'DNI'),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Ingresá tu DNI' : null,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) {
+                      return 'Ingresá tu DNI';
+                    }
+                    final dni = v.trim();
+                    if (!RegExp(r'^\d+$').hasMatch(dni)) {
+                      return 'El DNI solo puede contener números';
+                    }
+                    if (dni.length < 6 || dni.length > 8) {
+                      return 'El DNI debe tener entre 6 y 8 dígitos';
+                    }
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 12),
 
@@ -221,23 +224,8 @@ class _CompletarDatosScreenState extends State<CompletarDatosScreen> {
                         'ES',
                       ), // 🇪🇸 calendario en español
                       builder: (context, child) {
-                        return Theme(
-                          data: Theme.of(context).copyWith(
-                            colorScheme: const ColorScheme.light(
-                              primary: Color(
-                                0xFF5A4FF1,
-                              ), // color principal (morado)
-                              onPrimary: Colors.white,
-                              onSurface: Colors.black87,
-                            ),
-                            textButtonTheme: TextButtonThemeData(
-                              style: TextButton.styleFrom(
-                                foregroundColor: Color(0xFF5A4FF1),
-                              ),
-                            ),
-                          ),
-                          child: child!,
-                        );
+                        // 🎨 Respeta completamente el tema del dispositivo
+                        return Theme(data: Theme.of(context), child: child!);
                       },
                     );
 
@@ -249,15 +237,44 @@ class _CompletarDatosScreenState extends State<CompletarDatosScreen> {
                       });
                     }
                   },
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Ingresá tu fecha de nacimiento'
-                      : null,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) {
+                      return 'Ingresá tu fecha de nacimiento';
+                    }
+                    try {
+                      final parts = v.split('-');
+                      if (parts.length != 3) return 'Fecha inválida';
+                      
+                      final year = int.parse(parts[0]);
+                      final month = int.parse(parts[1]);
+                      final day = int.parse(parts[2]);
+                      
+                      final birthDate = DateTime(year, month, day);
+                      final today = DateTime.now();
+                      final age = today.year - birthDate.year -
+                          ((today.month < birthDate.month ||
+                                  (today.month == birthDate.month &&
+                                      today.day < birthDate.day))
+                              ? 1
+                              : 0);
+                      
+                      if (age > 110) {
+                        return 'La edad no puede superar los 110 años';
+                      }
+                      if (age < 0) {
+                        return 'La fecha no puede ser futura';
+                      }
+                    } catch (e) {
+                      return 'Fecha inválida';
+                    }
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 12),
 
                 // Género
                 DropdownButtonFormField<int>(
-                  initialValue: _idGeneroSeleccionado,
+                  value: _idGeneroSeleccionado,
                   items: _generos
                       .map(
                         (g) => DropdownMenuItem<int>(
@@ -277,9 +294,19 @@ class _CompletarDatosScreenState extends State<CompletarDatosScreen> {
                   controller: _telefonoController,
                   keyboardType: TextInputType.phone,
                   decoration: const InputDecoration(labelText: 'Teléfono'),
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Ingresá un teléfono'
-                      : null,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) {
+                      return 'Ingresá un teléfono';
+                    }
+                    final telefono = v.trim().replaceAll(RegExp(r'[\s\-\(\)]'), '');
+                    if (!RegExp(r'^\d+$').hasMatch(telefono)) {
+                      return 'El teléfono solo puede contener números';
+                    }
+                    if (telefono.length < 10 || telefono.length > 15) {
+                      return 'El teléfono debe tener entre 10 y 15 dígitos';
+                    }
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 12),
 

@@ -16,7 +16,9 @@ import 'package:google_sign_in/google_sign_in.dart';
 import '../../screens/home/services/api_service.dart';
 import 'widgets/completar_datos_screen.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:ui' as ui;
+import 'dart:typed_data';
+import 'package:flutter/services.dart' show rootBundle;
 
 class HomeScreen extends StatefulWidget {
   final Map<String, dynamic> user;
@@ -223,7 +225,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         style: TextStyle(
                           fontSize: 13,
                           color: (fg ?? Theme.of(context).colorScheme.onSurface)
-                              .withOpacity(0.7),
+                              .withValues(alpha: 0.7),
                         ),
                       ),
                     ],
@@ -365,7 +367,7 @@ class IniciarViajeScreen extends StatefulWidget {
 }
 
 class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
-  static String kGoogleApiKey = '${apiKey}';
+  static String kGoogleApiKey = '$apiKey';
 
   final _origenCtrl = TextEditingController();
   final _destinoCtrl = TextEditingController();
@@ -450,13 +452,17 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
     _destFocus.dispose();
     super.dispose();
   }
-
+Future<BitmapDescriptor> _crearIconoNegro() async {
+  final ByteData data = await rootBundle.load('assets/images/pin_negro.png');
+  return BitmapDescriptor.fromBytes(data.buffer.asUint8List());
+}
   // ======= GPS: fija ORIGEN automáticamente =======
   Future<void> _initLocation() async {
     if (!await Geolocator.isLocationServiceEnabled()) {
       _msg('Activá los servicios de ubicación.');
       return;
     }
+    final iconoNegro = await _crearIconoNegro();
     var p = await Geolocator.checkPermission();
     if (p == LocationPermission.denied) {
       p = await Geolocator.requestPermission();
@@ -492,7 +498,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
       markerId: const MarkerId('origen'),
       position: _miUbicacion!,
       infoWindow: const InfoWindow(title: 'Origen', snippet: 'Mi ubicación'),
-      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+      icon: iconoNegro,
     );
 
     if (!mounted) return;
@@ -774,7 +780,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
       max(o.longitude, d.longitude),
     );
     final bounds = LatLngBounds(southwest: sw, northeast: ne);
-    await _mapCtrl!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 60));
+    await _mapCtrl!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 280));
   }
 
   // ======= AUTOCOMPLETE REST (reutilizable) =======
@@ -1183,7 +1189,7 @@ class _PredictionsList extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withValues(alpha: 0.08),
             blurRadius: 8,
             offset: const Offset(0, 4),
           ),

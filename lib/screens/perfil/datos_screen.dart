@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../perfil/services/perfil_services.dart';
-import 'widgets/perfil_form.dart';
+import '../perfil/widgets/perfil_form.dart';
 
 class DatosScreen extends StatefulWidget {
   final int? userId;
@@ -86,9 +86,7 @@ class _DatosScreenState extends State<DatosScreen> {
       final service = PerfilService();
       final lista = await service
           .obtenerGeneros(); // <-- ajusta si tu método se llama distinto
-      if (lista is List) {
-        _generos = List<Map<String, dynamic>>.from(lista);
-      }
+      _generos = List<Map<String, dynamic>>.from(lista);
     } catch (e) {
       debugPrint('❌ Error al cargar géneros: $e');
     }

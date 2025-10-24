@@ -255,8 +255,8 @@ class _AuthScreenState extends State<AuthScreen> {
     final textColor = scheme.onSurface;
     final hintColor = scheme.onSurfaceVariant;
     final fieldFill = isDark
-        ? scheme.surfaceVariant.withOpacity(0.35)
-        : scheme.surfaceVariant;
+        ? scheme.surfaceContainerHighest.withValues(alpha: 0.35)
+        : scheme.surfaceContainerHighest;
     final dividerColor = scheme.outlineVariant;
     final linkColor = scheme.primary;
     final iconDefault = scheme.onSurface;

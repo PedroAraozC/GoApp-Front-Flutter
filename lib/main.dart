@@ -4,13 +4,11 @@ import 'screens/auth/auth_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'dart:io';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  final file = File('.env');
-  print('Existe .env? ${await file.exists()}');
+
   await dotenv.load(fileName: ".env");
   runApp(const GoApp());
 }

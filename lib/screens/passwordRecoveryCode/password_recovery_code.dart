@@ -125,9 +125,9 @@ class _RecuperarPasswordCodeScreenState
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      backgroundColor: colorScheme.background,
+      backgroundColor: colorScheme.surface,
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 40.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -135,7 +135,7 @@ class _RecuperarPasswordCodeScreenState
               IconButton(
                 icon: Icon(
                   Icons.arrow_back_ios,
-                  color: colorScheme.onBackground.withOpacity(0.7),
+                  color: colorScheme.onSurface.withValues(alpha: 0.7),
                 ),
                 onPressed: () => Navigator.pop(context),
               ),
@@ -145,14 +145,14 @@ class _RecuperarPasswordCodeScreenState
                 "Verificar código",
                 style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
-                  color: colorScheme.onBackground,
+                  color: colorScheme.onSurface,
                 ),
               ),
               const SizedBox(height: 12),
               Text(
                 "Ingresá el código de 5 dígitos que te enviamos al correo.",
                 style: theme.textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onBackground.withOpacity(0.7),
+                  color: colorScheme.onSurface.withValues(alpha: 0.7),
                 ),
               ),
               const SizedBox(height: 40),
@@ -248,7 +248,7 @@ class _RecuperarPasswordCodeScreenState
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: puedeReenviar
                           ? colorScheme.primary
-                          : colorScheme.onSurface.withOpacity(0.6),
+                          : colorScheme.onSurface.withValues(alpha: 0.6),
                       fontWeight: FontWeight.w600,
                     ),
                   ),

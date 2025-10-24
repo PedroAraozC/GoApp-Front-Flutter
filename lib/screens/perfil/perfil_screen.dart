@@ -76,7 +76,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
         : const NetworkImage('https://i.pravatar.cc/150?img=5');
 
     final nombre = user?['nombre_usuario'] ?? 'Usuario';
-    final apellido = user ? ['apellido_usuario'] ?? 'Apellido';
+    final apellido = user?['apellido_usuario'] ?? 'Apellido';
     final email = user?['email_usuario'] ?? '';
 
     return Scaffold(
@@ -89,7 +89,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
               CircleAvatar(radius: 50, backgroundImage: foto),
               const SizedBox(height: 12),
               Text(
-                '$apellido, $nombre',
+                '$apellido $nombre',
                 style: Theme.of(
                   context,
                 ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),

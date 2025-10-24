@@ -83,16 +83,16 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      backgroundColor: colorScheme.background,
+      backgroundColor: colorScheme.surface,
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 40.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               IconButton(
                 icon: Icon(Icons.arrow_back_ios,
-                    color: colorScheme.onBackground.withOpacity(0.7)),
+                    color: colorScheme.onSurface.withValues(alpha: 0.7)),
                 onPressed: () => Navigator.pop(context),
               ),
               const SizedBox(height: 20),
@@ -101,7 +101,7 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
                 "Recuperar contraseña",
                 style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
-                  color: colorScheme.onBackground,
+                  color: colorScheme.onSurface,
                 ),
               ),
               const SizedBox(height: 12),
@@ -109,7 +109,7 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
               Text(
                 "Ingresá tu correo electrónico y te enviaremos un enlace para restablecer tu contraseña.",
                 style: theme.textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onBackground.withOpacity(0.7),
+                  color: colorScheme.onSurface.withValues(alpha: 0.7),
                 ),
               ),
               const SizedBox(height: 40),
@@ -126,8 +126,8 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
                       ? Colors.grey[800]
                       : Colors.white,
                   hintText: "Número de documento",
-                  hintStyle: TextStyle(color: colorScheme.onSurface.withOpacity(0.6)),
-                  prefixIcon: Icon(Icons.badge, color: colorScheme.onSurface.withOpacity(0.6)),
+                  hintStyle: TextStyle(color: colorScheme.onSurface.withValues(alpha: 0.6)),
+                  prefixIcon: Icon(Icons.badge, color: colorScheme.onSurface.withValues(alpha: 0.6)),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                     borderSide: BorderSide.none,
@@ -159,9 +159,9 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
                       ? Colors.grey[800]
                       : Colors.white,
                   hintText: "Correo electrónico",
-                  hintStyle: TextStyle(color: colorScheme.onSurface.withOpacity(0.6)),
+                  hintStyle: TextStyle(color: colorScheme.onSurface.withValues(alpha: 0.6)),
                   prefixIcon: Icon(Icons.email_outlined,
-                      color: colorScheme.onSurface.withOpacity(0.6)),
+                      color: colorScheme.onSurface.withValues(alpha: 0.6)),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                     borderSide: BorderSide.none,

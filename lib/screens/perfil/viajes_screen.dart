@@ -1,6 +1,5 @@
 // lib/screens/perfil/perfil_viajes_screen.dart
 import 'package:flutter/material.dart';
-import '../../screens/home/home_screen.dart';
 
 class ViajesScreen extends StatelessWidget {
   const ViajesScreen({super.key});

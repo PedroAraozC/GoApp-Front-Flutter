@@ -25,7 +25,7 @@ class PerfilHeader extends StatelessWidget {
                   255,
                   255,
                   255,
-                ).withOpacity(0.1),
+                ).withValues(alpha: 0.1),
                 blurRadius: 12,
                 offset: const Offset(0, 6),
               ),
