@@ -23,7 +23,7 @@ class PerfilService {
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
         final result = decoded['result'];
-
+        print("😣 $result");
         if (result is List && result.isNotEmpty) {
           return Map<String, dynamic>.from(result[0]);
         } else if (result is Map) {
