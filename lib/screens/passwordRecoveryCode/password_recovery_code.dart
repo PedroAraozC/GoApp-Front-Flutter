@@ -68,12 +68,6 @@ class _RecuperarPasswordCodeScreenState
   }
 
   void reenviarCodigo() {
-    /*ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("El codigo de validación ha sido reenviad a tu dirección de correo electrónico."),
-        duration: Duration(seconds: 2),
-      ),
-    );*/
     mostrarMensaje(
       "El código de validación ha sido reenviado a tu dirección de correo electrónico.",
     );
@@ -84,27 +78,6 @@ class _RecuperarPasswordCodeScreenState
     setState(() => isLoading = true);
 
     final codigoIngresado = codeControllers.map((c) => c.text).join();
-
-    await Future.delayed(const Duration(seconds: 1));
-
-    /*
-    if (codigoIngresado == codigoCorrecto) {
-      mostrarMensaje(
-        "El código de validación ha sido verificado correctamente.",
-      );
-      for (var c in codeControllers) {
-        c.clear();
-      }
-    } else {
-      mostrarMensaje(
-        "El código de validación ingresado no es correcto.",
-        error: true,
-      );
-      for (var c in codeControllers) {
-        c.clear();
-      }
-    }
-    */
 
     try {
       final response = await AuthService.verificarCodigo(
@@ -133,9 +106,10 @@ class _RecuperarPasswordCodeScreenState
   }
 
   void mostrarMensaje(String mensaje, {bool error = false}) {
+    final colorScheme = Theme.of(context).colorScheme;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        backgroundColor: error ? Colors.redAccent : Colors.green,
+        backgroundColor: error ? colorScheme.error : colorScheme.primary,
         content: Text(
           mensaje,
           style: const TextStyle(color: Colors.white, fontSize: 15),
@@ -147,33 +121,39 @@ class _RecuperarPasswordCodeScreenState
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: colorScheme.background,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 40.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Botón volver
               IconButton(
-                icon: const Icon(Icons.arrow_back_ios, color: Colors.black54),
+                icon: Icon(
+                  Icons.arrow_back_ios,
+                  color: colorScheme.onBackground.withOpacity(0.7),
+                ),
                 onPressed: () => Navigator.pop(context),
               ),
               const SizedBox(height: 20),
 
-              const Text(
+              Text(
                 "Verificar código",
-                style: TextStyle(
-                  color: Colors.black87,
-                  fontSize: 28,
+                style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
+                  color: colorScheme.onBackground,
                 ),
               ),
               const SizedBox(height: 12),
-              const Text(
+              Text(
                 "Ingresá el código de 5 dígitos que te enviamos al correo.",
-                style: TextStyle(color: Colors.black54, fontSize: 15),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onBackground.withOpacity(0.7),
+                ),
               ),
               const SizedBox(height: 40),
 
@@ -190,21 +170,23 @@ class _RecuperarPasswordCodeScreenState
                         FilteringTextInputFormatter.digitsOnly,
                         LengthLimitingTextInputFormatter(1),
                       ],
-                      style: const TextStyle(
-                        color: Colors.black87,
+                      style: TextStyle(
+                        color: colorScheme.onSurface,
                         fontSize: 22,
                       ),
                       decoration: InputDecoration(
                         filled: true,
-                        fillColor: Colors.white,
+                        fillColor: colorScheme.brightness == Brightness.dark
+                            ? Colors.grey[800]
+                            : Colors.white,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide.none,
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: Color(0xFF6C63FF),
+                          borderSide: BorderSide(
+                            color: colorScheme.primary,
                             width: 1.5,
                           ),
                         ),
@@ -228,7 +210,7 @@ class _RecuperarPasswordCodeScreenState
                 height: 50,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF6C63FF),
+                    backgroundColor: colorScheme.primary,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
@@ -244,11 +226,10 @@ class _RecuperarPasswordCodeScreenState
                             strokeWidth: 2.5,
                           ),
                         )
-                      : const Text(
+                      : Text(
                           "Verificar código",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            color: colorScheme.onPrimary,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -264,10 +245,10 @@ class _RecuperarPasswordCodeScreenState
                     puedeReenviar
                         ? "Volver a enviar código"
                         : "Volver a enviar el código (${segundosRestantes}s)",
-                    style: TextStyle(
+                    style: theme.textTheme.bodyMedium?.copyWith(
                       color: puedeReenviar
-                          ? const Color(0xFF6C63FF)
-                          : Colors.grey,
+                          ? colorScheme.primary
+                          : colorScheme.onSurface.withOpacity(0.6),
                       fontWeight: FontWeight.w600,
                     ),
                   ),

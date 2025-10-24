@@ -47,7 +47,7 @@ class PerfilService {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(data),
       );
-
+      print(data);
       return response.statusCode == 200;
     } catch (e) {
       throw Exception('Error en actualizarUsuario: $e');

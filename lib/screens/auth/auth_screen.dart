@@ -27,8 +27,12 @@ class _AuthScreenState extends State<AuthScreen> {
   late final String? srvClientId;
   late GoogleSignIn _googleSignIn;
 
+  final TextEditingController _nombreController = TextEditingController();
+  final TextEditingController _apellidoController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _passwordConfirmController =
+      TextEditingController();
 
   final _authService = AuthService();
   final _authGoogleService = AuthGoogleService();
@@ -45,8 +49,11 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   void dispose() {
+    _nombreController.dispose();
+    _apellidoController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _passwordConfirmController.dispose();
     super.dispose();
   }
 
@@ -93,9 +100,9 @@ class _AuthScreenState extends State<AuthScreen> {
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al iniciar sesión: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al iniciar sesión: $e')));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -159,12 +166,57 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   // ======================
-  // Registro (aún no implementado)
+  // Registro normal
   // ======================
-  void _handleRegister() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Función de registro no implementada aún')),
-    );
+  Future<void> _handleRegister() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+
+    final apellido = _apellidoController.text.trim();
+    final nombre = _nombreController.text.trim();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+    final passwordConfirm = _passwordConfirmController.text.trim();
+
+    if (email.isEmpty ||
+        password.isEmpty ||
+        apellido.isEmpty ||
+        nombre.isEmpty ||
+        passwordConfirm.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Por favor completa todos los campos')),
+      );
+      setState(() => _isLoading = false);
+      return;
+    }
+
+    try {
+      final result = await _authService.register(
+        apellido,
+        nombre,
+        email,
+        password,
+      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(result['message'])));
+
+      if (result['status'] == 200) {
+        // ✅ Limpiar campos
+        _emailController.clear();
+        _passwordController.clear();
+        _passwordConfirmController.clear();
+        _nombreController.clear();
+        _apellidoController.clear();
+        _selectedTab = 0;
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al registrar usuario: $e')));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   // ======================
@@ -221,13 +273,18 @@ class _AuthScreenState extends State<AuthScreen> {
                       duration: const Duration(milliseconds: 300),
                       child: _selectedTab == 1
                           ? _buildRegisterForm(
-                              textColor, hintColor, fieldFill, suffixIconCols)
+                              textColor,
+                              hintColor,
+                              fieldFill,
+                              suffixIconCols,
+                            )
                           : _buildLoginForm(
                               textColor,
                               hintColor,
                               fieldFill,
                               suffixIconCols,
-                              linkColor),
+                              linkColor,
+                            ),
                     ),
                     const SizedBox(height: 24),
 
@@ -235,8 +292,8 @@ class _AuthScreenState extends State<AuthScreen> {
                       onPressed: _isLoading
                           ? null
                           : (_selectedTab == 0
-                              ? _handleLogin
-                              : _handleRegister),
+                                ? _handleLogin
+                                : _handleRegister),
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         backgroundColor: kTaxiYellow,
@@ -287,35 +344,99 @@ class _AuthScreenState extends State<AuthScreen> {
   // ==============================
 
   Widget _buildRegisterForm(
-      Color textColor, Color hintColor, Color fillColor, Color suffixIconColor) {
+    Color textColor,
+    Color hintColor,
+    Color fillColor,
+    Color suffixIconColor,
+  ) {
     return Column(
       key: const ValueKey('register'),
       children: [
-        _buildTextField('Email', null, textColor, hintColor, fillColor),
+        _buildTextField(
+          'Nombre',
+          _nombreController,
+          textColor,
+          hintColor,
+          fillColor,
+        ),
         const SizedBox(height: 16),
-        _buildPasswordField('Contraseña', _isPasswordVisible, () {
-          setState(() => _isPasswordVisible = !_isPasswordVisible);
-        }, null, textColor, hintColor, fillColor, suffixIconColor),
+        _buildTextField(
+          'Apellido',
+          _apellidoController,
+          textColor,
+          hintColor,
+          fillColor,
+        ),
         const SizedBox(height: 16),
-        _buildPasswordField('Confirmar Contraseña', _isConfirmPasswordVisible,
-            () {
-          setState(() =>
-              _isConfirmPasswordVisible = !_isConfirmPasswordVisible);
-        }, null, textColor, hintColor, fillColor, suffixIconColor),
+        _buildTextField(
+          'Email',
+          _emailController,
+          textColor,
+          hintColor,
+          fillColor,
+        ),
+        const SizedBox(height: 16),
+        _buildPasswordField(
+          'Contraseña',
+          _isPasswordVisible,
+          () {
+            setState(() => _isPasswordVisible = !_isPasswordVisible);
+          },
+          _passwordController,
+          textColor,
+          hintColor,
+          fillColor,
+          suffixIconColor,
+        ),
+        const SizedBox(height: 16),
+        _buildPasswordField(
+          'Confirmar Contraseña',
+          _isConfirmPasswordVisible,
+          () {
+            setState(
+              () => _isConfirmPasswordVisible = !_isConfirmPasswordVisible,
+            );
+          },
+          _passwordConfirmController,
+          textColor,
+          hintColor,
+          fillColor,
+          suffixIconColor,
+        ),
       ],
     );
   }
 
-  Widget _buildLoginForm(Color textColor, Color hintColor, Color fillColor,
-      Color suffixIconColor, Color linkColor) {
+  Widget _buildLoginForm(
+    Color textColor,
+    Color hintColor,
+    Color fillColor,
+    Color suffixIconColor,
+    Color linkColor,
+  ) {
     return Column(
       key: const ValueKey('login'),
       children: [
-        _buildTextField('Email', _emailController, textColor, hintColor, fillColor),
+        _buildTextField(
+          'Email',
+          _emailController,
+          textColor,
+          hintColor,
+          fillColor,
+        ),
         const SizedBox(height: 16),
-        _buildPasswordField('Contraseña', _isPasswordVisible, () {
-          setState(() => _isPasswordVisible = !_isPasswordVisible);
-        }, _passwordController, textColor, hintColor, fillColor, suffixIconColor),
+        _buildPasswordField(
+          'Contraseña',
+          _isPasswordVisible,
+          () {
+            setState(() => _isPasswordVisible = !_isPasswordVisible);
+          },
+          _passwordController,
+          textColor,
+          hintColor,
+          fillColor,
+          suffixIconColor,
+        ),
         const SizedBox(height: 16),
         Row(
           mainAxisAlignment: MainAxisAlignment.end,
@@ -371,8 +492,13 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  Widget _buildTextField(String hint, TextEditingController? controller,
-      Color textColor, Color hintColor, Color fillColor) {
+  Widget _buildTextField(
+    String hint,
+    TextEditingController? controller,
+    Color textColor,
+    Color hintColor,
+    Color fillColor,
+  ) {
     return TextField(
       controller: controller,
       style: TextStyle(color: textColor),
@@ -386,20 +512,22 @@ class _AuthScreenState extends State<AuthScreen> {
           borderSide: BorderSide.none,
         ),
       ),
-      keyboardType:
-          hint.toLowerCase().contains('email') ? TextInputType.emailAddress : null,
+      keyboardType: hint.toLowerCase().contains('email')
+          ? TextInputType.emailAddress
+          : null,
     );
   }
 
   Widget _buildPasswordField(
-      String hint,
-      bool isVisible,
-      VoidCallback onToggleVisibility,
-      TextEditingController? controller,
-      Color textColor,
-      Color hintColor,
-      Color fillColor,
-      Color suffixIconColor) {
+    String hint,
+    bool isVisible,
+    VoidCallback onToggleVisibility,
+    TextEditingController? controller,
+    Color textColor,
+    Color hintColor,
+    Color fillColor,
+    Color suffixIconColor,
+  ) {
     return TextField(
       controller: controller,
       obscureText: !isVisible,

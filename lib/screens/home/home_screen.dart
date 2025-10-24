@@ -386,9 +386,9 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
   bool get _routeReady => _durationSeconds > 0 && _distanceMeters > 0;
 
   // Costeo (simple)
-  final double _baseFare = 300;
-  final double _perKm = 150;
-  final double _perMin = 20;
+  final double _baseFare = 900;
+  final double _perKm = 900;
+  final double _perMin = 90;
   double _surge = 1.0;
 
   double get _km => _distanceMeters / 1000.0;

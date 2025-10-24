@@ -3,13 +3,11 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AuthService {
-
   final baseUrl = dotenv.env['API_URL'];
 
   /// 🔹 Obtiene un usuario y contraseña del BackEnd
   Future<Map<String, dynamic>?> login(String mail, String password) async {
     try {
-      
       final url = Uri.parse('$baseUrl/usuarios/login');
 
       final response = await http
@@ -47,4 +45,52 @@ class AuthService {
 
     return null;
   }
+
+  Future<Map<String, dynamic>> register(
+  String apellido,
+  String nombre,
+  String mail,
+  String password,
+) async {
+  try {
+    final url = Uri.parse('$baseUrl/usuarios/register');
+
+    final response = await http
+        .post(
+          url,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'apellido': apellido,
+            'nombre': nombre,
+            'email': mail,
+            'password': password,
+          }),
+        )
+        .timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            throw Exception('Tiempo de espera agotado. Verifica tu conexión.');
+          },
+        );
+
+    final decoded = jsonDecode(response.body);
+
+    if (response.statusCode == 200) {
+      return {
+        'status': response.statusCode,
+        'message': decoded['message'] ?? 'Usuario registrado correctamente'
+      };
+    } else {
+      return {
+        'status': response.statusCode,
+        'message': decoded['message'] ?? 'Error al registrar usuario.'
+      };
+    }
+  } catch (e) {
+    return {
+      'message': 'Error en registro: $e'
+    };
+  }
+}
+
 }

@@ -43,7 +43,6 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
       if (result['success'] == true) {
         mostrarMensaje("Código enviado al correo");
 
-        // Navegar a la pantalla donde el usuario ingresa el código recibido
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -65,9 +64,10 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
   }
 
   void mostrarMensaje(String mensaje, {bool error = false}) {
+    final colorScheme = Theme.of(context).colorScheme;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        backgroundColor: error ? Colors.redAccent : Colors.green,
+        backgroundColor: error ? colorScheme.error : colorScheme.primary,
         content: Text(
           mensaje,
           style: const TextStyle(color: Colors.white, fontSize: 15),
@@ -79,55 +79,63 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: colorScheme.background,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 40.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Botón volver
               IconButton(
-                icon: const Icon(Icons.arrow_back_ios, color: Colors.black54),
+                icon: Icon(Icons.arrow_back_ios,
+                    color: colorScheme.onBackground.withOpacity(0.7)),
                 onPressed: () => Navigator.pop(context),
               ),
               const SizedBox(height: 20),
 
-              const Text(
+              Text(
                 "Recuperar contraseña",
-                style: TextStyle(
-                  color: Colors.black87,
-                  fontSize: 28,
+                style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
+                  color: colorScheme.onBackground,
                 ),
               ),
               const SizedBox(height: 12),
-              const Text(
+
+              Text(
                 "Ingresá tu correo electrónico y te enviaremos un enlace para restablecer tu contraseña.",
-                style: TextStyle(color: Colors.black54, fontSize: 15),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onBackground.withOpacity(0.7),
+                ),
               ),
               const SizedBox(height: 40),
 
+              // DNI TextField
               TextField(
                 controller: dniController,
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                style: const TextStyle(color: Colors.black87),
+                style: TextStyle(color: colorScheme.onSurface),
                 decoration: InputDecoration(
                   filled: true,
-                  fillColor: Colors.white,
+                  fillColor: colorScheme.brightness == Brightness.dark
+                      ? Colors.grey[800]
+                      : Colors.white,
                   hintText: "Número de documento",
-                  hintStyle: const TextStyle(color: Colors.black38),
-                  prefixIcon: const Icon(Icons.badge, color: Colors.black45),
+                  hintStyle: TextStyle(color: colorScheme.onSurface.withOpacity(0.6)),
+                  prefixIcon: Icon(Icons.badge, color: colorScheme.onSurface.withOpacity(0.6)),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                     borderSide: BorderSide.none,
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(
-                      color: Color(0xFF6C63FF),
+                    borderSide: BorderSide(
+                      color: colorScheme.primary,
                       width: 1.5,
                     ),
                   ),
@@ -140,27 +148,28 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
 
               const SizedBox(height: 20),
 
+              // Email TextField
               TextField(
                 controller: emailController,
                 keyboardType: TextInputType.emailAddress,
-                style: const TextStyle(color: Colors.black87),
+                style: TextStyle(color: colorScheme.onSurface),
                 decoration: InputDecoration(
                   filled: true,
-                  fillColor: Colors.white,
+                  fillColor: colorScheme.brightness == Brightness.dark
+                      ? Colors.grey[800]
+                      : Colors.white,
                   hintText: "Correo electrónico",
-                  hintStyle: const TextStyle(color: Colors.black38),
-                  prefixIcon: const Icon(
-                    Icons.email_outlined,
-                    color: Colors.black45,
-                  ),
+                  hintStyle: TextStyle(color: colorScheme.onSurface.withOpacity(0.6)),
+                  prefixIcon: Icon(Icons.email_outlined,
+                      color: colorScheme.onSurface.withOpacity(0.6)),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                     borderSide: BorderSide.none,
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(
-                      color: Color(0xFF6C63FF),
+                    borderSide: BorderSide(
+                      color: colorScheme.primary,
                       width: 1.5,
                     ),
                   ),
@@ -178,7 +187,7 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
                 height: 50,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF6C63FF),
+                    backgroundColor: colorScheme.primary,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
@@ -194,11 +203,10 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
                             strokeWidth: 2.5,
                           ),
                         )
-                      : const Text(
+                      : Text(
                           "Enviar enlace de recuperación",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            color: colorScheme.onPrimary,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -210,10 +218,10 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
               Center(
                 child: GestureDetector(
                   onTap: () => Navigator.pop(context),
-                  child: const Text(
+                  child: Text(
                     "Volver al inicio de sesión",
-                    style: TextStyle(
-                      color: Color(0xFF6C63FF),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.primary,
                       fontWeight: FontWeight.w600,
                     ),
                   ),

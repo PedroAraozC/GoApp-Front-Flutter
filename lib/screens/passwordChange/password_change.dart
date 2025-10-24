@@ -71,13 +71,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       newPasswordController.clear();
       confirmPasswordController.clear();
 
-      // Podés redirigir al login, por ejemplo:
-      //Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
-
       await Future.delayed(const Duration(seconds: 2));
-
       setState(() => isLoading = false);
-      print("Te vas al login");
     } else {
       mostrarMensaje(
         response['message'] ?? "Error al cambiar la contraseña",
@@ -88,9 +83,10 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   }
 
   void mostrarMensaje(String mensaje, {bool error = false}) {
+    final colorScheme = Theme.of(context).colorScheme;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        backgroundColor: error ? Colors.redAccent : Colors.green,
+        backgroundColor: error ? colorScheme.error : colorScheme.primary,
         content: Text(
           mensaje,
           style: const TextStyle(color: Colors.white, fontSize: 15),
@@ -102,33 +98,39 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: colorScheme.background,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 40.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Botón volver
               IconButton(
-                icon: const Icon(Icons.arrow_back_ios, color: Colors.black54),
+                icon: Icon(
+                  Icons.arrow_back_ios,
+                  color: colorScheme.onBackground.withOpacity(0.7),
+                ),
                 onPressed: () => Navigator.pop(context),
               ),
               const SizedBox(height: 20),
 
-              const Text(
+              Text(
                 "Cambiar contraseña",
-                style: TextStyle(
-                  color: Colors.black87,
-                  fontSize: 28,
+                style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
+                  color: colorScheme.onBackground,
                 ),
               ),
               const SizedBox(height: 12),
-              const Text(
+              Text(
                 "Ingresá tu contraseña actual y establecé una nueva.",
-                style: TextStyle(color: Colors.black54, fontSize: 15),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onBackground.withOpacity(0.7),
+                ),
               ),
               const SizedBox(height: 40),
 
@@ -136,22 +138,26 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
               TextField(
                 controller: currentPasswordController,
                 obscureText: !showCurrentPassword,
-                style: const TextStyle(color: Colors.black87),
+                style: TextStyle(color: colorScheme.onSurface),
                 decoration: InputDecoration(
                   filled: true,
-                  fillColor: Colors.white,
+                  fillColor: colorScheme.brightness == Brightness.dark
+                      ? Colors.grey[800]
+                      : Colors.white,
                   hintText: "Contraseña actual",
-                  hintStyle: const TextStyle(color: Colors.black38),
-                  prefixIcon: const Icon(
+                  hintStyle: TextStyle(
+                    color: colorScheme.onSurface.withOpacity(0.6),
+                  ),
+                  prefixIcon: Icon(
                     Icons.lock_outline,
-                    color: Colors.black45,
+                    color: colorScheme.onSurface.withOpacity(0.6),
                   ),
                   suffixIcon: IconButton(
                     icon: Icon(
                       showCurrentPassword
                           ? Icons.visibility_off
                           : Icons.visibility,
-                      color: Colors.black45,
+                      color: colorScheme.onSurface.withOpacity(0.6),
                     ),
                     onPressed: () {
                       setState(
@@ -165,8 +171,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(
-                      color: Color(0xFF6C63FF),
+                    borderSide: BorderSide(
+                      color: colorScheme.primary,
                       width: 1.5,
                     ),
                   ),
@@ -182,20 +188,24 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
               TextField(
                 controller: newPasswordController,
                 obscureText: !showNewPassword,
-                style: const TextStyle(color: Colors.black87),
+                style: TextStyle(color: colorScheme.onSurface),
                 decoration: InputDecoration(
                   filled: true,
-                  fillColor: Colors.white,
+                  fillColor: colorScheme.brightness == Brightness.dark
+                      ? Colors.grey[800]
+                      : Colors.white,
                   hintText: "Nueva contraseña",
-                  hintStyle: const TextStyle(color: Colors.black38),
-                  prefixIcon: const Icon(
+                  hintStyle: TextStyle(
+                    color: colorScheme.onSurface.withOpacity(0.6),
+                  ),
+                  prefixIcon: Icon(
                     Icons.lock_reset,
-                    color: Colors.black45,
+                    color: colorScheme.onSurface.withOpacity(0.6),
                   ),
                   suffixIcon: IconButton(
                     icon: Icon(
                       showNewPassword ? Icons.visibility_off : Icons.visibility,
-                      color: Colors.black45,
+                      color: colorScheme.onSurface.withOpacity(0.6),
                     ),
                     onPressed: () {
                       setState(() => showNewPassword = !showNewPassword);
@@ -207,8 +217,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(
-                      color: Color(0xFF6C63FF),
+                    borderSide: BorderSide(
+                      color: colorScheme.primary,
                       width: 1.5,
                     ),
                   ),
@@ -224,22 +234,26 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
               TextField(
                 controller: confirmPasswordController,
                 obscureText: !showConfirmPassword,
-                style: const TextStyle(color: Colors.black87),
+                style: TextStyle(color: colorScheme.onSurface),
                 decoration: InputDecoration(
                   filled: true,
-                  fillColor: Colors.white,
+                  fillColor: colorScheme.brightness == Brightness.dark
+                      ? Colors.grey[800]
+                      : Colors.white,
                   hintText: "Confirmar nueva contraseña",
-                  hintStyle: const TextStyle(color: Colors.black38),
-                  prefixIcon: const Icon(
+                  hintStyle: TextStyle(
+                    color: colorScheme.onSurface.withOpacity(0.6),
+                  ),
+                  prefixIcon: Icon(
                     Icons.lock_person,
-                    color: Colors.black45,
+                    color: colorScheme.onSurface.withOpacity(0.6),
                   ),
                   suffixIcon: IconButton(
                     icon: Icon(
                       showConfirmPassword
                           ? Icons.visibility_off
                           : Icons.visibility,
-                      color: Colors.black45,
+                      color: colorScheme.onSurface.withOpacity(0.6),
                     ),
                     onPressed: () {
                       setState(
@@ -253,8 +267,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(
-                      color: Color(0xFF6C63FF),
+                    borderSide: BorderSide(
+                      color: colorScheme.primary,
                       width: 1.5,
                     ),
                   ),
@@ -274,7 +288,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: isLoading
                         ? Colors.grey.shade400
-                        : const Color(0xFF6C63FF),
+                        : colorScheme.primary,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
@@ -290,11 +304,10 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                             strokeWidth: 2.5,
                           ),
                         )
-                      : const Text(
+                      : Text(
                           "Cambiar contraseña",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            color: colorScheme.onPrimary,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
