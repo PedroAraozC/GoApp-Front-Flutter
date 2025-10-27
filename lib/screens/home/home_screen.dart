@@ -20,6 +20,9 @@ import 'dart:ui' as ui;
 import 'dart:typed_data';
 import 'package:flutter/services.dart' show rootBundle;
 
+// ⬇️ Usamos la pantalla separada
+import 'package:taxi_tuc/screens/home/buscando_viaje_screen.dart';
+
 class HomeScreen extends StatefulWidget {
   final Map<String, dynamic> user;
   const HomeScreen({super.key, required this.user});
@@ -29,6 +32,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 final apiKey = dotenv.env['GOOGLE_API_KEY'];
+final String _BASE_URL = dotenv.env['API_URL'] ?? 'http://localhost:3000';
 
 class _HomeScreenState extends State<HomeScreen> {
   // ==============================
@@ -259,7 +263,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 );
               },
-
               child: Row(
                 children: [
                   const Padding(padding: EdgeInsets.only(right: 8)),
@@ -358,7 +361,7 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 /// =================================================================================
-///  Iniciar Viaje (idéntico al primero, sin cambios visuales)
+///  Iniciar Viaje (sin elegir conductor ni demanda; guarda en backend y muestra "Buscando")
 /// =================================================================================
 class IniciarViajeScreen extends StatefulWidget {
   const IniciarViajeScreen({super.key});
@@ -391,38 +394,10 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
   final double _baseFare = 900;
   final double _perKm = 900;
   final double _perMin = 90;
-  double _surge = 1.0;
 
   double get _km => _distanceMeters / 1000.0;
   double get _mins => _durationSeconds / 60.0;
-  double get _fare =>
-      ((_baseFare + (_km * _perKm) + (_mins * _perMin)) * _surge);
-
-  // Conductores (mock)
-  final List<_Driver> _drivers = const [
-    _Driver(
-      name: 'Luis R.',
-      rating: 4.9,
-      car: 'Toyota Etios',
-      etaMin: 3,
-      multiplier: 1.0,
-    ),
-    _Driver(
-      name: 'María S.',
-      rating: 4.8,
-      car: 'Chevrolet Onix',
-      etaMin: 4,
-      multiplier: 1.1,
-    ),
-    _Driver(
-      name: 'Jorge A.',
-      rating: 4.7,
-      car: 'VW Gol',
-      etaMin: 6,
-      multiplier: 0.95,
-    ),
-  ];
-  _Driver? _selectedDriver;
+  double get _fare => (_baseFare + (_km * _perKm) + (_mins * _perMin));
 
   // ======= Autocomplete REST (dos campos) =======
   final _uuid = const Uuid();
@@ -452,10 +427,12 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
     _destFocus.dispose();
     super.dispose();
   }
-Future<BitmapDescriptor> _crearIconoNegro() async {
-  final ByteData data = await rootBundle.load('assets/images/pin_negro.png');
-  return BitmapDescriptor.fromBytes(data.buffer.asUint8List());
-}
+
+  Future<BitmapDescriptor> _crearIconoNegro() async {
+    final ByteData data = await rootBundle.load('assets/images/pin_negro.png');
+    return BitmapDescriptor.fromBytes(data.buffer.asUint8List());
+  }
+
   // ======= GPS: fija ORIGEN automáticamente =======
   Future<void> _initLocation() async {
     if (!await Geolocator.isLocationServiceEnabled()) {
@@ -511,7 +488,6 @@ Future<BitmapDescriptor> _crearIconoNegro() async {
       _distanceMeters = 0;
       _durationText = '';
       _distanceText = '';
-      _selectedDriver = null;
 
       _predOrigen = [];
       _predDestino = [];
@@ -587,7 +563,7 @@ Future<BitmapDescriptor> _crearIconoNegro() async {
       markerId: const MarkerId('origen'),
       position: pos,
       infoWindow: InfoWindow(title: 'Origen', snippet: etiqueta),
-      draggable: true, // 🟢 Permitir arrastrar
+      draggable: true,
       icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
       onDragEnd: (newPos) async {
         try {
@@ -634,7 +610,6 @@ Future<BitmapDescriptor> _crearIconoNegro() async {
       _distanceMeters = 0;
       _durationText = '';
       _distanceText = '';
-      _selectedDriver = null;
     });
 
     _mapCtrl?.animateCamera(CameraUpdate.newLatLngZoom(pos, 15));
@@ -645,7 +620,7 @@ Future<BitmapDescriptor> _crearIconoNegro() async {
       markerId: const MarkerId('destino'),
       position: pos,
       infoWindow: InfoWindow(title: 'Destino', snippet: etiqueta),
-      draggable: true, // 🟢 Ahora también se puede mover
+      draggable: true,
       icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
       onDragEnd: (newPos) async {
         final placemarks = await placemarkFromCoordinates(
@@ -764,8 +739,6 @@ Future<BitmapDescriptor> _crearIconoNegro() async {
       _durationSeconds = (el['duration']?['value'] ?? 0) as int;
       _distanceText = (el['distance']?['text'] ?? '') as String;
       _durationText = (el['duration']?['text'] ?? '') as String;
-      _surge = _distanceMeters > 10000 ? 1.2 : 1.0;
-      _selectedDriver ??= _drivers.first;
     });
   }
 
@@ -906,40 +879,58 @@ Future<BitmapDescriptor> _crearIconoNegro() async {
     }
   }
 
+  Future<void> _confirmarViaje() async {
+    final _api = ApiService();
+
+    if (!_hasBothMarkers) {
+      _msg('Seleccioná origen y destino.');
+      return;
+    }
+
+    try {
+      final user = await UserPreferences.getUser();
+      final int? idUsuario = user?['id_usuario'];
+      if (idUsuario == null) {
+        _msg('No se encontró el usuario. Iniciá sesión nuevamente.');
+        return;
+      }
+
+      final o = _origenMarker!.position;
+      final d = _destinoMarker!.position;
+      final precioEstimado = _fare;
+
+      final result = await _api.iniciarViaje(
+        idUsuario: idUsuario,
+        origenLat: o.latitude,
+        origenLng: o.longitude,
+        destinoLat: d.latitude,
+        destinoLng: d.longitude,
+        direccionOrigen: _origenCtrl.text.trim(),
+        direccionDestino: _destinoCtrl.text.trim(),
+        precioEstimado: double.parse(precioEstimado.toStringAsFixed(2)),
+        notas: null,
+      );
+
+      final int idViaje = (result['id_viaje'] as num).toInt();
+
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => BuscandoViajeScreen(idViaje: idViaje),
+        ),
+      );
+    } catch (e) {
+      _msg('Error al confirmar viaje: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Iniciar viaje'),
-        actions: [
-          // IconButton(
-          //   tooltip: 'Limpiar',
-          //   onPressed: () {
-          //     setState(() {
-          //       _markers.clear();
-          //       _polylines.clear();
-          //       _origenCtrl.clear();
-          //       _destinoCtrl.clear();
-          //       _durationSeconds = 0;
-          //       _distanceMeters = 0;
-          //       _durationText = '';
-          //       _distanceText = '';
-          //       _selectedDriver = null;
-          //       _surge = 1.0;
-
-          //       _predOrigen = [];
-          //       _predDestino = [];
-          //       _sessionTokenOrigin = null;
-          //       _sessionTokenDest = null;
-          //     });
-          //     _initLocation();
-          //   },
-          //   icon: const Icon(Icons.layers_clear),
-          // ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Iniciar viaje')),
       backgroundColor: cs.surface,
       body: _miUbicacion == null
           ? const Center(child: CircularProgressIndicator())
@@ -958,7 +949,7 @@ Future<BitmapDescriptor> _crearIconoNegro() async {
                   markers: _markers,
                   polylines: _polylines,
                   onTap: (latLng) async {
-                    // Si hay predicciones abiertas, las cerramos
+                    // cerrar predicciones si están abiertas
                     if (_predOrigen.isNotEmpty || _predDestino.isNotEmpty) {
                       setState(() {
                         _predOrigen = [];
@@ -966,7 +957,6 @@ Future<BitmapDescriptor> _crearIconoNegro() async {
                       });
                     } else {
                       try {
-                        // 🔹 Obtener dirección a partir de coordenadas
                         final placemarks = await placemarkFromCoordinates(
                           latLng.latitude,
                           latLng.longitude,
@@ -982,10 +972,7 @@ Future<BitmapDescriptor> _crearIconoNegro() async {
                               "${latLng.latitude.toStringAsFixed(5)}, ${latLng.longitude.toStringAsFixed(5)}";
                         }
 
-                        // 🔹 Colocar marcador de destino con dirección legible
                         _setDestino(latLng, direccion);
-
-                        // 🔹 Construir la ruta si el origen ya está establecido
                         await _construirRutaSiPosible();
                       } catch (e) {
                         _msg("No se pudo obtener la dirección del punto: $e");
@@ -1062,7 +1049,7 @@ Future<BitmapDescriptor> _crearIconoNegro() async {
                   ),
                 ),
 
-                // ======= Panel inferior (ETA + costo + conductor) =======
+                // ======= Panel inferior (ETA + costo + confirmar) =======
                 if (_hasBothMarkers)
                   Align(
                     alignment: Alignment.bottomCenter,
@@ -1076,22 +1063,8 @@ Future<BitmapDescriptor> _crearIconoNegro() async {
                         perMin: _perMin,
                         km: _routeReady ? _km : 0,
                         minutes: _routeReady ? _mins : 0,
-                        surge: _surge,
-                        drivers: _drivers,
-                        selected: _selectedDriver,
-                        onSurgeChanged: (v) => setState(() => _surge = v),
-                        onSelectDriver: (d) =>
-                            setState(() => _selectedDriver = d),
-                        onConfirm: () {
-                          final total =
-                              _fare * (_selectedDriver?.multiplier ?? 1.0);
-                          _msg(
-                            '¡Viaje solicitado! Conductor: ${_selectedDriver?.name ?? "—"}  •  Estimado: \$${total.toStringAsFixed(0)}',
-                          );
-                        },
-                        estimate: _routeReady
-                            ? _fare * (_selectedDriver?.multiplier ?? 1.0)
-                            : _baseFare,
+                        estimate: _routeReady ? _fare : _baseFare,
+                        onConfirm: _confirmarViaje,
                       ),
                     ),
                   ),
@@ -1101,15 +1074,96 @@ Future<BitmapDescriptor> _crearIconoNegro() async {
   }
 }
 
-/* =================== Viajes realizados =================== */
-class ViajesRealizadosScreen extends StatelessWidget {
+/* =================== Viajes realizados (historial) =================== */
+class ViajesRealizadosScreen extends StatefulWidget {
   const ViajesRealizadosScreen({super.key});
+
+  @override
+  State<ViajesRealizadosScreen> createState() => _ViajesRealizadosScreenState();
+}
+
+class _ViajesRealizadosScreenState extends State<ViajesRealizadosScreen> {
+  late Future<List<Map<String, dynamic>>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  Future<List<Map<String, dynamic>>> _load() async {
+    final u = await UserPreferences.getUser();
+    final int? idUsuario = u?['id_usuario'];
+    if (idUsuario == null) return [];
+
+    final api = ApiService();
+    // Por defecto trae estado=finalizado; podés ajustar si querés
+    final items = await api.listarViajesUsuario(
+      idUsuario,
+      estado: 'finalizado',
+    );
+    return items;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: const Text('Viajes realizados')),
-      body: const Center(
-        child: Text('Lista de viajes realizados (historial).'),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: _future,
+        builder: (ctx, snap) {
+          if (snap.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final items = snap.data ?? [];
+          if (items.isEmpty) {
+            return const Center(
+              child: Text('No tenés viajes finalizados aún.'),
+            );
+          }
+          return ListView.separated(
+            padding: const EdgeInsets.all(12),
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (_, i) {
+              final v = items[i];
+              final origen = (v['direccion_origen'] ?? '') as String;
+              final destino = (v['direccion_destino'] ?? '') as String;
+              final precio = (v['precio_final'] ?? v['precio_estimado'] ?? 0)
+                  .toString();
+              final fecha =
+                  (v['fecha_fin'] ?? v['fecha_creacion'] ?? '') as String;
+              final distancia = (v['distancia_km'] ?? 0).toString();
+              final duracion = (v['duracion_min'] ?? 0).toString();
+
+              return Card(
+                color: cs.surface,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: cs.primaryContainer,
+                    child: const Icon(Icons.local_taxi),
+                  ),
+                  title: Text(
+                    '$origen → $destino',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    'Fecha: $fecha\nDist: ${distancia}km  •  Dur: ${duracion}min',
+                  ),
+                  trailing: Text(
+                    '\$$precio',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }
@@ -1161,14 +1215,6 @@ class _SearchField extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
-        // SizedBox(
-        //   height: 44,
-        //   width: 44,
-        //   child: IconButton.filled(
-        //     onPressed: onSearch,
-        //     icon: const Icon(Icons.search),
-        //   ),
-        // ),
       ],
     );
   }
@@ -1215,7 +1261,7 @@ class _PredictionsList extends StatelessWidget {
   }
 }
 
-/* =================== Panel con costo y conductor =================== */
+/* =================== Panel con costo y confirmar =================== */
 class _RideBottomSheet extends StatelessWidget {
   final String distanceText;
   final String durationText;
@@ -1224,13 +1270,8 @@ class _RideBottomSheet extends StatelessWidget {
   final double perMin;
   final double km;
   final double minutes;
-  final double surge;
-  final List<_Driver> drivers;
-  final _Driver? selected;
-  final ValueChanged<double> onSurgeChanged;
-  final ValueChanged<_Driver> onSelectDriver;
-  final VoidCallback onConfirm;
   final double estimate;
+  final VoidCallback onConfirm;
 
   const _RideBottomSheet({
     required this.distanceText,
@@ -1240,13 +1281,8 @@ class _RideBottomSheet extends StatelessWidget {
     required this.perMin,
     required this.km,
     required this.minutes,
-    required this.surge,
-    required this.drivers,
-    required this.selected,
-    required this.onSurgeChanged,
-    required this.onSelectDriver,
-    required this.onConfirm,
     required this.estimate,
+    required this.onConfirm,
   });
 
   @override
@@ -1306,61 +1342,7 @@ class _RideBottomSheet extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                const Text('Demanda (x):'),
-                const SizedBox(width: 8),
-                DropdownButton<double>(
-                  value: surge,
-                  items: const [
-                    DropdownMenuItem(value: 1.0, child: Text('1.0')),
-                    DropdownMenuItem(value: 1.1, child: Text('1.1')),
-                    DropdownMenuItem(value: 1.2, child: Text('1.2')),
-                    DropdownMenuItem(value: 1.5, child: Text('1.5')),
-                  ],
-                  onChanged: (v) {
-                    if (v != null) onSurgeChanged(v);
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Text('Conductor:'),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButton<_Driver>(
-                    isExpanded: true,
-                    value: selected,
-                    hint: const Text('Elegí un conductor'),
-                    items: drivers
-                        .map(
-                          (d) => DropdownMenuItem(
-                            value: d,
-                            child: Row(
-                              children: [
-                                const Icon(Icons.person),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    '${d.name}  •  ${d.car}  •  ⭐ ${d.rating}  •  ${d.etaMin} min',
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (d) {
-                      if (d != null) onSelectDriver(d);
-                    },
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
@@ -1377,21 +1359,6 @@ class _RideBottomSheet extends StatelessWidget {
 }
 
 /* =================== Modelos =================== */
-class _Driver {
-  final String name;
-  final double rating;
-  final String car;
-  final int etaMin;
-  final double multiplier;
-  const _Driver({
-    required this.name,
-    required this.rating,
-    required this.car,
-    required this.etaMin,
-    required this.multiplier,
-  });
-}
-
 class _Prediction {
   final String? description;
   final String? placeId;
@@ -1420,7 +1387,6 @@ String _formatDireccion(Placemark p) {
   final calle = p.street?.trim() ?? '';
   final numero = p.subThoroughfare?.trim() ?? '';
 
-  // Evita duplicar el número si ya está incluido en la calle
   final contieneNumero = numero.isNotEmpty && calle.contains(numero);
   final direccionBase = contieneNumero ? calle : '$calle $numero';
 
