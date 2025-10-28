@@ -452,8 +452,9 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
     _destFocus.dispose();
     super.dispose();
   }
+  
 Future<BitmapDescriptor> _crearIconoNegro() async {
-  final ByteData data = await rootBundle.load('assets/images/pin_negro.png');
+  final ByteData data = await rootBundle.load('assets/images/pin_origen.png');
   return BitmapDescriptor.fromBytes(data.buffer.asUint8List());
 }
   // ======= GPS: fija ORIGEN automáticamente =======
