@@ -12,28 +12,30 @@ class SocketService {
 
   bool get isConnected => _isConnected;
 
+  /// 🔹 Conecta al servidor Socket.IO (por defecto puerto 3000)
   void connect() {
-    if (_socket != null && _isConnected) {
+    if (_isConnected) {
       print('⚠️ Socket ya está conectado');
       return;
     }
 
     final serverUrl = dotenv.env['API_URL'] ?? 'http://localhost:3000';
-    
+    print('🌐 Conectando Socket.IO a: $serverUrl');
+
     _socket = IO.io(
       serverUrl,
       IO.OptionBuilder()
           .setTransports(['websocket'])
-          .disableAutoConnect()
-          .setExtraHeaders({'foo': 'bar'})
+          .enableAutoConnect()
+          .enableReconnection() // se reconecta si se corta Internet
+          .setReconnectionDelay(1000)
+          .setReconnectionAttempts(5)
           .build(),
     );
 
-    _socket!.connect();
-
     _socket!.onConnect((_) {
       _isConnected = true;
-      print('✅ Socket conectado: ${_socket!.id}');
+      print('✅ Socket conectado → ID: ${_socket!.id}');
     });
 
     _socket!.onDisconnect((_) {
@@ -42,10 +44,11 @@ class SocketService {
     });
 
     _socket!.onError((error) {
-      print('❌ Socket error: $error');
+      print('❌ Error de socket: $error');
     });
   }
 
+  /// 🔹 Desconecta el socket completamente
   void disconnect() {
     if (_socket != null) {
       _socket!.disconnect();
@@ -56,42 +59,100 @@ class SocketService {
     }
   }
 
-  void registrarUsuario(int idUsuario, String tipo) {
-    if (_socket == null || !_isConnected) {
-      print('⚠️ Socket no conectado, no se puede registrar usuario');
+  /// 🔹 Registra usuario (pasajero o conductor)
+  void registrarUsuario({required int idUsuario, required String tipo}) {
+    if (!_isConnected || _socket == null) {
+      print('⚠️ No conectado al socket, no se pudo registrar usuario');
       return;
     }
-    _socket!.emit('registrar_usuario', {
-      'idUsuario': idUsuario,
-      'tipo': tipo, // 'pasajero' o 'conductor'
-    });
-    print('📤 Usuario $idUsuario registrado como $tipo');
+
+    _socket!.emit('registrar_usuario', {'idUsuario': idUsuario, 'tipo': tipo});
+    print('📤 Usuario registrado en socket: $idUsuario como $tipo');
   }
 
-  void unirseAViaje(int idViaje, int idPasajero) {
-    if (_socket == null || !_isConnected) {
-      print('⚠️ Socket no conectado, no se puede unir al viaje');
-      return;
-    }
-    _socket!.emit('viaje_creado', {
-      'idViaje': idViaje,
-      'idPasajero': idPasajero,
-    });
-    print('🚕 Pasajero unido al viaje $idViaje');
+  /// 🔹 Unirse al canal de un viaje (para recibir actualizaciones)
+  void unirseAViaje(int idViaje) {
+    if (!_isConnected || _socket == null) return;
+    _socket!.emit('unirse_viaje', {'idViaje': idViaje});
+    print('🚗 Suscrito a viaje $idViaje');
   }
 
-  void escucharActualizacionesViaje(Function(Map<String, dynamic>) callback) {
-    if (_socket == null) {
-      print('⚠️ Socket no inicializado');
-      return;
-    }
+  /// 🔹 Salir del canal de un viaje
+  void salirDeViaje(int idViaje) {
+    if (!_isConnected || _socket == null) return;
+    _socket!.emit('salir_viaje', {'idViaje': idViaje});
+    print('🏁 Saliste del canal viaje $idViaje');
+  }
+
+  /// 🔹 Emitir actualización manual del viaje (ej: cambio de ubicación)
+  void emitirActualizacionViaje(Map<String, dynamic> data) {
+    if (!_isConnected || _socket == null) return;
+    _socket!.emit('viaje_actualizado', data);
+    print('📤 Emitiendo actualización de viaje: $data');
+  }
+
+  /// 🔹 Escuchar eventos del servidor y manejar callbacks
+  void escucharEventos({
+    Function(Map<String, dynamic>)? onNuevoViaje,
+    Function(Map<String, dynamic>)? onAsignado,
+    Function(Map<String, dynamic>)? onEnCurso,
+    Function(Map<String, dynamic>)? onFinalizado,
+    Function(Map<String, dynamic>)? onCancelado,
+    Function(Map<String, dynamic>)? onActualizado,
+  }) {
+    if (_socket == null) return;
+
+    _socket!.on('viaje_nuevo', (data) {
+      print('🆕 Nuevo viaje recibido: $data');
+      if (data is Map && onNuevoViaje != null) {
+        onNuevoViaje(Map<String, dynamic>.from(data));
+      }
+    });
+
+    _socket!.on('viaje_asignado', (data) {
+      print('🚕 Viaje asignado: $data');
+      if (data is Map && onAsignado != null) {
+        onAsignado(Map<String, dynamic>.from(data));
+      }
+    });
+
+    _socket!.on('viaje_en_curso', (data) {
+      print('▶️ Viaje en curso: $data');
+      if (data is Map && onEnCurso != null) {
+        onEnCurso(Map<String, dynamic>.from(data));
+      }
+    });
+
+    _socket!.on('viaje_finalizado', (data) {
+      print('🏁 Viaje finalizado: $data');
+      if (data is Map && onFinalizado != null) {
+        onFinalizado(Map<String, dynamic>.from(data));
+      }
+    });
+
+    _socket!.on('viaje_cancelado', (data) {
+      print('❌ Viaje cancelado: $data');
+      if (data is Map && onCancelado != null) {
+        onCancelado(Map<String, dynamic>.from(data));
+      }
+    });
+
     _socket!.on('viaje_actualizado', (data) {
-      print('📥 Actualización recibida: $data');
-      callback(data as Map<String, dynamic>);
+      print('📡 Viaje actualizado: $data');
+      if (data is Map && onActualizado != null) {
+        onActualizado(Map<String, dynamic>.from(data));
+      }
     });
   }
 
-  void dejarDeEscucharViaje() {
+  /// 🔹 Dejar de escuchar eventos
+  void limpiarListeners() {
+    _socket?.off('viaje_nuevo');
+    _socket?.off('viaje_asignado');
+    _socket?.off('viaje_en_curso');
+    _socket?.off('viaje_finalizado');
+    _socket?.off('viaje_cancelado');
     _socket?.off('viaje_actualizado');
+    print('🧹 Listeners Socket limpiados');
   }
 }

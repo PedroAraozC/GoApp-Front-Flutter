@@ -19,6 +19,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:ui' as ui;
 import 'dart:typed_data';
 import 'package:flutter/services.dart' show rootBundle;
+import '../../services/socket_service.dart';
 
 // ⬇️ Usamos la pantalla separada
 import 'package:taxi_tuc/screens/home/buscando_viaje_screen.dart';
@@ -371,6 +372,7 @@ class IniciarViajeScreen extends StatefulWidget {
 
 class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
   static String kGoogleApiKey = '$apiKey';
+  final _socketService = SocketService();
 
   final _origenCtrl = TextEditingController();
   final _destinoCtrl = TextEditingController();
@@ -415,10 +417,46 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
   void initState() {
     super.initState();
     _initLocation();
+
+    // 🔌 Conectar Socket.IO
+    _socketService.connect();
+
+    // 🔹 Registrar usuario conectado (pasajero)
+    Future.delayed(const Duration(seconds: 1), () async {
+      final user = await UserPreferences.getUser();
+      if (user != null && user['id_usuario'] != null) {
+        _socketService.registrarUsuario(
+          idUsuario: user['id_usuario'],
+          tipo: 'pasajero',
+        );
+      }
+    });
+
+    // 🔊 Escuchar eventos
+    _socketService.escucharEventos(
+      onAsignado: (data) {
+        print('🚕 Conductor asignado: $data');
+        _msg('Tu viaje fue asignado a un conductor.');
+      },
+      onEnCurso: (data) {
+        print('▶️ Viaje en curso: $data');
+        _msg('El viaje comenzó.');
+      },
+      onFinalizado: (data) {
+        print('🏁 Viaje finalizado: $data');
+        _msg('El viaje finalizó correctamente.');
+      },
+      onCancelado: (data) {
+        print('❌ Viaje cancelado: $data');
+        _msg('El viaje fue cancelado.');
+      },
+    );
   }
 
   @override
   void dispose() {
+    _socketService.limpiarListeners();
+    _socketService.disconnect();
     _origenCtrl.dispose();
     _destinoCtrl.dispose();
     _mapCtrl?.dispose();
@@ -1002,6 +1040,14 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
       );
 
       final int idViaje = (result['id_viajes'] as num).toInt();
+
+      // 🔊 Notificar al socket que hay un nuevo viaje
+      _socketService.unirseAViaje(idViaje);
+      _socketService.emitirActualizacionViaje({
+        'id_viaje': idViaje,
+        'estado': 'buscando',
+        'id_pasajero': idUsuario,
+      });
 
       if (!mounted) return;
       Navigator.pushReplacement(
