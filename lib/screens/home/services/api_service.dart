@@ -78,4 +78,89 @@ class ApiService {
       throw Exception('Error en actualizarUsuario: $e');
     }
   }
+
+  /// POST /viajes/iniciar
+  /// Devuelve el viaje creado (estado "buscando")
+  Future<Map<String, dynamic>> iniciarViaje({
+    required int idUsuario,
+    required double origenLat,
+    required double origenLng,
+    required double destinoLat,
+    required double destinoLng,
+    String? direccionOrigen,
+    String? direccionDestino,
+    double? precioEstimado,
+    String? notas,
+  }) async {
+    final uri = Uri.parse('$baseUrl/viajes/iniciar');
+    final body = {
+      "id_usuario": idUsuario,
+      "origen_lat": origenLat,
+      "origen_lng": origenLng,
+      "destino_lat": destinoLat,
+      "destino_lng": destinoLng,
+      "direccion_origen": direccionOrigen,
+      "direccion_destino": direccionDestino,
+      "precio_estimado": precioEstimado,
+      "notas": notas,
+    };
+
+    final resp = await http
+        .post(
+          uri,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 12));
+
+    if (resp.statusCode != 201 && resp.statusCode != 200) {
+      throw Exception('No se pudo iniciar el viaje a(${resp.statusCode})');
+    }
+    final decoded = json.decode(resp.body);
+    final result = decoded['result'];
+    if (result is Map<String, dynamic>) return result;
+    throw Exception('Respuesta inesperada al iniciar el viaje');
+  }
+
+  /// GET /viajes/:id
+  Future<Map<String, dynamic>?> obtenerViaje(int idViaje) async {
+    final uri = Uri.parse('$baseUrl/viajes/$idViaje');
+    final resp = await http.get(uri).timeout(const Duration(seconds: 10));
+    if (resp.statusCode != 200) return null;
+    final decoded = json.decode(resp.body);
+    final result = decoded['result'];
+    if (result is Map<String, dynamic>) return result;
+    return null;
+  }
+
+  /// GET /viajes/usuario/:id_usuario?estado=finalizado
+  Future<List<Map<String, dynamic>>> listarViajesUsuario(
+    int idUsuario, {
+    String estado = 'finalizado',
+  }) async {
+    final uri = Uri.parse('$baseUrl/viajes/usuario/$idUsuario?estado=$estado');
+    final resp = await http.get(uri).timeout(const Duration(seconds: 12));
+    if (resp.statusCode != 200) return [];
+    final decoded = json.decode(resp.body);
+    final list = decoded['result'];
+    if (list is List) {
+      return list
+          .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+    }
+    return [];
+  }
+
+  /// PUT /viajes/:id/cancelar
+  Future<bool> cancelarViaje(int idViaje) async {
+    final uri = Uri.parse('$baseUrl/viajes/$idViaje/cancelar');
+    final resp = await http
+        .put(uri, headers: {'Content-Type': 'application/json'})
+        .timeout(const Duration(seconds: 10));
+    return resp.statusCode == 200;
+  }
+
+  void dispose() {
+    http.Client().close();
+  }
 }
