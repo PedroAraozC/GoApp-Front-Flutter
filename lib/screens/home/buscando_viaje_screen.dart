@@ -1,139 +1,150 @@
-// lib/screens/home/buscando_viaje_screen.dart
-import 'dart:async';
 import 'package:flutter/material.dart';
-import '../../screens/home/services/api_service.dart';
+import '/services/socket_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-/// Pantalla que muestra "Buscando viaje…" y hace polling al backend
-/// para conocer el estado del viaje usando ApiService.
 class BuscandoViajeScreen extends StatefulWidget {
-  final int idViaje;
-  const BuscandoViajeScreen({super.key, required this.idViaje});
+  const BuscandoViajeScreen({super.key});
+
   @override
   State<BuscandoViajeScreen> createState() => _BuscandoViajeScreenState();
 }
 
 class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
-  final _api = ApiService();
-  Timer? _timer;
-  String _estado = 'buscando';
-  bool _cancelando = false;
+  final SocketService _socket = SocketService();
+  bool _viajeAsignado = false;
+  bool _viajeCancelado = false;
+  bool _viajeEnCurso = false;
 
   @override
   void initState() {
     super.initState();
-    // 🔍 PRINT DEL ID VIAJE AL INICIAR
-    print('🚕 BuscandoViajeScreen iniciado con idViaje: ${widget.idViaje}');
-    _startPolling();
+    _inicializarSocketListeners();
   }
 
-  void _startPolling() {
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 3), (_) => _checkEstado());
-  }
+  void _inicializarSocketListeners() async {
+    final prefs = await SharedPreferences.getInstance();
+    final idUsuario = prefs.getInt('id_usuario');
 
-  Future<void> _checkEstado() async {
-    try {
-      // 🔍 PRINT ANTES DE HACER LA PETICIÓN
-      print('🔄 Haciendo polling para idViaje: ${widget.idViaje}');
-
-      final result = await _api.obtenerViaje(widget.idViaje);
-      if (!mounted || result == null) return;
-
-      final estado = (result['estado'] ?? 'buscando') as String;
-
-      // 🔍 PRINT DEL ESTADO OBTENIDO
-      print('📊 Estado obtenido para idViaje ${widget.idViaje}: $estado');
-
-      setState(() => _estado = estado);
-
-      if (estado != 'buscando') {
-        _timer?.cancel();
-        if (!mounted) return;
-
-        String msg = 'Estado del viaje: $estado';
-        if (estado == 'Asignado') msg = '¡Conductor asignado!';
-        if (estado == 'En Curso') msg = '¡Tu viaje ya comenzó!';
-        if (estado == 'Cancelado') msg = 'Viaje cancelado';
-        if (estado == 'Finalizado') msg = 'Viaje finalizado';
-
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(msg)));
-        Navigator.pop(context); // volver al mapa
+    // Solo para confirmar que el socket está conectado
+    if (!_socket.isConnected) {
+      _socket.connect();
+      if (idUsuario != null) {
+        _socket.emitirConexionUsuario(idUsuario, 'pasajero');
       }
-    } catch (e) {
-      // 🔍 PRINT DEL ERROR
-      print('❌ Error en polling para idViaje ${widget.idViaje}: $e');
     }
+
+    // 🆕 Viaje creado (por el mismo pasajero o backend)
+    _socket.socket.on('viaje_creado', (data) {
+      debugPrint('🆕 Evento: viaje_creado -> $data');
+      _mostrarSnack('Tu solicitud fue enviada');
+    });
+
+    // 🚕 Conductor asignado
+    _socket.socket.on('viaje_asignado', (data) {
+      debugPrint('🚕 Evento: viaje_asignado -> $data');
+      if (mounted) {
+        setState(() => _viajeAsignado = true);
+      }
+      _mostrarSnack('¡Un conductor fue asignado a tu viaje!');
+      // 🔜 Acá más adelante podrías navegar a la pantalla de viaje en curso
+      // Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => ViajeEnCursoScreen(data)));
+    });
+
+    // ▶️ Viaje comenzó
+    _socket.socket.on('viaje_en_curso', (data) {
+      debugPrint('▶️ Evento: viaje_en_curso -> $data');
+      if (mounted) {
+        setState(() => _viajeEnCurso = true);
+      }
+      _mostrarSnack('Tu viaje ha comenzado');
+    });
+
+    // 🏁 Viaje finalizado
+    _socket.socket.on('viaje_finalizado', (data) {
+      debugPrint('🏁 Evento: viaje_finalizado -> $data');
+      _mostrarSnack('Tu viaje ha finalizado. ¡Gracias por usar GoApp!');
+      if (mounted) {
+        setState(() {
+          _viajeEnCurso = false;
+          _viajeAsignado = false;
+        });
+      }
+    });
+
+    // ❌ Viaje cancelado
+    _socket.socket.on('viaje_cancelado', (data) {
+      debugPrint('❌ Evento: viaje_cancelado -> $data');
+      if (mounted) {
+        setState(() => _viajeCancelado = true);
+      }
+      _mostrarSnack('Tu viaje fue cancelado');
+      // 🔜 Más adelante podrías volver automáticamente al mapa
+      // Navigator.pop(context);
+    });
   }
 
-  Future<void> _cancelar() async {
-    if (_cancelando) return;
-
-    // 🔍 PRINT AL CANCELAR
-    print('🚫 Cancelando viaje idViaje: ${widget.idViaje}');
-
-    setState(() => _cancelando = true);
-    try {
-      await _api.cancelarViaje(widget.idViaje);
-      print('✅ Viaje ${widget.idViaje} cancelado exitosamente');
-    } catch (e) {
-      print('❌ Error al cancelar viaje ${widget.idViaje}: $e');
-    } finally {
-      if (!mounted) return;
-      setState(() => _cancelando = false);
-      Navigator.pop(context);
+  void _mostrarSnack(String mensaje) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(mensaje),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
   @override
   void dispose() {
-    // 🔍 PRINT AL DESTRUIR LA PANTALLA
-    print('🔚 BuscandoViajeScreen dispose - idViaje: ${widget.idViaje}');
-    _timer?.cancel();
+    // ⚠️ No desconectamos el socket aquí para mantener la conexión global viva
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    String estadoActual = 'Buscando conductor...';
+    if (_viajeAsignado) estadoActual = 'Conductor asignado 🚕';
+    if (_viajeEnCurso) estadoActual = 'Viaje en curso ▶️';
+    if (_viajeCancelado) estadoActual = 'Viaje cancelado ❌';
+
     return Scaffold(
-      backgroundColor: cs.surface,
-      appBar: AppBar(title: const Text('Buscando viaje…')),
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        title: const Text('Buscando viaje'),
+        backgroundColor: Colors.amber[700],
+        centerTitle: true,
+      ),
       body: Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const SizedBox(
-                width: 120,
-                height: 120,
-                child: CircularProgressIndicator(strokeWidth: 6),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(color: Colors.amber),
+            const SizedBox(height: 20),
+            Text(
+              estadoActual,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
               ),
-              const SizedBox(height: 20),
-              Text(
-                _estado == 'buscando'
-                    ? 'Buscando un conductor cerca de vos…'
-                    : 'Actualizando estado…',
-                style: Theme.of(context).textTheme.titleMedium,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'ID de viaje: ${widget.idViaje}',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-              ),
-              const SizedBox(height: 24),
-              TextButton.icon(
-                onPressed: _cancelando ? null : _cancelar,
-                icon: const Icon(Icons.close),
-                label: Text(_cancelando ? 'Cancelando…' : 'Cancelar solicitud'),
-              ),
-            ],
-          ),
+              onPressed: () {
+                _socket.send('viaje_cancelado', {
+                  'motivo': 'cancelado_por_usuario',
+                });
+                _mostrarSnack('Cancelando viaje...');
+              },
+              icon: const Icon(Icons.cancel),
+              label: const Text('Cancelar viaje'),
+            ),
+          ],
         ),
       ),
     );

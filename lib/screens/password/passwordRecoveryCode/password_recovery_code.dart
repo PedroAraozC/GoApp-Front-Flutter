@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
-import '../../services/auth_service.dart';
+import '../../../services/auth_service.dart';
 import '../passwordChange/password_change.dart';
 
 class RecuperarPasswordCodeScreen extends StatefulWidget {

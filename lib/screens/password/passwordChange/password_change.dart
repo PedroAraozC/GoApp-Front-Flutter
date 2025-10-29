@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:taxi_tuc/screens/auth/auth_screen.dart';
-import '../../services/auth_service.dart';
+import '../../../services/auth_service.dart';
 
 class ChangePasswordScreen extends StatefulWidget {
   final String dni;

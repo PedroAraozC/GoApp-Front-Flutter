@@ -1,158 +1,133 @@
-// lib/services/socket_service.dart
 import 'package:socket_io_client/socket_io_client.dart' as IO;
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class SocketService {
   static final SocketService _instance = SocketService._internal();
   factory SocketService() => _instance;
   SocketService._internal();
 
-  IO.Socket? _socket;
+  late IO.Socket socket;
   bool _isConnected = false;
+  int? _usuarioId;
+  String? _tipoUsuario;
 
-  bool get isConnected => _isConnected;
-
-  /// 🔹 Conecta al servidor Socket.IO (por defecto puerto 3000)
+  // ==============================
+  // 🔌 Conectar Socket
+  // ==============================
   void connect() {
-    if (_isConnected) {
-      print('⚠️ Socket ya está conectado');
-      return;
-    }
+    if (_isConnected) return;
 
-    final serverUrl = dotenv.env['API_URL'] ?? 'http://localhost:3000';
-    print('🌐 Conectando Socket.IO a: $serverUrl');
-
-    _socket = IO.io(
-      serverUrl,
+    socket = IO.io(
+      'http://186.123.85.22:3000',
       IO.OptionBuilder()
           .setTransports(['websocket'])
-          .enableAutoConnect()
-          .enableReconnection() // se reconecta si se corta Internet
-          .setReconnectionDelay(1000)
-          .setReconnectionAttempts(5)
+          .enableReconnection()
+          .setReconnectionDelay(500)
+          .setReconnectionAttempts(10)
           .build(),
     );
 
-    _socket!.onConnect((_) {
+    socket.onConnect((_) {
       _isConnected = true;
-      print('✅ Socket conectado → ID: ${_socket!.id}');
+      print('🟢 Conectado al servidor Socket.IO');
+
+      // Si ya hay usuario autenticado, reemitir su conexión al reconectar
+      if (_usuarioId != null && _tipoUsuario != null) {
+        emitirConexionUsuario(_usuarioId!, _tipoUsuario!);
+      }
     });
 
-    _socket!.onDisconnect((_) {
+    socket.onDisconnect((_) {
       _isConnected = false;
-      print('🔴 Socket desconectado');
+      print('🔴 Desconectado del servidor Socket.IO');
     });
 
-    _socket!.onError((error) {
-      print('❌ Error de socket: $error');
-    });
+    _registerGlobalListeners();
   }
 
-  /// 🔹 Desconecta el socket completamente
-  void disconnect() {
-    if (_socket != null) {
-      _socket!.disconnect();
-      _socket!.dispose();
-      _socket = null;
-      _isConnected = false;
-      print('🔌 Socket desconectado manualmente');
+  // ==============================
+  // 🎧 Listeners globales
+  // ==============================
+  void _registerGlobalListeners() {
+    // 🔹 Usuarios
+    socket.on('usuario_creado', (data) => print('👤 Usuario creado: $data'));
+    socket.on('usuario_actualizado', (data) => print('✏️ Usuario actualizado: $data'));
+    socket.on('usuario_eliminado', (data) => print('🗑 Usuario eliminado: $data'));
+    socket.on('usuario_login', (data) => print('🔐 Usuario logueado: $data'));
+    socket.on('usuario_estado', (data) => print('🧍 Estado usuario: $data'));
+
+    // 🔹 Viajes
+    socket.on('viaje_creado', (data) => print('🆕 Nuevo viaje: $data'));
+    socket.on('viaje_asignado', (data) => print('🚕 Viaje asignado: $data'));
+    socket.on('viaje_en_curso', (data) => print('▶️ Viaje en curso: $data'));
+    socket.on('viaje_finalizado', (data) => print('🏁 Viaje finalizado: $data'));
+    socket.on('viaje_cancelado', (data) => print('❌ Viaje cancelado: $data'));
+
+    // 🔹 Otros
+    socket.on('rol_actualizado', (data) => print('🔑 Rol actualizado: $data'));
+    socket.on('genero_actualizado', (data) => print('🧩 Género actualizado: $data'));
+  }
+
+  // ==============================
+  // 📤 Emitir eventos genéricos
+  // ==============================
+  void send(String event, dynamic data) {
+    if (!_isConnected) {
+      print('⚠️ No conectado al socket, no se puede emitir "$event"');
+      return;
     }
+    socket.emit(event, data);
+    print('📤 Emitido $event: $data');
   }
 
-  /// 🔹 Registra usuario (pasajero o conductor)
-  void registrarUsuario({required int idUsuario, required String tipo}) {
-    if (!_isConnected || _socket == null) {
-      print('⚠️ No conectado al socket, no se pudo registrar usuario');
+  // ==============================
+  // 🟢 Usuario Conectado
+  // ==============================
+  void emitirConexionUsuario(int idUsuario, String tipo) {
+    _usuarioId = idUsuario;
+    _tipoUsuario = tipo;
+
+    if (!_isConnected) {
+      print('⚠️ Intentando conectar antes de emitir usuario_conectado...');
+      connect();
+    }
+
+    socket.emit('usuario_conectado', {
+      'id_usuario': idUsuario,
+      'tipo': tipo,
+    });
+
+    print('🟢 Emitido usuario_conectado: {id_usuario: $idUsuario, tipo: $tipo}');
+  }
+
+  // ==============================
+  // 🔴 Usuario Desconectado
+  // ==============================
+  void emitirDesconexionUsuario() {
+    if (_usuarioId == null || _tipoUsuario == null) {
+      print('⚠️ No hay usuario registrado para desconectar.');
       return;
     }
 
-    _socket!.emit('registrar_usuario', {'idUsuario': idUsuario, 'tipo': tipo});
-    print('📤 Usuario registrado en socket: $idUsuario como $tipo');
-  }
-
-  /// 🔹 Unirse al canal de un viaje (para recibir actualizaciones)
-  void unirseAViaje(int idViaje) {
-    if (!_isConnected || _socket == null) return;
-    _socket!.emit('unirse_viaje', {'idViaje': idViaje});
-    print('🚗 Suscrito a viaje $idViaje');
-  }
-
-  /// 🔹 Salir del canal de un viaje
-  void salirDeViaje(int idViaje) {
-    if (!_isConnected || _socket == null) return;
-    _socket!.emit('salir_viaje', {'idViaje': idViaje});
-    print('🏁 Saliste del canal viaje $idViaje');
-  }
-
-  /// 🔹 Emitir actualización manual del viaje (ej: cambio de ubicación)
-  void emitirActualizacionViaje(Map<String, dynamic> data) {
-    if (!_isConnected || _socket == null) return;
-    _socket!.emit('viaje_actualizado', data);
-    print('📤 Emitiendo actualización de viaje: $data');
-  }
-
-  /// 🔹 Escuchar eventos del servidor y manejar callbacks
-  void escucharEventos({
-    Function(Map<String, dynamic>)? onNuevoViaje,
-    Function(Map<String, dynamic>)? onAsignado,
-    Function(Map<String, dynamic>)? onEnCurso,
-    Function(Map<String, dynamic>)? onFinalizado,
-    Function(Map<String, dynamic>)? onCancelado,
-    Function(Map<String, dynamic>)? onActualizado,
-  }) {
-    if (_socket == null) return;
-
-    _socket!.on('viaje_nuevo', (data) {
-      print('🆕 Nuevo viaje recibido: $data');
-      if (data is Map && onNuevoViaje != null) {
-        onNuevoViaje(Map<String, dynamic>.from(data));
-      }
+    socket.emit('usuario_desconectado', {
+      'id_usuario': _usuarioId,
+      'tipo': _tipoUsuario,
     });
 
-    _socket!.on('viaje_asignado', (data) {
-      print('🚕 Viaje asignado: $data');
-      if (data is Map && onAsignado != null) {
-        onAsignado(Map<String, dynamic>.from(data));
-      }
-    });
+    print('🔴 Emitido usuario_desconectado: {id_usuario: $_usuarioId, tipo: $_tipoUsuario}');
 
-    _socket!.on('viaje_en_curso', (data) {
-      print('▶️ Viaje en curso: $data');
-      if (data is Map && onEnCurso != null) {
-        onEnCurso(Map<String, dynamic>.from(data));
-      }
-    });
-
-    _socket!.on('viaje_finalizado', (data) {
-      print('🏁 Viaje finalizado: $data');
-      if (data is Map && onFinalizado != null) {
-        onFinalizado(Map<String, dynamic>.from(data));
-      }
-    });
-
-    _socket!.on('viaje_cancelado', (data) {
-      print('❌ Viaje cancelado: $data');
-      if (data is Map && onCancelado != null) {
-        onCancelado(Map<String, dynamic>.from(data));
-      }
-    });
-
-    _socket!.on('viaje_actualizado', (data) {
-      print('📡 Viaje actualizado: $data');
-      if (data is Map && onActualizado != null) {
-        onActualizado(Map<String, dynamic>.from(data));
-      }
-    });
+    _usuarioId = null;
+    _tipoUsuario = null;
   }
 
-  /// 🔹 Dejar de escuchar eventos
-  void limpiarListeners() {
-    _socket?.off('viaje_nuevo');
-    _socket?.off('viaje_asignado');
-    _socket?.off('viaje_en_curso');
-    _socket?.off('viaje_finalizado');
-    _socket?.off('viaje_cancelado');
-    _socket?.off('viaje_actualizado');
-    print('🧹 Listeners Socket limpiados');
+  // ==============================
+  // 🔌 Desconectar socket
+  // ==============================
+  void disconnect() {
+    emitirDesconexionUsuario();
+    socket.disconnect();
+    _isConnected = false;
+    print('🔴 Socket desconectado manualmente');
   }
+
+  bool get isConnected => _isConnected;
 }

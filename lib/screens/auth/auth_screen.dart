@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:taxi_tuc/screens/passwordRecovery/password_recovey.dart';
+import 'package:taxi_tuc/screens/password/passwordRecovery/password_recovey.dart';
 import '../auth/services/auth_service.dart';
-import '../auth/services/google_auth_service.dart';
+import '../../services/google_auth_service.dart';
+import '../../services/socket_service.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../home/home_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -20,7 +21,7 @@ class AuthScreen extends StatefulWidget {
 }
 
 class _AuthScreenState extends State<AuthScreen> {
-  int _selectedTab = 0; // 0 = Iniciar, 1 = Registrarse
+  int _selectedTab = 0;
   bool _isPasswordVisible = false;
   bool _isConfirmPasswordVisible = false;
   bool _isLoading = false;
@@ -32,11 +33,11 @@ class _AuthScreenState extends State<AuthScreen> {
   final TextEditingController _apellidoController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _passwordConfirmController =
-      TextEditingController();
+  final TextEditingController _passwordConfirmController = TextEditingController();
 
   final _authService = AuthService();
   final _authGoogleService = AuthGoogleService();
+  final _socket = SocketService(); // ✅ Socket persistente
 
   @override
   void initState() {
@@ -59,7 +60,7 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   // ======================
-  // Iniciar sesión normal
+  // Iniciar sesión manual
   // ======================
   Future<void> _handleLogin() async {
     if (_isLoading) return;
@@ -69,9 +70,7 @@ class _AuthScreenState extends State<AuthScreen> {
     final password = _passwordController.text.trim();
 
     if (email.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor completa todos los campos')),
-      );
+      _showSnackbar('Por favor completa todos los campos');
       setState(() => _isLoading = false);
       return;
     }
@@ -79,38 +78,44 @@ class _AuthScreenState extends State<AuthScreen> {
     try {
       final user = await _authService.login(email, password);
 
-      if (user != null) {
-        if (user['auth_provider'] != 'manual') {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Debes iniciar sesión con Google.')),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Bienvenido, ${user['nombre_usuario']}')),
-          );
-
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setBool('isLoggedIn', true);
-          await prefs.setInt('id_usuario', user['id_usuario']);
-          await prefs.setString('token', user['token'] ?? '');
-          await prefs.setString('nombre_usuario', user['nombre_usuario']);
-          await prefs.setString('email_usuario', user['email_usuario']);
-
-          if (!mounted) return;
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => HomeScreen(user: user)),
-          );
-        }
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Email o contraseña incorrectos')),
-        );
+      if (user == null) {
+        _showSnackbar('Email o contraseña incorrectos');
+        setState(() => _isLoading = false);
+        return;
       }
-    } catch (e) {
-      ScaffoldMessenger.of(
+
+      if (user['auth_provider'] != 'manual') {
+        _showSnackbar('Debes iniciar sesión con Google.');
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      // Guardar sesión local
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('isLoggedIn', true);
+      await prefs.setInt('id_usuario', user['id_usuario']);
+      await prefs.setString('token', user['token'] ?? '');
+      await prefs.setString('nombre_usuario', user['nombre_usuario']);
+      await prefs.setString('email_usuario', user['email_usuario']);
+
+      _showSnackbar('Bienvenido, ${user['nombre_usuario']}');
+
+      // ✅ Conectamos al socket (solo si no está conectado aún)
+      _socket.connect();
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _socket.send('usuario_conectado', {
+          'id_usuario': user['id_usuario'],
+          'tipo': 'pasajero',
+        });
+      });
+
+      if (!mounted) return;
+      Navigator.pushReplacement(
         context,
-      ).showSnackBar(SnackBar(content: Text('Error al iniciar sesión: $e')));
+        MaterialPageRoute(builder: (_) => HomeScreen(user: user)),
+      );
+    } catch (e) {
+      _showSnackbar('Error al iniciar sesión: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -134,56 +139,47 @@ class _AuthScreenState extends State<AuthScreen> {
       final idToken = googleAuth.idToken;
       if (idToken == null) throw Exception('No se pudo obtener el token.');
 
-      // Llamada al backend
       final response = await _authGoogleService.loginWithGoogle(idToken);
       final user = response['result'];
       final token = response['token'];
 
-      debugPrint('✅ Usuario desde backend: $user');
-      debugPrint('🔑 Token JWT: $token');
-
       if (user['auth_provider'] != 'google') {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Debes ingresar la contraseña de tu cuenta para poder ingresar.',
-            ),
-          ),
-        );
-      } else {
-        // Guardamos datos
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool('isLoggedIn', true);
-        await prefs.setInt('id_usuario', user['id_usuario'] ?? 0);
-        await prefs.setString('nombre_usuario', user['nombre_usuario'] ?? '');
-        await prefs.setString(
-          'apellido_usuario',
-          user['apellido_usuario'] ?? '',
-        );
-        await prefs.setString('email_usuario', user['email_usuario'] ?? '');
-        await prefs.setString(
-          'telefono_usuario',
-          user['telefono_usuario'] ?? '',
-        );
-        await prefs.setString('foto_perfil', user['foto_perfil'] ?? '');
-        await prefs.setString('token', token ?? '');
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Bienvenido, ${user['nombre_usuario']}')),
-        );
-
-        if (!mounted) return;
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => HomeScreen(user: user)),
-        );
+        _showSnackbar('Debes ingresar con tu contraseña habitual.');
+        setState(() => _isLoading = false);
+        return;
       }
+
+      // Guardar datos localmente
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('isLoggedIn', true);
+      await prefs.setInt('id_usuario', user['id_usuario'] ?? 0);
+      await prefs.setString('nombre_usuario', user['nombre_usuario'] ?? '');
+      await prefs.setString('apellido_usuario', user['apellido_usuario'] ?? '');
+      await prefs.setString('email_usuario', user['email_usuario'] ?? '');
+      await prefs.setString('telefono_usuario', user['telefono_usuario'] ?? '');
+      await prefs.setString('foto_perfil', user['foto_perfil'] ?? '');
+      await prefs.setString('token', token ?? '');
+
+      _showSnackbar('Bienvenido, ${user['nombre_usuario']}');
+
+      // ✅ Conectamos y emitimos el evento de conexión
+      _socket.connect();
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _socket.send('usuario_conectado', {
+          'id_usuario': user['id_usuario'],
+          'tipo': 'pasajero',
+        });
+      });
+
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => HomeScreen(user: user)),
+      );
     } catch (e) {
       await _googleSignIn.signOut();
       debugPrint('❌ Error Google SignIn: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al iniciar sesión con Google: $e')),
-      );
+      _showSnackbar('Error al iniciar sesión con Google: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -207,26 +203,22 @@ class _AuthScreenState extends State<AuthScreen> {
         apellido.isEmpty ||
         nombre.isEmpty ||
         passwordConfirm.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor completa todos los campos')),
-      );
+      _showSnackbar('Por favor completa todos los campos');
+      setState(() => _isLoading = false);
+      return;
+    }
+
+    if (password != passwordConfirm) {
+      _showSnackbar('Las contraseñas no coinciden');
       setState(() => _isLoading = false);
       return;
     }
 
     try {
-      final result = await _authService.register(
-        apellido,
-        nombre,
-        email,
-        password,
-      );
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(result['message'])));
+      final result = await _authService.register(apellido, nombre, email, password);
+      _showSnackbar(result['message']);
 
       if (result['status'] == 200) {
-        // ✅ Limpiar campos
         _emailController.clear();
         _passwordController.clear();
         _passwordConfirmController.clear();
@@ -235,12 +227,17 @@ class _AuthScreenState extends State<AuthScreen> {
         _selectedTab = 0;
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error al registrar usuario: $e')));
+      _showSnackbar('Error al registrar usuario: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  // ======================
+  // Helpers
+  // ======================
+  void _showSnackbar(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   // ======================
@@ -270,20 +267,15 @@ class _AuthScreenState extends State<AuthScreen> {
             style: TextStyle(color: textColor),
             child: SingleChildScrollView(
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24.0,
-                  vertical: 40.0,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 40.0),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const Icon(Icons.local_taxi, size: 80, color: kTaxiYellow),
                     const SizedBox(height: 40),
-
                     _buildTabSelector(textColor),
                     const SizedBox(height: 24),
-
                     Text(
                       _selectedTab == 1
                           ? "Crea tu cuenta completando los siguientes datos:"
@@ -292,32 +284,18 @@ class _AuthScreenState extends State<AuthScreen> {
                       style: TextStyle(color: textColor, fontSize: 16),
                     ),
                     const SizedBox(height: 24),
-
                     AnimatedSwitcher(
                       duration: const Duration(milliseconds: 300),
                       child: _selectedTab == 1
-                          ? _buildRegisterForm(
-                              textColor,
-                              hintColor,
-                              fieldFill,
-                              suffixIconCols,
-                            )
+                          ? _buildRegisterForm(textColor, hintColor, fieldFill, suffixIconCols)
                           : _buildLoginForm(
-                              textColor,
-                              hintColor,
-                              fieldFill,
-                              suffixIconCols,
-                              linkColor,
-                            ),
+                              textColor, hintColor, fieldFill, suffixIconCols, linkColor),
                     ),
                     const SizedBox(height: 24),
-
                     ElevatedButton(
                       onPressed: _isLoading
                           ? null
-                          : (_selectedTab == 0
-                                ? _handleLogin
-                                : _handleRegister),
+                          : (_selectedTab == 0 ? _handleLogin : _handleRegister),
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         backgroundColor: kTaxiYellow,
@@ -336,23 +314,18 @@ class _AuthScreenState extends State<AuthScreen> {
                               ),
                             )
                           : Text(
-                              _selectedTab == 0
-                                  ? 'Iniciar Sesión'
-                                  : 'Registrarse',
+                              _selectedTab == 0 ? 'Iniciar Sesión' : 'Registrarse',
                               style: const TextStyle(fontSize: 18),
                             ),
                     ),
                     const SizedBox(height: 24),
-
                     _buildDivider(dividerColor, textColor),
                     const SizedBox(height: 24),
-
                     _buildSocialButton(
                       icon: FontAwesomeIcons.google,
                       label: 'Continuar con Google',
                       onPressed: _isLoading ? null : _handleGoogleSignIn,
                     ),
-                    const SizedBox(height: 16),
                   ],
                 ),
               ),
@@ -366,7 +339,6 @@ class _AuthScreenState extends State<AuthScreen> {
   // ==============================
   // Widgets auxiliares
   // ==============================
-
   Widget _buildRegisterForm(
     Color textColor,
     Color hintColor,
@@ -376,57 +348,19 @@ class _AuthScreenState extends State<AuthScreen> {
     return Column(
       key: const ValueKey('register'),
       children: [
-        _buildTextField(
-          'Nombre',
-          _nombreController,
-          textColor,
-          hintColor,
-          fillColor,
-        ),
+        _buildTextField('Nombre', _nombreController, textColor, hintColor, fillColor),
         const SizedBox(height: 16),
-        _buildTextField(
-          'Apellido',
-          _apellidoController,
-          textColor,
-          hintColor,
-          fillColor,
-        ),
+        _buildTextField('Apellido', _apellidoController, textColor, hintColor, fillColor),
         const SizedBox(height: 16),
-        _buildTextField(
-          'Email',
-          _emailController,
-          textColor,
-          hintColor,
-          fillColor,
-        ),
+        _buildTextField('Email', _emailController, textColor, hintColor, fillColor),
         const SizedBox(height: 16),
-        _buildPasswordField(
-          'Contraseña',
-          _isPasswordVisible,
-          () {
-            setState(() => _isPasswordVisible = !_isPasswordVisible);
-          },
-          _passwordController,
-          textColor,
-          hintColor,
-          fillColor,
-          suffixIconColor,
-        ),
+        _buildPasswordField('Contraseña', _isPasswordVisible, () {
+          setState(() => _isPasswordVisible = !_isPasswordVisible);
+        }, _passwordController, textColor, hintColor, fillColor, suffixIconColor),
         const SizedBox(height: 16),
-        _buildPasswordField(
-          'Confirmar Contraseña',
-          _isConfirmPasswordVisible,
-          () {
-            setState(
-              () => _isConfirmPasswordVisible = !_isConfirmPasswordVisible,
-            );
-          },
-          _passwordConfirmController,
-          textColor,
-          hintColor,
-          fillColor,
-          suffixIconColor,
-        ),
+        _buildPasswordField('Confirmar Contraseña', _isConfirmPasswordVisible, () {
+          setState(() => _isConfirmPasswordVisible = !_isConfirmPasswordVisible);
+        }, _passwordConfirmController, textColor, hintColor, fillColor, suffixIconColor),
       ],
     );
   }
@@ -441,32 +375,20 @@ class _AuthScreenState extends State<AuthScreen> {
     return Column(
       key: const ValueKey('login'),
       children: [
-        _buildTextField(
-          'Email',
-          _emailController,
-          textColor,
-          hintColor,
-          fillColor,
-        ),
+        _buildTextField('Email', _emailController, textColor, hintColor, fillColor),
         const SizedBox(height: 16),
-        _buildPasswordField(
-          'Contraseña',
-          _isPasswordVisible,
-          () {
-            setState(() => _isPasswordVisible = !_isPasswordVisible);
-          },
-          _passwordController,
-          textColor,
-          hintColor,
-          fillColor,
-          suffixIconColor,
-        ),
+        _buildPasswordField('Contraseña', _isPasswordVisible, () {
+          setState(() => _isPasswordVisible = !_isPasswordVisible);
+        }, _passwordController, textColor, hintColor, fillColor, suffixIconColor),
         const SizedBox(height: 16),
         Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
             TextButton(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RecuperarPasswordScreen())),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const RecuperarPasswordScreen()),
+              ),
               style: TextButton.styleFrom(foregroundColor: linkColor),
               child: const Text('¿Olvidaste la Contraseña?'),
             ),
@@ -518,7 +440,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Widget _buildTextField(
     String hint,
-    TextEditingController? controller,
+    TextEditingController controller,
     Color textColor,
     Color hintColor,
     Color fillColor,
@@ -546,7 +468,7 @@ class _AuthScreenState extends State<AuthScreen> {
     String hint,
     bool isVisible,
     VoidCallback onToggleVisibility,
-    TextEditingController? controller,
+    TextEditingController controller,
     Color textColor,
     Color hintColor,
     Color fillColor,

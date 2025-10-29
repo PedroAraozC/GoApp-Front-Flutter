@@ -1,148 +1,146 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../perfil/services/perfil_services.dart';
-import 'datos_screen.dart';
-import 'pagos_screen.dart';
-import 'viajes_screen.dart';
-import 'ayuda_screen.dart';
-import '../passwordRecovery/password_recovey.dart';
+import 'package:taxi_tuc/screens/auth/auth_screen.dart';
+import 'package:taxi_tuc/services/socket_service.dart';
+import '../../services/perfil_services.dart';
 
 class PerfilScreen extends StatefulWidget {
-  final int? userId;
-  final Map<String, dynamic>? initialUser;
-  const PerfilScreen({super.key, this.userId, this.initialUser});
+  const PerfilScreen({super.key});
 
   @override
   State<PerfilScreen> createState() => _PerfilScreenState();
 }
 
 class _PerfilScreenState extends State<PerfilScreen> {
-  Map<String, dynamic>? user;
-  bool loading = true;
+  final _perfilService = PerfilService();
+  final _socket = SocketService();
+  Map<String, dynamic>? _usuario;
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    user = widget.initialUser; //
-    _fetchUserFromBackend();
+    _cargarPerfil();
   }
 
-  Future<void> _fetchUserFromBackend() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final idUsuario = prefs.getInt('id_usuario');
-      final token = prefs.getString('token');
-
-      if (idUsuario == null || token == null) {
-        debugPrint('❌ No hay datos guardados en SharedPreferences');
-        setState(() => loading = false);
-        return;
-      }
-
-      final service = PerfilService();
-      final data = await service.obtenerUsuarioPorId(idUsuario);
-
-      debugPrint('📦 Usuario obtenido del backend: $data');
-
-      if (data != null) {
-        setState(() {
-          user = data;
-          loading = false;
-        });
-      } else {
-        debugPrint('⚠️ Usuario no encontrado en backend');
-        setState(() => loading = false);
-      }
-    } catch (e) {
-      debugPrint('❌ Error al cargar usuario: $e');
-      setState(() => loading = false);
+  Future<void> _cargarPerfil() async {
+    final prefs = await SharedPreferences.getInstance();
+    final idUsuario = prefs.getInt('id_usuario');
+    if (idUsuario != null) {
+      final perfil = await _perfilService.obtenerPerfil(idUsuario);
+      setState(() {
+        _usuario = perfil;
+        _isLoading = false;
+      });
     }
   }
 
-  void _navigateTo(Widget page) {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+  Future<void> _logout() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final idUsuario = prefs.getInt('id_usuario');
+      if (idUsuario != null) {
+        _socket.emitirDesconexionUsuario(); // 🔴 Avisamos al backend
+      }
+
+      await prefs.clear(); // 🧹 Limpiar datos guardados
+      _socket.disconnect(); // 🔌 Desconectar socket
+
+      if (!mounted) return;
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const AuthScreen()),
+        (route) => false,
+      );
+    } catch (e) {
+      debugPrint('Error al cerrar sesión: $e');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
-    final foto =
-        (user?['foto_perfil'] != null &&
-            (user?['foto_perfil'] as String).isNotEmpty)
-        ? NetworkImage(user!['foto_perfil'])
-        : const NetworkImage('https://i.pravatar.cc/150?img=5');
-
-    final nombre = user?['nombre_usuario'] ?? 'Usuario';
-    final apellido = user?['apellido_usuario'] ?? 'Apellido';
-    final email = user?['email_usuario'] ?? '';
+    final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Perfil')),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              CircleAvatar(radius: 50, backgroundImage: foto),
-              const SizedBox(height: 12),
-              Text(
-                '$apellido $nombre',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              if (email.isNotEmpty)
-                Text(email, style: Theme.of(context).textTheme.bodyMedium),
-              const SizedBox(height: 24),
-              const Divider(),
-
-              _buildMenuItem(
-                icon: Icons.person_outline,
-                text: 'Mis datos personales',
-                onTap: () => _navigateTo(
-                  DatosScreen(userId: user?['id_usuario'], initialUser: user),
-                ),
-              ),
-              _buildMenuItem(
-                icon: Icons.history_rounded,
-                text: 'Mis viajes',
-                onTap: () => _navigateTo(const ViajesScreen()),
-              ),
-              _buildMenuItem(
-                icon: Icons.credit_card,
-                text: 'Métodos de pago',
-                onTap: () => _navigateTo(const PagosScreen()),
-              ),
-              _buildMenuItem(
-                icon: Icons.lock_outline,
-                text: 'Cambiar contraseña',
-                onTap: () => _navigateTo(const RecuperarPasswordScreen()),
-              ),
-              _buildMenuItem(
-                icon: Icons.help_outline,
-                text: 'Ayuda',
-                onTap: () => _navigateTo(const AyudaScreen()),
-              ),
-            ],
-          ),
-        ),
+      appBar: AppBar(
+        title: const Text('Mi Perfil'),
+        backgroundColor: theme.colorScheme.primary,
       ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: CircleAvatar(
+                      radius: 50,
+                      backgroundImage: _usuario?['foto_perfil'] != null &&
+                              _usuario!['foto_perfil'].toString().isNotEmpty
+                          ? NetworkImage(_usuario!['foto_perfil'])
+                          : const AssetImage('assets/images/default_avatar.png')
+                              as ImageProvider,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Center(
+                    child: Text(
+                      '${_usuario?['nombre_usuario'] ?? ''} ${_usuario?['apellido_usuario'] ?? ''}',
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Center(
+                    child: Text(
+                      _usuario?['email_usuario'] ?? '',
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                  ),
+                  const Divider(height: 32),
+                  _buildInfoRow(Icons.badge, 'DNI', _usuario?['dni'] ?? '-'),
+                  _buildInfoRow(Icons.phone, 'Teléfono', _usuario?['telefono_usuario'] ?? '-'),
+                  _buildInfoRow(Icons.calendar_today, 'Nacimiento',
+                      _usuario?['fecha_nacimiento'] ?? '-'),
+                  const Spacer(),
+                  ElevatedButton.icon(
+                    onPressed: _logout,
+                    icon: const Icon(Icons.logout),
+                    label: const Text('Cerrar sesión'),
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 50),
+                      backgroundColor: Colors.redAccent,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
     );
   }
 
-  Widget _buildMenuItem({
-    required IconData icon,
-    required String text,
-    required VoidCallback onTap,
-  }) {
-    return ListTile(
-      leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
-      title: Text(text),
-      trailing: const Icon(Icons.chevron_right),
-      onTap: onTap,
+  Widget _buildInfoRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.grey[700]),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          Text(value),
+        ],
+      ),
     );
   }
 }

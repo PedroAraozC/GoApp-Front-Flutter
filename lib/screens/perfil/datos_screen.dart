@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../perfil/services/perfil_services.dart';
+import '../../services/perfil_services.dart';
 import '../perfil/widgets/perfil_form.dart';
 
 class DatosScreen extends StatefulWidget {
@@ -19,14 +19,17 @@ class _DatosScreenState extends State<DatosScreen> {
 
   Map<String, dynamic>? _userData;
 
+  final _nombreController = TextEditingController();
+  final _apellidoController = TextEditingController();
   final _dniController = TextEditingController();
   final _fechaController = TextEditingController();
-  final _generoController =
-      TextEditingController(); // Guardará el NOMBRE del género
+  final _generoController = TextEditingController();
   final _telefonoController = TextEditingController();
   final _emailController = TextEditingController();
 
   final Map<String, FocusNode> _focusNodes = {
+    'nombre': FocusNode(),
+    'apellido': FocusNode(),
     'dni': FocusNode(),
     'fecha': FocusNode(),
     'genero': FocusNode(),
@@ -34,7 +37,6 @@ class _DatosScreenState extends State<DatosScreen> {
     'email': FocusNode(),
   };
 
-  /// Lista de géneros: [{id_genero: int, nombre_genero: String}, ...]
   List<Map<String, dynamic>> _generos = [];
 
   @override
@@ -48,11 +50,8 @@ class _DatosScreenState extends State<DatosScreen> {
 
   Future<void> _bootstrap() async {
     await Future.wait([_fetchUser(), _fetchGeneros()]);
-    // Una vez que tenemos user y generos, sincronizamos el nombre del género
     _sincronizarNombreGenero();
-    setState(() {
-      _loading = false;
-    });
+    setState(() => _loading = false);
   }
 
   Future<void> _fetchUser() async {
@@ -68,12 +67,15 @@ class _DatosScreenState extends State<DatosScreen> {
 
       if (user != null) {
         _userData = user;
+        _nombreController.text =
+            user['nombre_usuario'] ?? user['nombre'] ?? '';
+        _apellidoController.text =
+            user['apellido_usuario'] ?? user['apellido'] ?? '';
         _dniController.text = (user['dni'] ?? '').toString();
         _telefonoController.text =
             (user['telefono_usuario'] ?? user['telefono'] ?? '').toString();
         _emailController.text = user['email_usuario'] ?? user['email'] ?? '';
         _fechaController.text = user['fecha_nacimiento'] ?? '';
-        // temporalmente guardo el ID como texto; luego lo convertiré a nombre
         _generoController.text = (user['id_genero'] ?? '').toString();
       }
     } catch (e) {
@@ -84,28 +86,19 @@ class _DatosScreenState extends State<DatosScreen> {
   Future<void> _fetchGeneros() async {
     try {
       final service = PerfilService();
-      final lista = await service
-          .obtenerGeneros(); // <-- ajusta si tu método se llama distinto
+      final lista = await service.obtenerGeneros();
       _generos = List<Map<String, dynamic>>.from(lista);
     } catch (e) {
       debugPrint('❌ Error al cargar géneros: $e');
     }
   }
 
-  /// Convierte el id_genero actual (si está en el controller) al nombre correspondiente
   void _sincronizarNombreGenero() {
     final text = _generoController.text.trim();
-    // Si ya es un nombre (no un número), no hacemos nada
     final idAsInt = int.tryParse(text);
     if (idAsInt == null) return;
-
     final nombre = _nombreGeneroFromId(idAsInt);
-    if (nombre != null) {
-      _generoController.text = nombre;
-    } else {
-      // Si no lo encuentra, deja el campo vacío para evitar mostrar un id
-      _generoController.text = '';
-    }
+    _generoController.text = nombre ?? '';
   }
 
   String? _nombreGeneroFromId(int idGenero) {
@@ -155,6 +148,12 @@ class _DatosScreenState extends State<DatosScreen> {
       final idGenero = _idGeneroFromNombre(_generoController.text.trim());
 
       final payload = <String, dynamic>{
+        'nombre_usuario': _nombreController.text.trim().isEmpty
+            ? null
+            : _nombreController.text.trim(),
+        'apellido_usuario': _apellidoController.text.trim().isEmpty
+            ? null
+            : _apellidoController.text.trim(),
         'dni': _dniController.text.trim().isEmpty
             ? null
             : _dniController.text.trim(),
@@ -170,37 +169,46 @@ class _DatosScreenState extends State<DatosScreen> {
             : _emailController.text.trim(),
       };
 
-      // Limpia claves con null para no sobreescribir en backend si no corresponde
       payload.removeWhere((key, value) => value == null);
 
       final service = PerfilService();
       final ok = await service.actualizarUsuario(id, payload);
 
       if (ok) {
-        setState(() => _isEditing = false);
+        // ✅ Guardar datos en SharedPreferences
+        await prefs.setString('nombre_usuario', _nombreController.text.trim());
+        await prefs.setString('apellido_usuario', _apellidoController.text.trim());
+        await prefs.setString('dni', _dniController.text.trim());
+        await prefs.setString('fecha_nacimiento', _fechaController.text.trim());
+        if (idGenero != null) await prefs.setInt('id_genero', idGenero);
+        await prefs.setString(
+            'telefono_usuario', _telefonoController.text.trim());
+        await prefs.setString('email_usuario', _emailController.text.trim());
+
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Datos actualizados correctamente.')),
+          const SnackBar(content: Text('Datos actualizados correctamente ✅')),
         );
-        // Refrescar desde backend para mostrar lo último
+
         await _fetchUser();
         _sincronizarNombreGenero();
-        setState(() {});
+        setState(() => _isEditing = false);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No se pudieron actualizar los datos.')),
+          const SnackBar(
+              content: Text('No se pudieron actualizar los datos.')),
         );
       }
     } catch (e) {
       debugPrint('❌ Error al guardar cambios: $e');
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error al guardar: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error al guardar: $e')));
     }
   }
 
   void _cancelarEdicion() {
-    // Restauro valores desde _userData
     if (_userData != null) {
+      _nombreController.text = _userData!['nombre_usuario'] ?? '';
+      _apellidoController.text = _userData!['apellido_usuario'] ?? '';
       _dniController.text = (_userData!['dni'] ?? '').toString();
       _telefonoController.text =
           (_userData!['telefono_usuario'] ?? _userData!['telefono'] ?? '')
@@ -246,11 +254,12 @@ class _DatosScreenState extends State<DatosScreen> {
           formKey: _formKey,
           focusNodes: _focusNodes,
           isEditing: _isEditing,
+          nombreController: _nombreController,
+          apellidoController: _apellidoController,
           dniController: _dniController,
           fechaController: _fechaController,
-          generos: _generos, // ✅ Ahora enviamos la lista de géneros
-          generoController:
-              _generoController, // ✅ Contiene el NOMBRE del género
+          generos: _generos,
+          generoController: _generoController,
           telefonoController: _telefonoController,
           emailController: _emailController,
           onGuardar: _guardarCambios,
@@ -258,50 +267,19 @@ class _DatosScreenState extends State<DatosScreen> {
           onEditar: () => setState(() => _isEditing = true),
         ),
       ),
-      // Si no usas botones dentro del PerfilForm, puedes agregar actions abajo:
-      /*bottomNavigationBar: !_isEditing
-          ? null
-          : SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16.0,
-                  vertical: 12,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _cancelarEdicion,
-                        child: const Text('Cancelar'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: _guardarCambios,
-                        icon: const Icon(Icons.save),
-                        label: const Text('Guardar'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),*/
     );
   }
 
   void _loadFromInitialUser(Map<String, dynamic> user) {
     _userData = user;
+    _nombreController.text = user['nombre_usuario'] ?? user['nombre'] ?? '';
+    _apellidoController.text = user['apellido_usuario'] ?? user['apellido'] ?? '';
     _dniController.text = (user['dni'] ?? '').toString();
     _telefonoController.text =
         (user['telefono_usuario'] ?? user['telefono'] ?? '').toString();
     _emailController.text = user['email_usuario'] ?? user['email'] ?? '';
     _fechaController.text = user['fecha_nacimiento'] ?? '';
-
-    // Si initialUser trae id_genero, lo dejamos temporalmente. Luego, cuando
-    // carguen los géneros, lo convertimos a nombre en _sincronizarNombreGenero().
     _generoController.text = (user['id_genero'] ?? '').toString();
-
     _loading = false;
   }
 
@@ -310,6 +288,8 @@ class _DatosScreenState extends State<DatosScreen> {
     for (final fn in _focusNodes.values) {
       fn.dispose();
     }
+    _nombreController.dispose();
+    _apellidoController.dispose();
     _dniController.dispose();
     _fechaController.dispose();
     _generoController.dispose();

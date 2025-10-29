@@ -1,7 +1,8 @@
 // lib/screens/home/completar_datos_screen.dart
 import 'package:flutter/material.dart';
-import '../../home/services/api_service.dart';
-import '../../perfil/services/perfil_services.dart';
+import '../../../services/api_service.dart';
+import '../../../services/perfil_services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class CompletarDatosScreen extends StatefulWidget {
   final Map<String, dynamic> user;
@@ -112,12 +113,27 @@ class _CompletarDatosScreenState extends State<CompletarDatosScreen> {
         fechaNacimiento: _fechaController.text.trim(),
         idGenero: _idGeneroSeleccionado,
         telefonoUsuario: _telefonoController.text.trim(),
-        email: _emailController.text.trim(), // backend mapea a email_usuario
+        email: _emailController.text.trim(),
       );
 
       if (!mounted) return;
       if (ok) {
-        Navigator.pop(context, true); // ✔️ éxito
+        // ✅ Guardamos los datos actualizados localmente
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('dni', _dniController.text.trim());
+        await prefs.setString('fecha_nacimiento', _fechaController.text.trim());
+        await prefs.setInt('id_genero', _idGeneroSeleccionado ?? 0);
+        await prefs.setString(
+          'telefono_usuario',
+          _telefonoController.text.trim(),
+        );
+        await prefs.setString('email_usuario', _emailController.text.trim());
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Datos actualizados correctamente ✅')),
+        );
+
+        Navigator.pop(context, true); // Éxito
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('No se pudo guardar los cambios.')),
@@ -244,20 +260,22 @@ class _CompletarDatosScreenState extends State<CompletarDatosScreen> {
                     try {
                       final parts = v.split('-');
                       if (parts.length != 3) return 'Fecha inválida';
-                      
+
                       final year = int.parse(parts[0]);
                       final month = int.parse(parts[1]);
                       final day = int.parse(parts[2]);
-                      
+
                       final birthDate = DateTime(year, month, day);
                       final today = DateTime.now();
-                      final age = today.year - birthDate.year -
+                      final age =
+                          today.year -
+                          birthDate.year -
                           ((today.month < birthDate.month ||
                                   (today.month == birthDate.month &&
                                       today.day < birthDate.day))
                               ? 1
                               : 0);
-                      
+
                       if (age > 110) {
                         return 'La edad no puede superar los 110 años';
                       }
@@ -298,7 +316,10 @@ class _CompletarDatosScreenState extends State<CompletarDatosScreen> {
                     if (v == null || v.trim().isEmpty) {
                       return 'Ingresá un teléfono';
                     }
-                    final telefono = v.trim().replaceAll(RegExp(r'[\s\-\(\)]'), '');
+                    final telefono = v.trim().replaceAll(
+                      RegExp(r'[\s\-\(\)]'),
+                      '',
+                    );
                     if (!RegExp(r'^\d+$').hasMatch(telefono)) {
                       return 'El teléfono solo puede contener números';
                     }
