@@ -1,9 +1,10 @@
 import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class ApiService {
-  final String baseUrl = dotenv.env['API_URL'] ?? 'http://186.123.85.22:3000';
+  final baseUrl = dotenv.env['API_URL'];
 
   // ==============================
   // 🔹 Actualizar datos del usuario
@@ -17,7 +18,8 @@ class ApiService {
     required String email,
   }) async {
     try {
-      final url = Uri.parse('$baseUrl/usuarios/$idUsuario');
+      final url = Uri.parse('$baseUrl/usuarios/actualizarUsuario/$idUsuario');
+      debugPrint('URL de actualización: $url');
       final body = jsonEncode({
         'dni': dni,
         'fecha_nacimiento': fechaNacimiento,
@@ -50,7 +52,7 @@ class ApiService {
   // ==============================
   Future<Map<String, dynamic>?> obtenerUsuarioPorId(int idUsuario) async {
     try {
-      final url = Uri.parse('$baseUrl/usuarios/$idUsuario');
+      final url = Uri.parse('$baseUrl/usuarios/obtenerUsuarioId/$idUsuario');
       final response = await http.get(url);
 
       if (response.statusCode == 200) {
