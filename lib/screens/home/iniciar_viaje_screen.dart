@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -10,7 +11,8 @@ import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-
+import 'dart:ui' as ui;
+import 'dart:typed_data';
 import '../../services/api_service.dart';
 import '../../services/socket_service.dart';
 import '../../services/user_preferences.dart';
@@ -25,11 +27,18 @@ class IniciarViajeScreen extends StatefulWidget {
   State<IniciarViajeScreen> createState() => _IniciarViajeScreenState();
 }
 
-class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
+class _IniciarViajeScreenState extends State<IniciarViajeScreen>
+    with TickerProviderStateMixin {
   final SocketService _socket = SocketService.instance;
   final ApiService _api = ApiService();
+  // ===========================
+  // Variables de distancia/tiempo
+  // ===========================
+  String _distanceText = '';
+  String _durationText = '';
 
   GoogleMapController? _mapCtrl;
+
   LatLng? _miUbicacion;
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
@@ -53,6 +62,9 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
   final double _perKm = 900;
   final double _perMin = 90;
 
+  late AnimationController _pulseController;
+  bool _buscando = false;
+
   double get _km => _distanceMeters / 1000;
   double get _mins => _durationSeconds / 60;
   double get _fare => _baseFare + (_km * _perKm) + (_mins * _perMin);
@@ -61,6 +73,20 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
   void initState() {
     super.initState();
     _initLocation();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    _mapCtrl?.dispose();
+    _origenCtrl.dispose();
+    _destinoCtrl.dispose();
+    _debounce?.cancel();
+    super.dispose();
   }
 
   // ================== GEOLOCALIZACIÓN ==================
@@ -95,14 +121,48 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
 
       setState(() {
         _origenCtrl.text = direccion;
-        _setOrigen(_miUbicacion!, direccion);
       });
+
+      final icono = await _crearIconoNegro();
+      _setOrigen(_miUbicacion!, direccion, icono);
 
       _mapCtrl?.animateCamera(CameraUpdate.newLatLngZoom(_miUbicacion!, 15));
       debugPrint('📍 Ubicación actual establecida: $direccion');
     } catch (e) {
       debugPrint('❌ Error obteniendo ubicación: $e');
     }
+  }
+
+  Future<BitmapDescriptor> _crearIconoNegro() async {
+    final data = await rootBundle.load('assets/images/pin_origen.png');
+    final codec = await ui.instantiateImageCodec(
+      data.buffer.asUint8List(),
+      targetWidth: 64,
+    );
+    final frame = await codec.getNextFrame();
+    final bytesData = await frame.image.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
+    if (bytesData == null) {
+      throw Exception('Error al convertir la imagen a bytes');
+    }
+    return BitmapDescriptor.fromBytes(bytesData.buffer.asUint8List());
+  }
+
+  Future<BitmapDescriptor> _crearIconoDestino() async {
+    final data = await rootBundle.load('assets/images/pin_destino.png');
+    final codec = await ui.instantiateImageCodec(
+      data.buffer.asUint8List(),
+      targetWidth: 80,
+    );
+    final frame = await codec.getNextFrame();
+    final bytesData = await frame.image.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
+    if (bytesData == null) {
+      throw Exception('Error al convertir la imagen a bytes');
+    }
+    return BitmapDescriptor.fromBytes(bytesData.buffer.asUint8List());
   }
 
   // ================== MARCADORES ==================
@@ -117,12 +177,12 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
   Marker? get _origenMarker => _getMarker('origen');
   Marker? get _destinoMarker => _getMarker('destino');
 
-  void _setOrigen(LatLng pos, String etiqueta) {
+  void _setOrigen(LatLng pos, String etiqueta, BitmapDescriptor icon) {
     final marker = Marker(
       markerId: const MarkerId('origen'),
       position: pos,
-      draggable: false,
-      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
+      draggable: true,
+      icon: icon,
       infoWindow: InfoWindow(title: 'Origen', snippet: etiqueta),
     );
     setState(() {
@@ -131,36 +191,44 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
     });
   }
 
-  void _setDestino(LatLng pos, String etiqueta) {
-    final marker = Marker(
+  void _setDestino(LatLng pos, String etiqueta, BitmapDescriptor icon) {
+    final destino = Marker(
       markerId: const MarkerId('destino'),
       position: pos,
-      draggable: false,
-      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+      draggable: true,
       infoWindow: InfoWindow(title: 'Destino', snippet: etiqueta),
+      icon: icon,
     );
+
     setState(() {
       _markers.removeWhere((m) => m.markerId.value == 'destino');
-      _markers.add(marker);
+      _markers.add(destino);
     });
+
+    _mapCtrl?.animateCamera(CameraUpdate.newLatLngZoom(pos, 14));
   }
 
   // ================== AUTOCOMPLETE ==================
-  void _onChangedAutocomplete({
-    required String value,
-    required bool esOrigen,
-  }) {
+  void _onChangedAutocomplete({required String value, required bool esOrigen}) {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 300), () async {
       if (value.trim().length < 3) return;
       final token = esOrigen
           ? (_sessionTokenOrigen ??= _uuid.v4())
           : (_sessionTokenDestino ??= _uuid.v4());
+      final lat = _miUbicacion?.latitude;
+      final lng = _miUbicacion?.longitude;
+
       final url = Uri.parse(
         'https://maps.googleapis.com/maps/api/place/autocomplete/json'
         '?input=${Uri.encodeComponent(value)}'
-        '&language=es&key=$apiKey&sessiontoken=$token&components=country:ar',
+        '&language=es'
+        '&key=$apiKey'
+        '&sessiontoken=$token'
+        '&components=country:ar'
+        '${lat != null && lng != null ? '&location=$lat,$lng&radius=30000' : ''}',
       );
+
       final resp = await http.get(url);
       final data = json.decode(resp.body);
       if (data['status'] != 'OK') return;
@@ -178,7 +246,10 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
     });
   }
 
-  Future<void> _selectPrediction(_Prediction p, {required bool esOrigen}) async {
+  Future<void> _selectPrediction(
+    _Prediction p, {
+    required bool esOrigen,
+  }) async {
     final url = Uri.parse(
       'https://maps.googleapis.com/maps/api/place/details/json'
       '?place_id=${p.placeId}&fields=geometry/location&key=$apiKey',
@@ -191,15 +262,22 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
     final desc = p.description ?? '${ll.latitude}, ${ll.longitude}';
 
     if (esOrigen) {
-      _setOrigen(ll, desc);
+      final icon = await _crearIconoNegro();
+      _setOrigen(ll, desc, icon);
       _origenCtrl.text = desc;
-      _predOrigen.clear();
+      setState(() {
+        _predOrigen.clear();
+      });
     } else {
-      _setDestino(ll, desc);
+      final icon = await _crearIconoDestino();
+      _setDestino(ll, desc, icon);
       _destinoCtrl.text = desc;
-      _predDestino.clear();
+      setState(() {
+        _predDestino.clear();
+      });
     }
 
+    // 🔧 CAMBIO PRINCIPAL: Construir la ruta después de seleccionar predicción
     await _construirRutaSiPosible();
   }
 
@@ -208,34 +286,53 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
     final origen = _origenMarker;
     final destino = _destinoMarker;
     if (origen == null || destino == null) return;
-
-    final polyPoints = PolylinePoints();
-    final result = await polyPoints.getRouteBetweenCoordinates(
-      googleApiKey: apiKey!,
-      request: PolylineRequest(
-        origin: PointLatLng(
-          origen.position.latitude,
-          origen.position.longitude,
+    try {
+      final polyPoints = PolylinePoints();
+      final result = await polyPoints.getRouteBetweenCoordinates(
+        googleApiKey: apiKey!,
+        request: PolylineRequest(
+          origin: PointLatLng(
+            origen.position.latitude,
+            origen.position.longitude,
+          ),
+          destination: PointLatLng(
+            destino.position.latitude,
+            destino.position.longitude,
+          ),
+          mode: TravelMode.driving,
         ),
-        destination: PointLatLng(
-          destino.position.latitude,
-          destino.position.longitude,
-        ),
-        mode: TravelMode.driving,
-      ),
-    );
+      );
 
-    if (result.points.isEmpty) return;
-    final pts = result.points.map((p) => LatLng(p.latitude, p.longitude)).toList();
-    final polyline = Polyline(
-      polylineId: const PolylineId('ruta'),
-      color: Colors.blue,
-      width: 5,
-      points: pts,
-    );
+      if (result.points.isEmpty) {
+        debugPrint('⚠️ No se pudo obtener la ruta');
+        _msg('No se pudo construir la ruta');
+        return;
+      }
+      final pts = result.points
+          .map((p) => LatLng(p.latitude, p.longitude))
+          .toList();
+      final polyline = Polyline(
+        polylineId: const PolylineId('ruta'),
+        points: pts,
+        width: 6,
+        color: Colors.blueAccent,
+        startCap: Cap.roundCap,
+        endCap: Cap.roundCap,
+        jointType: JointType.round,
+      );
 
-    await _fetchDistanceMatrix(origen.position, destino.position);
-    setState(() => _polylines..clear()..add(polyline));
+      await _fetchDistanceMatrix(origen.position, destino.position);
+      setState(() {
+        _polylines
+          ..clear()
+          ..add(polyline);
+      });
+
+      await _ajustarCamaraAOrigenDestino(origen.position, destino.position);
+      debugPrint('🛣️ Ruta construida correctamente');
+    } catch (e) {
+      debugPrint('❌ Error al construir la ruta: $e');
+    }
   }
 
   Future<void> _fetchDistanceMatrix(LatLng o, LatLng d) async {
@@ -245,14 +342,39 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
       '&destinations=${d.latitude},${d.longitude}'
       '&mode=driving&key=$apiKey',
     );
+
     final resp = await http.get(url);
     if (resp.statusCode != 200) return;
+
     final data = json.decode(resp.body);
     final el = data['rows'][0]['elements'][0];
+    if (el['status'] != 'OK') return;
+
     setState(() {
       _distanceMeters = el['distance']['value'];
       _durationSeconds = el['duration']['value'];
+      _distanceText = el['distance']['text'];
+      _durationText = el['duration']['text'];
     });
+
+    debugPrint(
+      '📏 Distancia: $_distanceMeters m, Duración: $_durationSeconds s',
+    );
+  }
+
+  Future<void> _ajustarCamaraAOrigenDestino(LatLng o, LatLng d) async {
+    if (_mapCtrl == null) return;
+    final bounds = LatLngBounds(
+      southwest: LatLng(
+        o.latitude < d.latitude ? o.latitude : d.latitude,
+        o.longitude < d.longitude ? o.longitude : d.longitude,
+      ),
+      northeast: LatLng(
+        o.latitude > d.latitude ? o.latitude : d.latitude,
+        o.longitude > d.longitude ? o.longitude : d.longitude,
+      ),
+    );
+    await _mapCtrl!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 80));
   }
 
   // ================== CONFIRMAR VIAJE ==================
@@ -276,16 +398,20 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
         direccionOrigen: _origenCtrl.text.trim(),
         direccionDestino: _destinoCtrl.text.trim(),
         precioEstimado: double.parse(_fare.toStringAsFixed(2)),
-        // notas: null,
       );
 
       final idViaje = (result?['id_viajes'] as num).toInt();
       debugPrint('🟢 Viaje iniciado con ID: $idViaje');
 
-      _socket.emit('viaje_creado', {'id_viaje': idViaje, 'id_usuario': idUsuario});
+      _socket.emit('viaje_creado', {
+        'id_viaje': idViaje,
+        'id_usuario': idUsuario,
+      });
       _mostrarSnack('Tu solicitud fue enviada.');
+      setState(() => _buscando = true);
 
       if (!mounted) return;
+      await Future.delayed(const Duration(seconds: 2));
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -299,7 +425,8 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
   }
 
   // ================== UTILIDADES ==================
-  void _msg(String t) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t)));
+  void _msg(String t) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t)));
   void _mostrarSnack(String mensaje) => _msg(mensaje);
 
   @override
@@ -321,17 +448,24 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
                   markers: _markers,
                   polylines: _polylines,
                   onTap: (pos) async {
-                    final placemarks = await placemarkFromCoordinates(
-                      pos.latitude,
-                      pos.longitude,
-                      localeIdentifier: "es_AR",
-                    );
-                    final direccion = placemarks.isNotEmpty
-                        ? _formatDireccion(placemarks.first)
-                        : '${pos.latitude}, ${pos.longitude}';
-                    _setDestino(pos, direccion);
-                    _destinoCtrl.text = direccion;
-                    await _construirRutaSiPosible();
+                    try {
+                      final placemarks = await placemarkFromCoordinates(
+                        pos.latitude,
+                        pos.longitude,
+                        localeIdentifier: "es_AR",
+                      );
+                      final direccion = placemarks.isNotEmpty
+                          ? _formatDireccion(placemarks.first)
+                          : '${pos.latitude}, ${pos.longitude}';
+                      final icon = await _crearIconoDestino();
+                      _setDestino(pos, direccion, icon);
+                      _destinoCtrl.text = direccion;
+
+                      // 🧭 Traza la ruta automáticamente
+                      await _construirRutaSiPosible();
+                    } catch (e) {
+                      debugPrint('Error al marcar destino: $e');
+                    }
                   },
                 ),
 
@@ -344,25 +478,65 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
                       _SearchField(
                         hint: 'Origen',
                         controller: _origenCtrl,
-                        onChanged: (v) => _onChangedAutocomplete(value: v, esOrigen: true),
+                        onChanged: (v) =>
+                            _onChangedAutocomplete(value: v, esOrigen: true),
                         onSearch: () {},
                         prefix: Icons.my_location,
                       ),
                       if (_predOrigen.isNotEmpty)
-                        _PredictionsList(predictions: _predOrigen, onTap: (p) => _selectPrediction(p, esOrigen: true)),
+                        _PredictionsList(
+                          predictions: _predOrigen,
+                          onTap: (p) => _selectPrediction(p, esOrigen: true),
+                        ),
                       const SizedBox(height: 8),
                       _SearchField(
                         hint: 'Destino',
                         controller: _destinoCtrl,
-                        onChanged: (v) => _onChangedAutocomplete(value: v, esOrigen: false),
+                        onChanged: (v) =>
+                            _onChangedAutocomplete(value: v, esOrigen: false),
                         onSearch: () {},
                         prefix: Icons.place,
                       ),
                       if (_predDestino.isNotEmpty)
-                        _PredictionsList(predictions: _predDestino, onTap: (p) => _selectPrediction(p, esOrigen: false)),
+                        _PredictionsList(
+                          predictions: _predDestino,
+                          onTap: (p) => _selectPrediction(p, esOrigen: false),
+                        ),
                     ],
                   ),
                 ),
+
+                // 🔹 Loader tipo Uber
+                if (_buscando)
+                  Positioned.fill(
+                    child: AnimatedBuilder(
+                      animation: _pulseController,
+                      builder: (_, __) {
+                        return Center(
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              _pulseCircle(80 * _pulseController.value),
+                              _pulseCircle(150 * _pulseController.value),
+                              Container(
+                                width: 50,
+                                height: 50,
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.amber,
+                                ),
+                                child: const Icon(
+                                  Icons.local_taxi,
+                                  color: Colors.white,
+                                  size: 30,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
 
                 if (_origenMarker != null && _destinoMarker != null)
                   Align(
@@ -379,6 +553,17 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen> {
                   ),
               ],
             ),
+    );
+  }
+
+  Widget _pulseCircle(double radius) {
+    return Container(
+      width: radius,
+      height: radius,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.amber.withOpacity(0.3 * (1 - _pulseController.value)),
+      ),
     );
   }
 }
@@ -420,10 +605,8 @@ class _Prediction {
   final String? description;
   final String? placeId;
   _Prediction({this.description, this.placeId});
-  factory _Prediction.fromJson(Map<String, dynamic> json) => _Prediction(
-        description: json['description'],
-        placeId: json['place_id'],
-      );
+  factory _Prediction.fromJson(Map<String, dynamic> json) =>
+      _Prediction(description: json['description'], placeId: json['place_id']);
 }
 
 class _PredictionsList extends StatelessWidget {

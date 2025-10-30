@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:taxi_tuc/screens/perfil/viajes_screen.dart';
 import '../../services/socket_service.dart';
 import '../../screens/auth/auth_screen.dart';
 import '../../screens/perfil/perfil_screen.dart';
@@ -378,7 +379,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const BuscandoViajeScreen(),
+                    builder: (_) => const ViajesScreen(),
                   ),
                 ),
               ),

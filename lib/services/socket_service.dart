@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -15,15 +16,22 @@ class SocketService {
   bool get isConnected => _isConnected;
   IO.Socket get socket => _socket;
 
-  /// Conecta el socket si no está conectado aún
-  void connect() {
+  /// 🔌 Conecta el socket (y espera a que realmente se conecte)
+  Future<void> connect() async {
     if (_isConnected) {
       debugPrint('🟢 Socket ya está conectado.');
       return;
     }
 
-    final baseUrl = dotenv.env['SOCKET_URL'] ?? 'http://10.0.2.2:3000';
-    debugPrint('🔌 Conectando a socket: $baseUrl');
+    final baseUrl = dotenv.env['API_URL'];
+    if (baseUrl == null) {
+      debugPrint('❌ No se encontró API_URL en el .env');
+      return;
+    }
+
+    debugPrint('🔌 Intentando conectar a socket: $baseUrl');
+
+    final completer = Completer<void>();
 
     _socket = IO.io(
       baseUrl,
@@ -35,28 +43,46 @@ class SocketService {
           .build(),
     );
 
+    // 🟢 Conectado
     _socket.onConnect((_) {
       _isConnected = true;
       debugPrint('✅ Conectado al servidor Socket.IO');
+      if (!completer.isCompleted) completer.complete();
     });
 
+    // 🔴 Desconectado
     _socket.onDisconnect((_) {
       _isConnected = false;
       debugPrint('⚠️ Socket desconectado');
     });
 
+    // ❌ Error de conexión
     _socket.onConnectError((err) {
       _isConnected = false;
       debugPrint('❌ Error de conexión al socket: $err');
+      if (!completer.isCompleted) completer.completeError(err);
     });
 
+    // 🔁 Reconectado automáticamente
     _socket.onReconnect((_) {
       _isConnected = true;
       debugPrint('🔁 Reconexion automática exitosa');
     });
+
+    // Esperar hasta que se conecte o falle
+    try {
+      await completer.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          throw Exception('⏱️ Timeout al conectar con el socket.');
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ No se pudo establecer conexión con el socket: $e');
+    }
   }
 
-  /// Emite un evento genérico
+  /// 📤 Emite un evento genérico (solo si está conectado)
   void emit(String event, dynamic data) {
     if (!_isConnected) {
       debugPrint('⚠️ Intento de emitir evento "$event" sin conexión.');
@@ -66,7 +92,7 @@ class SocketService {
     debugPrint('📤 Emitido evento: $event → $data');
   }
 
-  /// Escucha un evento específico
+  /// 📥 Escucha un evento específico
   void on(String event, Function(dynamic) callback) {
     _socket.on(event, (data) {
       debugPrint('📥 Recibido evento "$event": $data');
@@ -74,24 +100,21 @@ class SocketService {
     });
   }
 
-  /// Deja de escuchar un evento
+  /// 🚫 Deja de escuchar un evento
   void off(String event) {
     _socket.off(event);
     debugPrint('🚫 Listener removido: $event');
   }
 
-  /// Emite el registro del usuario (pasajero/chofer)
-  void emitirConexionUsuario(int idUsuario, String tipo) {
-    if (!_isConnected) connect();
-    final payload = {
-      'id_usuario': idUsuario,
-      'tipo': tipo,
-    };
+  /// 🧍 Registrar usuario en el socket (pasajero / chofer)
+  Future<void> emitirConexionUsuario(int idUsuario, String tipo) async {
+    await connect();
+    final payload = {'id_usuario': idUsuario, 'tipo': tipo};
     _socket.emit('registrar_usuario', payload);
     debugPrint('🧍 Usuario registrado en socket → $payload');
   }
 
-  /// Cierra la conexión (si querés hacerlo explícitamente)
+  /// 🔴 Cierra la conexión manualmente (opcional)
   void disconnect() {
     if (!_isConnected) return;
     _socket.disconnect();

@@ -114,21 +114,12 @@ class ApiService {
   // ==============================
   // 🔹 Cancelar viaje
   // ==============================
-  Future<bool> cancelarViaje(int idViaje) async {
-    try {
-      final url = Uri.parse('$baseUrl/viajes/$idViaje/cancelar');
-      final response = await http.put(url);
+  Future<void> cancelarViaje(int idViaje) async {
+    final url = Uri.parse('$baseUrl/viajes/$idViaje/cancelar');
+    final response = await http.put(url);
 
-      if (response.statusCode == 200) {
-        print('❌ Viaje cancelado correctamente');
-        return true;
-      } else {
-        print('⚠️ Error al cancelar viaje: ${response.body}');
-        return false;
-      }
-    } catch (e) {
-      print('❌ Error en cancelarViaje(): $e');
-      return false;
+    if (response.statusCode != 200) {
+      throw Exception('Error al cancelar viaje: ${response.body}');
     }
   }
 
