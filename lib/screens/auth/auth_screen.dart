@@ -33,7 +33,8 @@ class _AuthScreenState extends State<AuthScreen> {
   final TextEditingController _apellidoController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _passwordConfirmController = TextEditingController();
+  final TextEditingController _passwordConfirmController =
+      TextEditingController();
 
   final _authService = AuthService();
   final _authGoogleService = AuthGoogleService();
@@ -103,9 +104,12 @@ class _AuthScreenState extends State<AuthScreen> {
       // ✅ Conectamos al socket (solo si no está conectado aún)
       _socket.connect();
       Future.delayed(const Duration(milliseconds: 500), () {
-        _socket.send('usuario_conectado', {
-          'id_usuario': user['id_usuario'],
-          'tipo': 'pasajero',
+        _socket.connect();
+        Future.delayed(const Duration(milliseconds: 500), () {
+          _socket.emit('usuario_conectado', {
+            'id_usuario': user['id_usuario'],
+            'tipo': 'pasajero',
+          });
         });
       });
 
@@ -165,9 +169,12 @@ class _AuthScreenState extends State<AuthScreen> {
       // ✅ Conectamos y emitimos el evento de conexión
       _socket.connect();
       Future.delayed(const Duration(milliseconds: 500), () {
-        _socket.send('usuario_conectado', {
-          'id_usuario': user['id_usuario'],
-          'tipo': 'pasajero',
+        _socket.connect();
+        Future.delayed(const Duration(milliseconds: 500), () {
+          _socket.emit('usuario_conectado', {
+            'id_usuario': user['id_usuario'],
+            'tipo': 'pasajero',
+          });
         });
       });
 
@@ -215,7 +222,12 @@ class _AuthScreenState extends State<AuthScreen> {
     }
 
     try {
-      final result = await _authService.register(apellido, nombre, email, password);
+      final result = await _authService.register(
+        apellido,
+        nombre,
+        email,
+        password,
+      );
       _showSnackbar(result['message']);
 
       if (result['status'] == 200) {
@@ -267,7 +279,10 @@ class _AuthScreenState extends State<AuthScreen> {
             style: TextStyle(color: textColor),
             child: SingleChildScrollView(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 40.0),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24.0,
+                  vertical: 40.0,
+                ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -287,15 +302,27 @@ class _AuthScreenState extends State<AuthScreen> {
                     AnimatedSwitcher(
                       duration: const Duration(milliseconds: 300),
                       child: _selectedTab == 1
-                          ? _buildRegisterForm(textColor, hintColor, fieldFill, suffixIconCols)
+                          ? _buildRegisterForm(
+                              textColor,
+                              hintColor,
+                              fieldFill,
+                              suffixIconCols,
+                            )
                           : _buildLoginForm(
-                              textColor, hintColor, fieldFill, suffixIconCols, linkColor),
+                              textColor,
+                              hintColor,
+                              fieldFill,
+                              suffixIconCols,
+                              linkColor,
+                            ),
                     ),
                     const SizedBox(height: 24),
                     ElevatedButton(
                       onPressed: _isLoading
                           ? null
-                          : (_selectedTab == 0 ? _handleLogin : _handleRegister),
+                          : (_selectedTab == 0
+                                ? _handleLogin
+                                : _handleRegister),
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         backgroundColor: kTaxiYellow,
@@ -314,7 +341,9 @@ class _AuthScreenState extends State<AuthScreen> {
                               ),
                             )
                           : Text(
-                              _selectedTab == 0 ? 'Iniciar Sesión' : 'Registrarse',
+                              _selectedTab == 0
+                                  ? 'Iniciar Sesión'
+                                  : 'Registrarse',
                               style: const TextStyle(fontSize: 18),
                             ),
                     ),
@@ -348,19 +377,57 @@ class _AuthScreenState extends State<AuthScreen> {
     return Column(
       key: const ValueKey('register'),
       children: [
-        _buildTextField('Nombre', _nombreController, textColor, hintColor, fillColor),
+        _buildTextField(
+          'Nombre',
+          _nombreController,
+          textColor,
+          hintColor,
+          fillColor,
+        ),
         const SizedBox(height: 16),
-        _buildTextField('Apellido', _apellidoController, textColor, hintColor, fillColor),
+        _buildTextField(
+          'Apellido',
+          _apellidoController,
+          textColor,
+          hintColor,
+          fillColor,
+        ),
         const SizedBox(height: 16),
-        _buildTextField('Email', _emailController, textColor, hintColor, fillColor),
+        _buildTextField(
+          'Email',
+          _emailController,
+          textColor,
+          hintColor,
+          fillColor,
+        ),
         const SizedBox(height: 16),
-        _buildPasswordField('Contraseña', _isPasswordVisible, () {
-          setState(() => _isPasswordVisible = !_isPasswordVisible);
-        }, _passwordController, textColor, hintColor, fillColor, suffixIconColor),
+        _buildPasswordField(
+          'Contraseña',
+          _isPasswordVisible,
+          () {
+            setState(() => _isPasswordVisible = !_isPasswordVisible);
+          },
+          _passwordController,
+          textColor,
+          hintColor,
+          fillColor,
+          suffixIconColor,
+        ),
         const SizedBox(height: 16),
-        _buildPasswordField('Confirmar Contraseña', _isConfirmPasswordVisible, () {
-          setState(() => _isConfirmPasswordVisible = !_isConfirmPasswordVisible);
-        }, _passwordConfirmController, textColor, hintColor, fillColor, suffixIconColor),
+        _buildPasswordField(
+          'Confirmar Contraseña',
+          _isConfirmPasswordVisible,
+          () {
+            setState(
+              () => _isConfirmPasswordVisible = !_isConfirmPasswordVisible,
+            );
+          },
+          _passwordConfirmController,
+          textColor,
+          hintColor,
+          fillColor,
+          suffixIconColor,
+        ),
       ],
     );
   }
@@ -375,11 +442,26 @@ class _AuthScreenState extends State<AuthScreen> {
     return Column(
       key: const ValueKey('login'),
       children: [
-        _buildTextField('Email', _emailController, textColor, hintColor, fillColor),
+        _buildTextField(
+          'Email',
+          _emailController,
+          textColor,
+          hintColor,
+          fillColor,
+        ),
         const SizedBox(height: 16),
-        _buildPasswordField('Contraseña', _isPasswordVisible, () {
-          setState(() => _isPasswordVisible = !_isPasswordVisible);
-        }, _passwordController, textColor, hintColor, fillColor, suffixIconColor),
+        _buildPasswordField(
+          'Contraseña',
+          _isPasswordVisible,
+          () {
+            setState(() => _isPasswordVisible = !_isPasswordVisible);
+          },
+          _passwordController,
+          textColor,
+          hintColor,
+          fillColor,
+          suffixIconColor,
+        ),
         const SizedBox(height: 16),
         Row(
           mainAxisAlignment: MainAxisAlignment.end,
@@ -387,7 +469,9 @@ class _AuthScreenState extends State<AuthScreen> {
             TextButton(
               onPressed: () => Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const RecuperarPasswordScreen()),
+                MaterialPageRoute(
+                  builder: (_) => const RecuperarPasswordScreen(),
+                ),
               ),
               style: TextButton.styleFrom(foregroundColor: linkColor),
               child: const Text('¿Olvidaste la Contraseña?'),

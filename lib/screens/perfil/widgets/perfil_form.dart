@@ -182,7 +182,7 @@ class PerfilForm extends StatelessWidget {
 
   Widget _buildGeneroDropdown() {
     return DropdownButtonFormField<int>(
-      value: _getGeneroIdActual(),
+      initialValue: _getGeneroIdActual(),
       items: generos
           .map(
             (g) => DropdownMenuItem<int>(

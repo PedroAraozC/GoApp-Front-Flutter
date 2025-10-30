@@ -292,7 +292,7 @@ class _CompletarDatosScreenState extends State<CompletarDatosScreen> {
 
                 // Género
                 DropdownButtonFormField<int>(
-                  value: _idGeneroSeleccionado,
+                  initialValue: _idGeneroSeleccionado,
                   items: _generos
                       .map(
                         (g) => DropdownMenuItem<int>(
