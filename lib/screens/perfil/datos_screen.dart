@@ -14,8 +14,9 @@ class DatosScreen extends StatefulWidget {
 
 class _DatosScreenState extends State<DatosScreen> {
   final _formKey = GlobalKey<FormState>();
-  bool _loading = true;
+  bool _loading = true; // Loader global
   bool _isEditing = false;
+  bool _isSaving = false; // Loader mientras se guardan cambios
 
   Map<String, dynamic>? _userData;
 
@@ -49,8 +50,11 @@ class _DatosScreenState extends State<DatosScreen> {
   }
 
   Future<void> _bootstrap() async {
-    await Future.wait([_fetchUser(), _fetchGeneros()]);
+    await _fetchGeneros();
+    await _fetchUser();
     _sincronizarNombreGenero();
+
+    if (!mounted) return;
     setState(() => _loading = false);
   }
 
@@ -63,12 +67,14 @@ class _DatosScreenState extends State<DatosScreen> {
       final service = PerfilService();
       final user = await service.obtenerUsuarioPorId(id);
 
-      debugPrint('🧾 Usuario cargado en DatosScreen: $user');
+      if (user == null) return;
 
-      if (user != null) {
+      debugPrint('🧾 Usuario cargado en DatosScreen: $user');
+      if (!mounted) return;
+
+      setState(() {
         _userData = user;
-        _nombreController.text =
-            user['nombre_usuario'] ?? user['nombre'] ?? '';
+        _nombreController.text = user['nombre_usuario'] ?? user['nombre'] ?? '';
         _apellidoController.text =
             user['apellido_usuario'] ?? user['apellido'] ?? '';
         _dniController.text = (user['dni'] ?? '').toString();
@@ -76,8 +82,18 @@ class _DatosScreenState extends State<DatosScreen> {
             (user['telefono_usuario'] ?? user['telefono'] ?? '').toString();
         _emailController.text = user['email_usuario'] ?? user['email'] ?? '';
         _fechaController.text = user['fecha_nacimiento'] ?? '';
-        _generoController.text = (user['id_genero'] ?? '').toString();
-      }
+
+        // 🔹 Mostrar el nombre del género en vez del ID
+        final idGenero = user['id_genero'];
+        final nombreGenero = _nombreGeneroFromId(
+          idGenero is String
+              ? int.tryParse(idGenero) ?? -1
+              : idGenero is int
+                  ? idGenero
+                  : -1,
+        );
+        _generoController.text = nombreGenero ?? '';
+      });
     } catch (e) {
       debugPrint('❌ Error al cargar usuario en DatosScreen: $e');
     }
@@ -136,24 +152,21 @@ class _DatosScreenState extends State<DatosScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     try {
+      setState(() => _isSaving = true); // 🌀 Loader mientras guarda
+
       final prefs = await SharedPreferences.getInstance();
       final id = widget.userId ?? prefs.getInt('id_usuario');
       if (id == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('No se pudo identificar al usuario.')),
         );
+        setState(() => _isSaving = false);
         return;
       }
 
       final idGenero = _idGeneroFromNombre(_generoController.text.trim());
 
       final payload = <String, dynamic>{
-        'nombre_usuario': _nombreController.text.trim().isEmpty
-            ? null
-            : _nombreController.text.trim(),
-        'apellido_usuario': _apellidoController.text.trim().isEmpty
-            ? null
-            : _apellidoController.text.trim(),
         'dni': _dniController.text.trim().isEmpty
             ? null
             : _dniController.text.trim(),
@@ -175,40 +188,33 @@ class _DatosScreenState extends State<DatosScreen> {
       final ok = await service.actualizarUsuario(id, payload);
 
       if (ok) {
-        // ✅ Guardar datos en SharedPreferences
-        await prefs.setString('nombre_usuario', _nombreController.text.trim());
-        await prefs.setString('apellido_usuario', _apellidoController.text.trim());
-        await prefs.setString('dni', _dniController.text.trim());
-        await prefs.setString('fecha_nacimiento', _fechaController.text.trim());
-        if (idGenero != null) await prefs.setInt('id_genero', idGenero);
-        await prefs.setString(
-            'telefono_usuario', _telefonoController.text.trim());
-        await prefs.setString('email_usuario', _emailController.text.trim());
-
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Datos actualizados correctamente ✅')),
         );
 
         await _fetchUser();
         _sincronizarNombreGenero();
-        setState(() => _isEditing = false);
+        if (!mounted) return;
+
+        setState(() {
+          _isEditing = false;
+        });
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('No se pudieron actualizar los datos.')),
+          const SnackBar(content: Text('No se pudieron actualizar los datos.')),
         );
       }
     } catch (e) {
       debugPrint('❌ Error al guardar cambios: $e');
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Error al guardar: $e')));
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
   void _cancelarEdicion() {
     if (_userData != null) {
-      _nombreController.text = _userData!['nombre_usuario'] ?? '';
-      _apellidoController.text = _userData!['apellido_usuario'] ?? '';
       _dniController.text = (_userData!['dni'] ?? '').toString();
       _telefonoController.text =
           (_userData!['telefono_usuario'] ?? _userData!['telefono'] ?? '')
@@ -232,15 +238,15 @@ class _DatosScreenState extends State<DatosScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
+    final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Mis datos personales'),
+        backgroundColor: cs.primary,
+        foregroundColor: cs.onPrimary,
         actions: [
-          if (!_isEditing)
+          if (!_isEditing && !_isSaving)
             IconButton(
               icon: const Icon(Icons.edit),
               tooltip: 'Editar',
@@ -248,38 +254,54 @@ class _DatosScreenState extends State<DatosScreen> {
             ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: PerfilForm(
-          formKey: _formKey,
-          focusNodes: _focusNodes,
-          isEditing: _isEditing,
-          nombreController: _nombreController,
-          apellidoController: _apellidoController,
-          dniController: _dniController,
-          fechaController: _fechaController,
-          generos: _generos,
-          generoController: _generoController,
-          telefonoController: _telefonoController,
-          emailController: _emailController,
-          onGuardar: _guardarCambios,
-          onCancelar: _cancelarEdicion,
-          onEditar: () => setState(() => _isEditing = true),
-        ),
+      body: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 300),
+        child: (_loading || _isSaving)
+            ? const Center(child: CircularProgressIndicator()) // 🌀 Loader inicial o guardando
+            : Padding(
+                key: const ValueKey('formulario'),
+                padding: const EdgeInsets.all(16.0),
+                child: PerfilForm(
+                  formKey: _formKey,
+                  focusNodes: _focusNodes,
+                  isEditing: _isEditing,
+                  dniController: _dniController,
+                  fechaController: _fechaController,
+                  generos: _generos,
+                  generoController: _generoController,
+                  telefonoController: _telefonoController,
+                  emailController: _emailController,
+                  onGuardar: _guardarCambios,
+                  onCancelar: _cancelarEdicion,
+                  onEditar: () => setState(() => _isEditing = true),
+                ),
+              ),
       ),
     );
   }
 
   void _loadFromInitialUser(Map<String, dynamic> user) {
     _userData = user;
+
     _nombreController.text = user['nombre_usuario'] ?? user['nombre'] ?? '';
-    _apellidoController.text = user['apellido_usuario'] ?? user['apellido'] ?? '';
+    _apellidoController.text =
+        user['apellido_usuario'] ?? user['apellido'] ?? '';
     _dniController.text = (user['dni'] ?? '').toString();
     _telefonoController.text =
         (user['telefono_usuario'] ?? user['telefono'] ?? '').toString();
     _emailController.text = user['email_usuario'] ?? user['email'] ?? '';
     _fechaController.text = user['fecha_nacimiento'] ?? '';
-    _generoController.text = (user['id_genero'] ?? '').toString();
+
+    final idGenero = user['id_genero'];
+    final generoNombre = _nombreGeneroFromId(
+      idGenero is String
+          ? int.tryParse(idGenero) ?? -1
+          : idGenero is int
+              ? idGenero
+              : -1,
+    );
+    _generoController.text = generoNombre ?? '';
+
     _loading = false;
   }
 

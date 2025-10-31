@@ -10,10 +10,8 @@ import '../../screens/perfil/perfil_screen.dart';
 import '../../services/api_service.dart';
 import '../../screens/home/widgets/completar_datos_screen.dart';
 import '../../screens/home/iniciar_viaje_screen.dart';
-import '../../screens/home/buscando_viaje_screen.dart';
 import '../../services/user_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import '../../services/socket_service.dart';
 
 final apiKey = dotenv.env['GOOGLE_API_KEY'];
 final _BASE_URL = dotenv.env['API_URL'];
@@ -378,9 +376,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 subtitle: 'Mirá tu historial y detalles',
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => const ViajesScreen(),
-                  ),
+                  MaterialPageRoute(builder: (_) => const ViajesScreen()),
                 ),
               ),
             ];

@@ -1,37 +1,41 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'perfil_info_field.dart';
 
 class PerfilForm extends StatelessWidget {
-  final GlobalKey<FormState> formKey;
-  final Map<String, FocusNode> focusNodes;
   final bool isEditing;
+  final GlobalKey<FormState> formKey;
 
-  final TextEditingController nombreController;
-  final TextEditingController apellidoController;
+  // Controladores
+  // final TextEditingController nombreController;
+  // final TextEditingController apellidoController;
   final TextEditingController dniController;
   final TextEditingController fechaController;
   final TextEditingController generoController;
   final TextEditingController telefonoController;
   final TextEditingController emailController;
 
+  final Map<String, FocusNode> focusNodes;
   final List<Map<String, dynamic>> generos;
 
+  // Callbacks
   final VoidCallback onGuardar;
   final VoidCallback onCancelar;
   final VoidCallback onEditar;
 
   const PerfilForm({
     super.key,
-    required this.formKey,
-    required this.focusNodes,
     required this.isEditing,
-    required this.nombreController,
-    required this.apellidoController,
+    required this.formKey,
+    // required this.nombreController,
+    // required this.apellidoController,
     required this.dniController,
     required this.fechaController,
     required this.generos,
     required this.generoController,
     required this.telefonoController,
     required this.emailController,
+    required this.focusNodes,
     required this.onGuardar,
     required this.onCancelar,
     required this.onEditar,
@@ -43,184 +47,206 @@ class PerfilForm extends StatelessWidget {
 
     return Form(
       key: formKey,
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildField(
-              label: 'Nombre',
-              controller: nombreController,
-              focusNode: focusNodes['nombre'],
-              enabled: isEditing,
+      child: Column(
+        children: [
+          // 🧩 Tarjeta principal
+          Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
             ),
-            const SizedBox(height: 12),
-            _buildField(
-              label: 'Apellido',
-              controller: apellidoController,
-              focusNode: focusNodes['apellido'],
-              enabled: isEditing,
-            ),
-            const SizedBox(height: 12),
-            _buildField(
-              label: 'DNI',
-              controller: dniController,
-              focusNode: focusNodes['dni'],
-              keyboardType: TextInputType.number,
-              enabled: isEditing,
-            ),
-            const SizedBox(height: 12),
-            _buildDateField(context),
-            const SizedBox(height: 12),
-            _buildGeneroDropdown(),
-            const SizedBox(height: 12),
-            _buildField(
-              label: 'Teléfono',
-              controller: telefonoController,
-              focusNode: focusNodes['telefono'],
-              keyboardType: TextInputType.phone,
-              enabled: isEditing,
-            ),
-            const SizedBox(height: 12),
-            _buildField(
-              label: 'Email',
-              controller: emailController,
-              focusNode: focusNodes['email'],
-              keyboardType: TextInputType.emailAddress,
-              enabled: isEditing,
-            ),
-            const SizedBox(height: 24),
-            if (isEditing)
-              Row(
+            elevation: 5,
+            shadowColor: const Color.fromARGB(80, 0, 0, 0),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: onCancelar,
-                      child: const Text('Cancelar'),
-                    ),
+                  // _buildInfoField(
+                  //   icon: Icons.person_outline,
+                  //   label: "Nombre",
+                  //   controller: nombreController,
+                  //   isEditing: isEditing,
+                  //   focusNode: focusNodes["nombre"],
+                  // ),
+                  // _divider(),
+                  // _buildInfoField(
+                  //   icon: Icons.person,
+                  //   label: "Apellido",
+                  //   controller: apellidoController,
+                  //   isEditing: isEditing,
+                  //   focusNode: focusNodes["apellido"],
+                  // ),
+                  _divider(),
+                  _buildInfoField(
+                    icon: Icons.badge_rounded,
+                    label: "DNI",
+                    controller: dniController,
+                    isEditing: isEditing,
+                    focusNode: focusNodes["dni"],
+                    keyboardType: TextInputType.number,
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: onGuardar,
-                      icon: const Icon(Icons.save),
-                      label: const Text('Guardar'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: cs.primary,
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
+                  _divider(),
+                  _buildInfoField(
+                    icon: Icons.cake_rounded,
+                    label: "Fecha de Nacimiento",
+                    controller: fechaController,
+                    isEditing: isEditing,
+                    onDateTap: () => _seleccionarFecha(context),
+                  ),
+                  _divider(),
+                  _buildInfoField(
+                    icon: Icons.person_rounded,
+                    label: "Género",
+                    controller: generoController,
+                    generos: generos,
+                    isEditing: isEditing,
+                    onGeneroChanged: (value) =>
+                        generoController.text = value,
+                  ),
+                  _divider(),
+                  _buildInfoField(
+                    icon: Icons.phone_rounded,
+                    label: "Teléfono",
+                    controller: telefonoController,
+                    isEditing: isEditing,
+                    keyboardType: TextInputType.phone,
+                    focusNode: focusNodes["telefono"],
+                  ),
+                  _divider(),
+                  _buildInfoField(
+                    icon: Icons.email_rounded,
+                    label: "Email",
+                    controller: emailController,
+                    isEditing: isEditing,
+                    keyboardType: TextInputType.emailAddress,
+                    focusNode: focusNodes["email"],
                   ),
                 ],
               ),
-          ],
-        ),
+            ),
+          ),
+
+          const SizedBox(height: 25),
+
+          // 🔘 Botones inferiores
+          isEditing
+              ? Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: onCancelar,
+                      icon: const Icon(
+                        Icons.cancel_rounded,
+                        color: Colors.redAccent,
+                      ),
+                      label: const Text(
+                        "Cancelar",
+                        style: TextStyle(color: Colors.redAccent),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.redAccent),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 35, vertical: 18),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        if (formKey.currentState!.validate()) onGuardar();
+                      },
+                      icon:
+                          const Icon(Icons.save_rounded, color: Colors.white),
+                      label: const Text("Guardar"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: cs.primary,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 40, vertical: 18),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 6,
+                      ),
+                    ),
+                  ],
+                )
+              : ElevatedButton.icon(
+                  onPressed: onEditar,
+                  icon: const Icon(Icons.edit_rounded, color: Colors.white),
+                  label: const Text("Editar perfil"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: cs.primary,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 40, vertical: 18),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 6,
+                  ),
+                ),
+
+          const SizedBox(height: 40),
+        ],
       ),
     );
   }
 
-  Widget _buildField({
+  /// 🔹 Construye campo con ícono y comportamiento dinámico
+  Widget _buildInfoField({
+    required IconData icon,
     required String label,
     required TextEditingController controller,
     FocusNode? focusNode,
     TextInputType? keyboardType,
-    bool enabled = true,
+    bool isEditing = false,
+    List<Map<String, dynamic>>? generos,
+    Function(String)? onGeneroChanged,
+    VoidCallback? onDateTap,
   }) {
-    return TextFormField(
+    return PerfilInfoField(
+      icon: icon,
+      label: label,
       controller: controller,
+      isEditing: isEditing,
       focusNode: focusNode,
-      enabled: enabled,
       keyboardType: keyboardType,
-      decoration: InputDecoration(
-        labelText: label,
-        border: const OutlineInputBorder(),
-      ),
-      validator: (v) {
-        if (!enabled) return null;
-        if (v == null || v.trim().isEmpty) {
-          return 'Campo requerido';
-        }
-        return null;
-      },
+      generos: generos,
+      onGeneroChanged: onGeneroChanged,
+      onDateTap: onDateTap,
     );
   }
 
-  Widget _buildDateField(BuildContext context) {
-    return TextFormField(
-      controller: fechaController,
-      focusNode: focusNodes['fecha'],
-      readOnly: true,
-      enabled: isEditing,
-      decoration: const InputDecoration(
-        labelText: 'Fecha de nacimiento',
-        border: OutlineInputBorder(),
-        suffixIcon: Icon(Icons.calendar_today),
-      ),
-      onTap: isEditing
-          ? () async {
-              FocusScope.of(context).unfocus();
-              final picked = await showDatePicker(
-                context: context,
-                initialDate: DateTime.now().subtract(const Duration(days: 365 * 20)),
-                firstDate: DateTime(1900),
-                lastDate: DateTime.now(),
-                locale: const Locale('es', 'ES'),
-              );
-              if (picked != null) {
-                final formatted =
-                    '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
-                fechaController.text = formatted;
-              }
-            }
-          : null,
-      validator: (v) {
-        if (!isEditing) return null;
-        if (v == null || v.isEmpty) return 'Campo requerido';
-        return null;
-      },
+  /// 📅 Selector de fecha de nacimiento
+  void _seleccionarFecha(BuildContext context) async {
+    FocusScope.of(context).unfocus();
+    DateTime? pickedDate = await showDatePicker(
+      context: context,
+      initialDate: DateTime.tryParse(_toDate(fechaController.text)) ??
+          DateTime(1990, 1, 1),
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now(),
+      locale: const Locale('es', 'ES'),
     );
-  }
-
-  Widget _buildGeneroDropdown() {
-    return DropdownButtonFormField<int>(
-      initialValue: _getGeneroIdActual(),
-      items: generos
-          .map(
-            (g) => DropdownMenuItem<int>(
-              value: g['id_genero'] as int,
-              child: Text(g['nombre_genero']),
-            ),
-          )
-          .toList(),
-      decoration: const InputDecoration(
-        labelText: 'Género',
-        border: OutlineInputBorder(),
-      ),
-      onChanged: isEditing
-          ? (v) {
-              if (v != null) {
-                generoController.text = generos
-                    .firstWhere((g) => g['id_genero'] == v)['nombre_genero']
-                    .toString();
-              }
-            }
-          : null,
-    );
-  }
-
-  int? _getGeneroIdActual() {
-    try {
-      final text = generoController.text.trim();
-      if (text.isEmpty) return null;
-      final id = int.tryParse(text);
-      if (id != null) return id;
-
-      final found = generos.firstWhere(
-        (g) => g['nombre_genero'] == text,
-        orElse: () => {},
-      );
-      return found['id_genero'] as int?;
-    } catch (_) {
-      return null;
+    if (pickedDate != null) {
+      String formattedDate = DateFormat('dd/MM/yyyy').format(pickedDate);
+      fechaController.text = formattedDate;
     }
   }
+
+  String _toDate(String value) {
+    try {
+      final parts = value.split('/');
+      if (parts.length == 3) {
+        return '${parts[2]}-${parts[1]}-${parts[0]}';
+      }
+    } catch (_) {}
+    return value;
+  }
+
+  Widget _divider() =>
+      const Divider(color: Colors.black12, thickness: 1, height: 4);
 }

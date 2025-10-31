@@ -15,10 +15,9 @@ class AuthService {
       body: jsonEncode({"dni": dni, "email": email}),
     );
 
-    /* DEBUG:
+   
     print("STATUS: ${response.statusCode}");
     print("BODY: ${response.body}");
-    */
 
     return jsonDecode(response.body);
   }

@@ -95,7 +95,7 @@ class PerfilService {
   Future<Map<String, dynamic>?> obtenerUsuarioPorId(int idUsuario) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/usuarios/$idUsuario'),
+        Uri.parse('$baseUrl/usuarios/obtenerUsuarioId/$idUsuario'),
       );
 
       if (response.statusCode == 200) {
@@ -121,7 +121,7 @@ class PerfilService {
     Map<String, dynamic> data,
   ) async {
     try {
-      final url = Uri.parse('$baseUrl/usuarios/$idUsuario');
+      final url = Uri.parse('$baseUrl/usuarios/actualizarUsuario/$idUsuario');
       final response = await http.put(
         url,
         headers: {'Content-Type': 'application/json'},

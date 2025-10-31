@@ -168,22 +168,22 @@ class _PerfilScreenState extends State<PerfilScreen> {
                   ).textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
                 ),
 
-              const SizedBox(height: 24),
-              const Divider(),
+              // const SizedBox(height: 24),
+              // const Divider(),
 
-              // 🔹 Datos principales (lectura rápida)
-              _buildInfoRow(Icons.badge, 'DNI', usuario['dni'] ?? '-'),
-              _buildInfoRow(
-                Icons.phone,
-                'Teléfono',
-                usuario['telefono_usuario'] ?? usuario['telefono'] ?? '-',
-              ),
-              _buildInfoRow(
-                Icons.cake,
-                'Nacimiento',
-                usuario['fecha_nacimiento'] ?? '-',
-              ),
-              const SizedBox(height: 24),
+              // // 🔹 Datos principales (lectura rápida)
+              // _buildInfoRow(Icons.badge, 'DNI', usuario['dni'] ?? '-'),
+              // _buildInfoRow(
+              //   Icons.phone,
+              //   'Teléfono',
+              //   usuario['telefono_usuario'] ?? usuario['telefono'] ?? '-',
+              // ),
+              // _buildInfoRow(
+              //   Icons.cake,
+              //   'Nacimiento',
+              //   usuario['fecha_nacimiento'] ?? '-',
+              // ),
+              const SizedBox(height: 15),
               const Divider(),
 
               // 🔸 Opciones del menú
@@ -242,16 +242,19 @@ class _PerfilScreenState extends State<PerfilScreen> {
 
               const SizedBox(height: 30),
               // 🔻 Botón de logout
-              ElevatedButton.icon(
-                onPressed: _logout,
-                icon: const Icon(Icons.logout),
-                label: const Text('Cerrar sesión'),
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 50),
-                  backgroundColor: Colors.redAccent,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _logout,
+                  icon: const Icon(Icons.logout),
+                  label: const Text('Cerrar sesión'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    minimumSize: const Size(double.infinity, 50),
                   ),
                 ),
               ),
@@ -262,37 +265,37 @@ class _PerfilScreenState extends State<PerfilScreen> {
     );
   }
 
-  // 🔹 Helpers visuales
-  Widget _buildInfoRow(IconData icon, String label, dynamic value) {
-    // Convierte automáticamente cualquier valor a texto seguro
-    final displayValue = (value == null || value.toString().trim().isEmpty)
-        ? '-'
-        : value.toString();
+  // // 🔹 Helpers visuales
+  // Widget _buildInfoRow(IconData icon, String label, dynamic value) {
+  //   // Convierte automáticamente cualquier valor a texto seguro
+  //   final displayValue = (value == null || value.toString().trim().isEmpty)
+  //       ? '-'
+  //       : value.toString();
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6.0),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.grey[700]),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-          Flexible(
-            child: Text(
-              displayValue,
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
-              style: const TextStyle(fontSize: 15),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  //   return Padding(
+  //     padding: const EdgeInsets.symmetric(vertical: 6.0),
+  //     child: Row(
+  //       children: [
+  //         Icon(icon, color: Colors.grey[700]),
+  //         const SizedBox(width: 10),
+  //         Expanded(
+  //           child: Text(
+  //             label,
+  //             style: const TextStyle(fontWeight: FontWeight.bold),
+  //           ),
+  //         ),
+  //         Flexible(
+  //           child: Text(
+  //             displayValue,
+  //             overflow: TextOverflow.ellipsis,
+  //             maxLines: 1,
+  //             style: const TextStyle(fontSize: 15),
+  //           ),
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
 
   Widget _buildMenuItem(
     BuildContext context, {
