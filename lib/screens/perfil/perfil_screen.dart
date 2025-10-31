@@ -1,29 +1,31 @@
+// lib/screens/perfil/perfil_screen.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:taxi_tuc/screens/auth/auth_screen.dart';
 import '../../services/socket_service.dart';
 import '../../services/perfil_services.dart';
+import '../auth/auth_screen.dart';
+import 'datos_screen.dart';
+import 'pagos_screen.dart';
+import 'viajes_screen.dart';
+import 'ayuda_screen.dart';
+import '../password/passwordRecovery/password_recovey.dart';
 
 class PerfilScreen extends StatefulWidget {
   final int? userId;
   final Map<String, dynamic>? initialUser;
 
-  const PerfilScreen({
-    super.key,
-    this.userId,
-    this.initialUser,
-  });
+  const PerfilScreen({super.key, this.userId, this.initialUser});
 
   @override
   State<PerfilScreen> createState() => _PerfilScreenState();
 }
 
 class _PerfilScreenState extends State<PerfilScreen> {
-  final _perfilService = PerfilService();
   final _socket = SocketService.instance;
+  final _perfilService = PerfilService();
 
   Map<String, dynamic>? _usuario;
-  bool _isLoading = true;
+  bool _loading = true;
 
   @override
   void initState() {
@@ -33,32 +35,57 @@ class _PerfilScreenState extends State<PerfilScreen> {
 
   Future<void> _cargarPerfil() async {
     try {
-      // ✅ Si ya tenemos datos del usuario (desde initialUser), los usamos directamente
-      if (widget.initialUser != null && widget.initialUser!.isNotEmpty) {
-        setState(() {
-          _usuario = widget.initialUser;
-          _isLoading = false;
-        });
+      final prefs = await SharedPreferences.getInstance();
+      final idUsuario = widget.userId ?? prefs.getInt('id_usuario');
+
+      if (idUsuario == null) {
+        debugPrint('⚠️ No se encontró id_usuario');
+        setState(() => _loading = false);
         return;
       }
 
-      // 🔄 Si no, los buscamos desde SharedPreferences o la API
-      final prefs = await SharedPreferences.getInstance();
-      final idUsuario =
-          widget.userId ?? prefs.getInt('id_usuario');
+      // Conectar socket si no está conectado
+      if (!_socket.isConnected) {
+        _socket.connect();
+        await Future.delayed(const Duration(milliseconds: 600));
+      }
 
-      if (idUsuario != null) {
-        final perfil = await _perfilService.obtenerPerfil(idUsuario);
+      // Registrar usuario en el socket
+      _socket.emitirConexionUsuario(idUsuario, 'pasajero');
+      debugPrint(
+        '🧍 Usuario $idUsuario registrado en socket desde PerfilScreen',
+      );
+
+      // Obtener datos desde el backend
+      final perfil = await _perfilService.obtenerPerfil(idUsuario);
+
+      if (perfil != null && perfil.isNotEmpty) {
+        debugPrint('✅ Perfil obtenido del backend: $perfil');
         setState(() {
           _usuario = perfil;
-          _isLoading = false;
+          _loading = false;
         });
       } else {
-        setState(() => _isLoading = false);
+        debugPrint('⚠️ No se obtuvo perfil, cargando desde prefs');
+        _usuario = {
+          'nombre_usuario': prefs.getString('nombre_usuario') ?? '',
+          'apellido_usuario': prefs.getString('apellido_usuario') ?? '',
+          'dni': prefs.getString('dni') ?? '',
+          'telefono_usuario': prefs.getString('telefono_usuario') ?? '',
+          'email_usuario': prefs.getString('email_usuario') ?? '',
+          'fecha_nacimiento': prefs.getString('fecha_nacimiento') ?? '',
+          'foto_perfil': prefs.getString('foto_perfil'),
+        };
+        setState(() => _loading = false);
       }
     } catch (e) {
-      debugPrint('⚠️ Error al cargar perfil: $e');
-      setState(() => _isLoading = false);
+      debugPrint('❌ Error al cargar perfil: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error al cargar perfil: $e')));
+      }
+      setState(() => _loading = false);
     }
   }
 
@@ -68,11 +95,11 @@ class _PerfilScreenState extends State<PerfilScreen> {
       final idUsuario = prefs.getInt('id_usuario');
 
       if (idUsuario != null) {
-        // 🧩 Avisar al backend del logout por socket
         _socket.emit('usuario_desconectado', {'id_usuario': idUsuario});
+        debugPrint('📤 Emitido evento usuario_desconectado → $idUsuario');
       }
 
-      await prefs.clear(); // 🧹 Limpiar datos locales
+      await prefs.clear();
       _socket.disconnect();
 
       if (!mounted) return;
@@ -83,93 +110,167 @@ class _PerfilScreenState extends State<PerfilScreen> {
       );
     } catch (e) {
       debugPrint('❌ Error al cerrar sesión: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al cerrar sesión: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error al cerrar sesión: $e')));
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final cs = Theme.of(context).colorScheme;
+
+    if (_loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    final usuario = _usuario ?? {};
+    final fotoPerfil =
+        (usuario['foto_perfil'] != null &&
+            (usuario['foto_perfil'] as String).isNotEmpty)
+        ? NetworkImage(usuario['foto_perfil'])
+        : const NetworkImage('https://i.pravatar.cc/150?img=5');
+
+    final nombre = usuario['nombre_usuario'] ?? 'Usuario';
+    final apellido = usuario['apellido_usuario'] ?? '';
+    final email = usuario['email_usuario'] ?? '';
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Mi Perfil'),
-        backgroundColor: theme.colorScheme.primary,
+        backgroundColor: cs.primary,
+        foregroundColor: cs.onPrimary,
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _usuario == null
-              ? const Center(child: Text('No se encontró información del perfil'))
-              : Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: CircleAvatar(
-                          radius: 50,
-                          backgroundImage:
-                              _usuario?['foto_perfil'] != null &&
-                                      _usuario!['foto_perfil'].toString().isNotEmpty
-                                  ? NetworkImage(_usuario!['foto_perfil'])
-                                  : const AssetImage('assets/images/default_avatar.png')
-                                      as ImageProvider,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Center(
-                        child: Text(
-                          '${_usuario?['nombre_usuario'] ?? ''} ${_usuario?['apellido_usuario'] ?? ''}',
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Center(
-                        child: Text(
-                          _usuario?['email_usuario'] ?? '',
-                          style: TextStyle(color: Colors.grey[600]),
-                        ),
-                      ),
-                      const Divider(height: 32),
-                      _buildInfoRow(Icons.badge, 'DNI', _usuario?['dni'] ?? '-'),
-                      _buildInfoRow(
-                        Icons.phone,
-                        'Teléfono',
-                        _usuario?['telefono_usuario'] ?? '-',
-                      ),
-                      _buildInfoRow(
-                        Icons.calendar_today,
-                        'Nacimiento',
-                        _usuario?['fecha_nacimiento'] ?? '-',
-                      ),
-                      const Spacer(),
-                      ElevatedButton.icon(
-                        onPressed: _logout,
-                        icon: const Icon(Icons.logout),
-                        label: const Text('Cerrar sesión'),
-                        style: ElevatedButton.styleFrom(
-                          minimumSize: const Size(double.infinity, 50),
-                          backgroundColor: Colors.redAccent,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                    ],
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              // 📸 Avatar
+              CircleAvatar(radius: 55, backgroundImage: fotoPerfil),
+              const SizedBox(height: 12),
+
+              // 👤 Nombre
+              Text(
+                '$apellido $nombre',
+                textAlign: TextAlign.center,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              if (email.isNotEmpty)
+                Text(
+                  email,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
+                ),
+
+              const SizedBox(height: 24),
+              const Divider(),
+
+              // 🔹 Datos principales (lectura rápida)
+              _buildInfoRow(Icons.badge, 'DNI', usuario['dni'] ?? '-'),
+              _buildInfoRow(
+                Icons.phone,
+                'Teléfono',
+                usuario['telefono_usuario'] ?? usuario['telefono'] ?? '-',
+              ),
+              _buildInfoRow(
+                Icons.cake,
+                'Nacimiento',
+                usuario['fecha_nacimiento'] ?? '-',
+              ),
+              const SizedBox(height: 24),
+              const Divider(),
+
+              // 🔸 Opciones del menú
+              _buildMenuItem(
+                context,
+                icon: Icons.person_outline,
+                text: 'Mis datos personales',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => DatosScreen(
+                      userId: widget.userId,
+                      initialUser: usuario,
+                    ),
                   ),
                 ),
+              ),
+              _buildMenuItem(
+                context,
+                icon: Icons.history_rounded,
+                text: 'Mis viajes',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ViajesScreen()),
+                ),
+              ),
+              _buildMenuItem(
+                context,
+                icon: Icons.credit_card,
+                text: 'Métodos de pago',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const PagosScreen()),
+                ),
+              ),
+              _buildMenuItem(
+                context,
+                icon: Icons.lock_outline,
+                text: 'Cambiar contraseña',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const RecuperarPasswordScreen(),
+                  ),
+                ),
+              ),
+              _buildMenuItem(
+                context,
+                icon: Icons.help_outline,
+                text: 'Ayuda',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AyudaScreen()),
+                ),
+              ),
+
+              const SizedBox(height: 30),
+              // 🔻 Botón de logout
+              ElevatedButton.icon(
+                onPressed: _logout,
+                icon: const Icon(Icons.logout),
+                label: const Text('Cerrar sesión'),
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 50),
+                  backgroundColor: Colors.redAccent,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
-  Widget _buildInfoRow(IconData icon, String label, String value) {
+  // 🔹 Helpers visuales
+  Widget _buildInfoRow(IconData icon, String label, dynamic value) {
+    // Convierte automáticamente cualquier valor a texto seguro
+    final displayValue = (value == null || value.toString().trim().isEmpty)
+        ? '-'
+        : value.toString();
+
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      padding: const EdgeInsets.symmetric(vertical: 6.0),
       child: Row(
         children: [
           Icon(icon, color: Colors.grey[700]),
@@ -180,9 +281,31 @@ class _PerfilScreenState extends State<PerfilScreen> {
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
-          Text(value),
+          Flexible(
+            child: Text(
+              displayValue,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+              style: const TextStyle(fontSize: 15),
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildMenuItem(
+    BuildContext context, {
+    required IconData icon,
+    required String text,
+    required VoidCallback onTap,
+  }) {
+    final cs = Theme.of(context).colorScheme;
+    return ListTile(
+      leading: Icon(icon, color: cs.primary),
+      title: Text(text),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: onTap,
     );
   }
 }

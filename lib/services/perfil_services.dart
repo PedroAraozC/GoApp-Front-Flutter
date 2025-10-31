@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class PerfilService {
-  final String baseUrl = dotenv.env['API_URL'] ?? 'http://186.123.85.22:3000';
+  final baseUrl = dotenv.env['API_URL'];
 
   // ==============================
   // 📦 Obtener perfil de usuario
@@ -11,7 +11,7 @@ class PerfilService {
   Future<Map<String, dynamic>?> obtenerPerfil(int idUsuario) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/usuarios/$idUsuario'),
+        Uri.parse('$baseUrl/usuarios/obtenerUsuarioId/$idUsuario'),
       );
 
       if (response.statusCode == 200) {
