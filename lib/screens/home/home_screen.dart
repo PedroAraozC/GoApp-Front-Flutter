@@ -228,6 +228,25 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  ImageProvider getUserImage(
+    BuildContext context,
+    Map<String, dynamic> usuario,
+  ) {
+    final foto = usuario['foto_perfil'];
+    final brightness = Theme.of(context).brightness;
+
+    if (foto != null && foto.toString().isNotEmpty) {
+      return NetworkImage(foto);
+    } else {
+      // Cambia la imagen según el modo
+      return AssetImage(
+        brightness == Brightness.dark
+            ? 'assets/images/user_default.png' // fondo blanco
+            : 'assets/images/user_default_blanco.png', // fondo oscuro
+      );
+    }
+  }
+
   // ==============================
   // UI
   // ==============================
@@ -325,13 +344,26 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Row(
                 children: [
                   const Padding(padding: EdgeInsets.only(right: 8)),
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundColor: cs.primaryContainer,
-                    backgroundImage: NetworkImage(
-                      user['foto_perfil'] ?? 'https://i.pravatar.cc/150?img=12',
+                  Container(
+                    padding: const EdgeInsets.all(2), // Espacio para el borde
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? const Color(0xFFFFCC00)
+                            : const Color(0xFFFFCC00),
+                        width: 1.5,
+                      ),
                     ),
-                    child: Container(),
+                    child: CircleAvatar(
+                      radius: 18,
+                      backgroundColor:
+                          Theme.of(context).brightness == Brightness.dark
+                          ? Colors
+                                .white // fondo blanco en modo oscuro
+                          : Colors.black, // fondo negro en modo claro
+                      backgroundImage: getUserImage(context, user),
+                    ),
                   ),
                 ],
               ),

@@ -127,11 +127,11 @@ class _PerfilScreenState extends State<PerfilScreen> {
     }
 
     final usuario = _usuario ?? {};
-    final fotoPerfil =
+    final ImageProvider fotoPerfil =
         (usuario['foto_perfil'] != null &&
             (usuario['foto_perfil'] as String).isNotEmpty)
         ? NetworkImage(usuario['foto_perfil'])
-        : const NetworkImage('https://i.pravatar.cc/150?img=5');
+        : const AssetImage('assets/images/user_default.png');
 
     final nombre = usuario['nombre_usuario'] ?? 'Usuario';
     final apellido = usuario['apellido_usuario'] ?? '';
@@ -149,7 +149,28 @@ class _PerfilScreenState extends State<PerfilScreen> {
           child: Column(
             children: [
               // 📸 Avatar
-              CircleAvatar(radius: 55, backgroundImage: fotoPerfil),
+              Container(
+                padding: const EdgeInsets.all(3), // espacio para el borde
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? const Color(0xFFFFCC00)
+                        : const Color(0xFFFFCC00),
+                    width: 1.5,
+                  ),
+                ),
+                child: CircleAvatar(
+                  radius: 50,
+                  backgroundColor:
+                      Theme.of(context).brightness == Brightness.dark
+                      ? Colors
+                            .white // fondo blanco para modo oscuro
+                      : Colors.black, // fondo negro para modo claro
+                  backgroundImage: getUserImage(context, usuario),
+                ),
+              ),
+
               const SizedBox(height: 12),
 
               // 👤 Nombre
@@ -310,5 +331,23 @@ class _PerfilScreenState extends State<PerfilScreen> {
       trailing: const Icon(Icons.chevron_right),
       onTap: onTap,
     );
+  }
+
+  ImageProvider getUserImage(
+    BuildContext context,
+    Map<String, dynamic> usuario,
+  ) {
+    final foto = usuario['foto_perfil'];
+    final brightness = Theme.of(context).brightness;
+
+    if (foto != null && foto.toString().isNotEmpty) {
+      return NetworkImage(foto);
+    } else {
+      return AssetImage(
+        brightness == Brightness.dark
+            ? 'assets/images/user_default.png' // fondo blanco
+            : 'assets/images/user_default_blanco.png', // fondo oscuro
+      );
+    }
   }
 }
