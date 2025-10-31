@@ -13,6 +13,7 @@ class PerfilInfoField extends StatelessWidget {
   final Function()? onDateTap;
   final Function(String)? onGeneroChanged;
   final List<Map<String, dynamic>>? generos;
+  final TextInputType? keyboardType;
 
   const PerfilInfoField({
     super.key,
@@ -24,13 +25,13 @@ class PerfilInfoField extends StatelessWidget {
     this.onDateTap,
     this.onGeneroChanged,
     this.generos,
+    this.keyboardType,
   });
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final generosList = generos ?? [];
-
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
@@ -53,9 +54,11 @@ class PerfilInfoField extends StatelessWidget {
             child: isEditing
                 ? _buildEditableField(context, generosList)
                 : Tooltip(
-                    message: controller.text,
+                    message: controller.text.isEmpty
+                        ? "Sin información"
+                        : controller.text,
                     child: Text(
-                      controller.text,
+                      controller.text.isEmpty ? "-" : controller.text,
                       textAlign: TextAlign.right,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -77,118 +80,68 @@ class PerfilInfoField extends StatelessWidget {
     BuildContext context,
     List<Map<String, dynamic>> generosList,
   ) {
+    // Campos especiales que requieren un comportamiento distinto
     switch (label) {
-      // 📅 FECHA DE NACIMIENTO
       case "Fecha de Nacimiento":
-        return SizedBox(
-          height: kInputHeight,
-          child: TextFormField(
-            controller: controller,
-            readOnly: true,
-            textAlign: TextAlign.right,
-            style: const TextStyle(fontSize: 12),
-            decoration: _inputDecoration(context).copyWith(
-              suffixIcon: Icon(
-                Icons.calendar_today_rounded,
-                color: Theme.of(context).colorScheme.primary,
-                size: 20,
-              ),
-              errorStyle: const TextStyle(height: 0, fontSize: 0),
-            ),
-            onTap: () async {
-              FocusScope.of(context).unfocus();
-              final theme = Theme.of(context);
+        return _buildDatePicker(context);
 
-              DateTime initialDate = DateTime.now().subtract(
-                const Duration(days: 365 * 20),
-              );
-              try {
-                if (controller.text.isNotEmpty) {
-                  initialDate = DateFormat('dd/MM/yyyy').parse(controller.text);
-                }
-              } catch (_) {}
-
-              final pickedDate = await showDatePicker(
-                context: context,
-                initialDate: initialDate,
-                firstDate: DateTime(1900),
-                lastDate: DateTime.now(),
-                locale: const Locale('es', 'ES'),
-                builder: (context, child) {
-                  return Theme(
-                    data: theme.copyWith(
-                      colorScheme: theme.colorScheme.copyWith(
-                        primary: theme.colorScheme.primary,
-                        onPrimary: theme.colorScheme.onPrimary,
-                        surface: theme.colorScheme.surface,
-                        onSurface: theme.colorScheme.onSurface,
-                      ),
-                      textButtonTheme: TextButtonThemeData(
-                        style: TextButton.styleFrom(
-                          foregroundColor: theme.colorScheme.primary,
-                        ),
-                      ),
-                    ),
-                    child: child!,
-                  );
-                },
-              );
-
-              if (pickedDate != null) {
-                final formatted = DateFormat('dd/MM/yyyy').format(pickedDate);
-                controller.text = formatted;
-              }
-            },
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                _showSnackBar(context, "La fecha de nacimiento es obligatoria");
-                return '';
-              }
-              try {
-                final parsedDate = DateFormat('dd/MM/yyyy').parse(value);
-                final today = DateTime.now();
-                final age = today.year - parsedDate.year;
-                if (age > 110) {
-                  _showSnackBar(context, "No puede tener más de 110 años");
-                  return '';
-                }
-                if (parsedDate.isAfter(today)) {
-                  _showSnackBar(context, "La fecha no puede ser futura");
-                  return '';
-                }
-              } catch (_) {
-                _showSnackBar(context, "Fecha inválida");
-                return '';
-              }
-              return null;
-            },
-          ),
-        );
-
-      // ⚧ GÉNERO
       case "Género":
-        final items = generosList.isNotEmpty
-            ? generosList
-                  .map(
-                    (g) => DropdownMenuItem<String>(
-                      value: g['nombre_genero']?.toString().trim() ?? '',
-                      child: Text(
-                        g['nombre_genero']?.toString().trim() ?? '',
-                        style: const TextStyle(fontSize: 12),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  )
-                  .toList()
-            : [
-                const DropdownMenuItem<String>(
-                  value: '',
-                  child: Text(
-                    "Cargando...",
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
+        return _buildGeneroDropdown(context, generosList);
+
+      default:
+        return _buildTextField(context);
+    }
+  }
+
+  /// 📅 Campo de fecha
+  Widget _buildDatePicker(BuildContext context) {
+    return SizedBox(
+      height: kInputHeight,
+      child: TextFormField(
+        controller: controller,
+        readOnly: true,
+        textAlign: TextAlign.right,
+        style: const TextStyle(fontSize: 12),
+        decoration: _inputDecoration(context).copyWith(
+          suffixIcon: Icon(
+            Icons.calendar_today_rounded,
+            color: Theme.of(context).colorScheme.primary,
+            size: 20,
+          ),
+          errorStyle: const TextStyle(height: 0, fontSize: 0),
+        ),
+        onTap: () async {
+          FocusScope.of(context).unfocus();
+
+          DateTime initialDate = DateTime.now().subtract(
+            const Duration(days: 365 * 20),
+          );
+
+          try {
+            if (controller.text.isNotEmpty) {
+              initialDate = DateFormat('dd/MM/yyyy').parse(controller.text);
+            }
+          } catch (_) {}
+
+          final pickedDate = await showDatePicker(
+            context: context,
+            initialDate: initialDate,
+            firstDate: DateTime(1900),
+            lastDate: DateTime.now(),
+            locale: const Locale('es', 'ES'),
+            builder: (context, child) {
+              final theme = Theme.of(context);
+              return Theme(
+                data: theme.copyWith(
+                  colorScheme: theme.colorScheme.copyWith(
+                    primary: theme.colorScheme.primary,
+                    onPrimary: theme.colorScheme.onPrimary,
+                    surface: theme.colorScheme.surface,
+                    onSurface: theme.colorScheme.onSurface,
                   ),
                 ),
-              ];
+<<<<<<< HEAD
+              ]
 
         final currentValue = controller.text.trim();
         final validValues = items.map((e) => e.value).toList();
@@ -205,79 +158,161 @@ class PerfilInfoField extends StatelessWidget {
               if (value != null && onGeneroChanged != null) {
                 onGeneroChanged!(value);
               }
+=======
+                child: child!,
+              );
+>>>>>>> 5dabbc264851f876dcc8272ae4658c6dd2d08fbd
             },
-            items: items,
-            decoration: _inputDecoration(
-              context,
-            ).copyWith(errorStyle: const TextStyle(height: 0, fontSize: 0)),
-            hint: const Text(
-              "Seleccionar género",
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+          );
+
+          if (pickedDate != null) {
+            final formatted = DateFormat('dd/MM/yyyy').format(pickedDate);
+            controller.text = formatted;
+          }
+        },
+        validator: (value) {
+          if (value == null || value.trim().isEmpty) {
+            _showSnackBar(context, "La fecha de nacimiento es obligatoria");
+            return '';
+          }
+          try {
+            final parsedDate = DateFormat('dd/MM/yyyy').parse(value);
+            final today = DateTime.now();
+            final age = today.year - parsedDate.year;
+            if (age > 110) {
+              _showSnackBar(context, "No puede tener más de 110 años");
+              return '';
+            }
+            if (parsedDate.isAfter(today)) {
+              _showSnackBar(context, "La fecha no puede ser futura");
+              return '';
+            }
+          } catch (_) {
+            _showSnackBar(context, "Fecha inválida");
+            return '';
+          }
+          return null;
+        },
+      ),
+    );
+  }
+
+  /// ⚧ Dropdown de género
+  Widget _buildGeneroDropdown(
+    BuildContext context,
+    List<Map<String, dynamic>> generosList,
+  ) {
+    final items = generosList.isNotEmpty
+        ? generosList
+              .map(
+                (g) => DropdownMenuItem<String>(
+                  value: g['nombre_genero']?.toString().trim() ?? '',
+                  child: Text(
+                    g['nombre_genero']?.toString().trim() ?? '',
+                    style: const TextStyle(fontSize: 12),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              )
+              .toList()
+        : [
+            const DropdownMenuItem<String>(
+              value: '',
+              child: Text(
+                "Cargando...",
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
             ),
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                _showSnackBar(context, "Debe seleccionar un género");
-                return '';
-              }
-              return null;
-            },
-          ),
-        );
+          ];
 
-      // 🧍 DNI / TELÉFONO / EMAIL
-      default:
-        return SizedBox(
-          height: kInputHeight,
-          child: TextFormField(
-            focusNode: focusNode,
-            controller: controller,
-            textAlign: TextAlign.right,
-            keyboardType: label == "Email"
-                ? TextInputType.emailAddress
-                : TextInputType.number,
-            style: const TextStyle(fontSize: 12),
-            decoration: _inputDecoration(
-              context,
-            ).copyWith(errorStyle: const TextStyle(height: 0, fontSize: 0)),
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                _showSnackBar(context, "$label es obligatorio");
-                return '';
-              }
+    final currentValue = controller.text.trim();
+    final validValues = items.map((e) => e.value).toList();
+    final safeValue = validValues.contains(currentValue) ? currentValue : null;
 
-              if (label == "DNI") {
-                if (value.length < 6 || value.length > 8) {
-                  _showSnackBar(
-                    context,
-                    "El DNI debe tener entre 6 y 8 dígitos",
-                  );
-                  return '';
-                }
-              }
+    return SizedBox(
+      height: kInputHeight,
+      child: DropdownButtonFormField<String>(
+        isExpanded: true,
+        initialValue: safeValue,
+        onChanged: (value) {
+          if (value != null && onGeneroChanged != null) {
+            onGeneroChanged!(value);
+          }
+        },
+        items: items,
+        decoration: _inputDecoration(
+          context,
+        ).copyWith(errorStyle: const TextStyle(height: 0, fontSize: 0)),
+        hint: const Text(
+          "Seleccionar género",
+          style: TextStyle(fontSize: 12, color: Colors.grey),
+        ),
+        validator: (value) {
+          if (value == null || value.isEmpty) {
+            _showSnackBar(context, "Debe seleccionar un género");
+            return '';
+          }
+          return null;
+        },
+      ),
+    );
+  }
 
-              if (label == "Teléfono") {
-                if (value.length < 10 || value.length > 15) {
-                  _showSnackBar(
-                    context,
-                    "El teléfono debe tener entre 10 y 15 números",
-                  );
-                  return '';
-                }
-              }
+  /// 🔤 Campo de texto general (nombre, apellido, DNI, teléfono, email)
+  Widget _buildTextField(BuildContext context) {
+    final labelLower = label.toLowerCase();
 
-              if (label == "Email") {
-                final emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+$');
-                if (!emailRegex.hasMatch(value)) {
-                  _showSnackBar(context, "Ingrese un email válido");
-                  return '';
-                }
-              }
+    TextInputType inputType = TextInputType.text;
+    if (labelLower.contains("dni")) inputType = TextInputType.number;
+    if (labelLower.contains("tel")) inputType = TextInputType.phone;
+    if (labelLower.contains("email")) inputType = TextInputType.emailAddress;
 
-              return null;
-            },
-          ),
-        );
-    }
+    return SizedBox(
+      height: kInputHeight,
+      child: TextFormField(
+        focusNode: focusNode,
+        controller: controller,
+        textAlign: TextAlign.right,
+        keyboardType: inputType,
+        style: const TextStyle(fontSize: 12),
+        decoration: _inputDecoration(
+          context,
+        ).copyWith(errorStyle: const TextStyle(height: 0, fontSize: 0)),
+        validator: (value) {
+          if (value == null || value.trim().isEmpty) {
+            _showSnackBar(context, "$label es obligatorio");
+            return '';
+          }
+
+          if (label == "DNI") {
+            if (value.length < 6 || value.length > 8) {
+              _showSnackBar(context, "El DNI debe tener entre 6 y 8 dígitos");
+              return '';
+            }
+          }
+
+          if (label == "Teléfono") {
+            if (value.length < 10 || value.length > 15) {
+              _showSnackBar(
+                context,
+                "El teléfono debe tener entre 10 y 15 números",
+              );
+              return '';
+            }
+          }
+
+          if (label == "Email") {
+            final emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+$');
+            if (!emailRegex.hasMatch(value)) {
+              _showSnackBar(context, "Ingrese un email válido");
+              return '';
+            }
+          }
+
+          return null;
+        },
+      ),
+    );
   }
 
   /// 🔹 Mostrar snackbar en la parte inferior
@@ -298,7 +333,7 @@ class PerfilInfoField extends StatelessWidget {
       );
   }
 
-  /// 🔹 Decoración común de los inputs
+  /// 🎨 Decoración común de los inputs
   InputDecoration _inputDecoration(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return InputDecoration(

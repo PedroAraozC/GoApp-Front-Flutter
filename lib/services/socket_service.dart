@@ -1,133 +1,124 @@
+import 'dart:async';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class SocketService {
   static final SocketService _instance = SocketService._internal();
   factory SocketService() => _instance;
+  static SocketService get instance => _instance;
+
+  late IO.Socket _socket;
+  bool _isConnected = false;
+
   SocketService._internal();
 
-  late IO.Socket socket;
-  bool _isConnected = false;
-  int? _usuarioId;
-  String? _tipoUsuario;
+  bool get isConnected => _isConnected;
+  IO.Socket get socket => _socket;
 
-  // ==============================
-  // 🔌 Conectar Socket
-  // ==============================
-  void connect() {
-    if (_isConnected) return;
+  /// 🔌 Conecta el socket (y espera a que realmente se conecte)
+  Future<void> connect() async {
+    if (_isConnected) {
+      debugPrint('🟢 Socket ya está conectado.');
+      return;
+    }
 
-    socket = IO.io(
-      'http://186.123.85.22:3000',
+    final baseUrl = dotenv.env['API_URL'];
+    if (baseUrl == null) {
+      debugPrint('❌ No se encontró API_URL en el .env');
+      return;
+    }
+
+    debugPrint('🔌 Intentando conectar a socket: $baseUrl');
+
+    final completer = Completer<void>();
+
+    _socket = IO.io(
+      baseUrl,
       IO.OptionBuilder()
           .setTransports(['websocket'])
           .enableReconnection()
-          .setReconnectionDelay(500)
+          .setReconnectionDelay(1000)
           .setReconnectionAttempts(10)
           .build(),
     );
 
-    socket.onConnect((_) {
+    // 🟢 Conectado
+    _socket.onConnect((_) {
       _isConnected = true;
-      print('🟢 Conectado al servidor Socket.IO');
-
-      // Si ya hay usuario autenticado, reemitir su conexión al reconectar
-      if (_usuarioId != null && _tipoUsuario != null) {
-        emitirConexionUsuario(_usuarioId!, _tipoUsuario!);
-      }
+      debugPrint('✅ Conectado al servidor Socket.IO');
+      if (!completer.isCompleted) completer.complete();
     });
 
-    socket.onDisconnect((_) {
+    // 🔴 Desconectado
+    _socket.onDisconnect((_) {
       _isConnected = false;
-      print('🔴 Desconectado del servidor Socket.IO');
+      debugPrint('⚠️ Socket desconectado');
     });
 
-    _registerGlobalListeners();
+    // ❌ Error de conexión
+    _socket.onConnectError((err) {
+      _isConnected = false;
+      debugPrint('❌ Error de conexión al socket: $err');
+      if (!completer.isCompleted) completer.completeError(err);
+    });
+
+    // 🔁 Reconectado automáticamente
+    _socket.onReconnect((_) {
+      _isConnected = true;
+      debugPrint('🔁 Reconexion automática exitosa');
+    });
+
+    // Esperar hasta que se conecte o falle
+    try {
+      await completer.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          throw Exception('⏱️ Timeout al conectar con el socket.');
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ No se pudo establecer conexión con el socket: $e');
+    }
   }
 
-  // ==============================
-  // 🎧 Listeners globales
-  // ==============================
-  void _registerGlobalListeners() {
-    // 🔹 Usuarios
-    socket.on('usuario_creado', (data) => print('👤 Usuario creado: $data'));
-    socket.on('usuario_actualizado', (data) => print('✏️ Usuario actualizado: $data'));
-    socket.on('usuario_eliminado', (data) => print('🗑 Usuario eliminado: $data'));
-    socket.on('usuario_login', (data) => print('🔐 Usuario logueado: $data'));
-    socket.on('usuario_estado', (data) => print('🧍 Estado usuario: $data'));
-
-    // 🔹 Viajes
-    socket.on('viaje_creado', (data) => print('🆕 Nuevo viaje: $data'));
-    socket.on('viaje_asignado', (data) => print('🚕 Viaje asignado: $data'));
-    socket.on('viaje_en_curso', (data) => print('▶️ Viaje en curso: $data'));
-    socket.on('viaje_finalizado', (data) => print('🏁 Viaje finalizado: $data'));
-    socket.on('viaje_cancelado', (data) => print('❌ Viaje cancelado: $data'));
-
-    // 🔹 Otros
-    socket.on('rol_actualizado', (data) => print('🔑 Rol actualizado: $data'));
-    socket.on('genero_actualizado', (data) => print('🧩 Género actualizado: $data'));
-  }
-
-  // ==============================
-  // 📤 Emitir eventos genéricos
-  // ==============================
-  void send(String event, dynamic data) {
+  /// 📤 Emite un evento genérico (solo si está conectado)
+  void emit(String event, dynamic data) {
     if (!_isConnected) {
-      print('⚠️ No conectado al socket, no se puede emitir "$event"');
+      debugPrint('⚠️ Intento de emitir evento "$event" sin conexión.');
       return;
     }
-    socket.emit(event, data);
-    print('📤 Emitido $event: $data');
+    _socket.emit(event, data);
+    debugPrint('📤 Emitido evento: $event → $data');
   }
 
-  // ==============================
-  // 🟢 Usuario Conectado
-  // ==============================
-  void emitirConexionUsuario(int idUsuario, String tipo) {
-    _usuarioId = idUsuario;
-    _tipoUsuario = tipo;
-
-    if (!_isConnected) {
-      print('⚠️ Intentando conectar antes de emitir usuario_conectado...');
-      connect();
-    }
-
-    socket.emit('usuario_conectado', {
-      'id_usuario': idUsuario,
-      'tipo': tipo,
+  /// 📥 Escucha un evento específico
+  void on(String event, Function(dynamic) callback) {
+    _socket.on(event, (data) {
+      debugPrint('📥 Recibido evento "$event": $data');
+      callback(data);
     });
-
-    print('🟢 Emitido usuario_conectado: {id_usuario: $idUsuario, tipo: $tipo}');
   }
 
-  // ==============================
-  // 🔴 Usuario Desconectado
-  // ==============================
-  void emitirDesconexionUsuario() {
-    if (_usuarioId == null || _tipoUsuario == null) {
-      print('⚠️ No hay usuario registrado para desconectar.');
-      return;
-    }
-
-    socket.emit('usuario_desconectado', {
-      'id_usuario': _usuarioId,
-      'tipo': _tipoUsuario,
-    });
-
-    print('🔴 Emitido usuario_desconectado: {id_usuario: $_usuarioId, tipo: $_tipoUsuario}');
-
-    _usuarioId = null;
-    _tipoUsuario = null;
+  /// 🚫 Deja de escuchar un evento
+  void off(String event) {
+    _socket.off(event);
+    debugPrint('🚫 Listener removido: $event');
   }
 
-  // ==============================
-  // 🔌 Desconectar socket
-  // ==============================
+  /// 🧍 Registrar usuario en el socket (pasajero / chofer)
+  Future<void> emitirConexionUsuario(int idUsuario, String tipo) async {
+    await connect();
+    final payload = {'id_usuario': idUsuario, 'tipo': tipo};
+    _socket.emit('registrar_usuario', payload);
+    debugPrint('🧍 Usuario registrado en socket → $payload');
+  }
+
+  /// 🔴 Cierra la conexión manualmente (opcional)
   void disconnect() {
-    emitirDesconexionUsuario();
-    socket.disconnect();
+    if (!_isConnected) return;
+    _socket.disconnect();
     _isConnected = false;
-    print('🔴 Socket desconectado manualmente');
+    debugPrint('🔴 Socket desconectado manualmente');
   }
-
-  bool get isConnected => _isConnected;
 }
