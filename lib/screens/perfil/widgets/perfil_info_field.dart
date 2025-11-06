@@ -213,7 +213,7 @@ class PerfilInfoField extends StatelessWidget {
       height: kInputHeight,
       child: DropdownButtonFormField<String>(
         isExpanded: true,
-        value: safeValue,
+        initialValue: safeValue,
         onChanged: (value) {
           if (value != null && onGeneroChanged != null) {
             onGeneroChanged!(value);
