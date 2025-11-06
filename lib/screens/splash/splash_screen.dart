@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:taxi_tuc/screens/perfil/pagos_screen.dart';
 import '../../services/user_preferences.dart';
 //import 'package:shared_preferences/shared_preferences.dart';
 import '../../screens/home/home_screen.dart';
 import '../../screens/auth/auth_screen.dart';
-import '../../screens/perfil/pagos_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -52,8 +50,7 @@ class _SplashScreenState extends State<SplashScreen>
       if (mounted) {
         Navigator.pushReplacement(
           context,
-          // MaterialPageRoute(builder: (_) => const AuthScreen()),
-          MaterialPageRoute(builder: (_) => const PagosScreen()),
+          MaterialPageRoute(builder: (_) => const AuthScreen()),
         );
       }
     }
