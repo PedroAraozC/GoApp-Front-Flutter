@@ -54,131 +54,15 @@ class _PagosScreenState extends State<PagosScreen> {
   }
 
   void _abrirAgregarMetodo() {
-  final cs = Theme.of(context).colorScheme;
-
-  showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true, // 👈 importante para que no se cierre el foco
-    backgroundColor: cs.surface,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-    ),
- builder: (context) {
-  final _formKey = GlobalKey<FormState>();
-  String numero = '';
-  String nombre = '';
-  String vencimiento = '';
-  String cvv = '';
-
-  return GestureDetector(
-    // 👇 evita que pierda el foco al tocar fuera del TextField
-    onTap: () => FocusScope.of(context).unfocus(),
-    child: SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 50,
-              height: 5,
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: Colors.grey.withValues(alpha: 0.4),
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-            Text(
-              'Agregar tarjeta',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              decoration: const InputDecoration(
-                labelText: 'Número de tarjeta',
-                prefixIcon: Icon(Icons.credit_card),
-              ),
-              keyboardType: TextInputType.number,
-              maxLength: 16,
-              validator: (v) => v == null || v.isEmpty
-                  ? 'Ingresá el número de la tarjeta'
-                  : null,
-              onSaved: (v) => numero = v ?? '',
-            ),
-            const SizedBox(height: 10),
-            TextFormField(
-              decoration: const InputDecoration(
-                labelText: 'Nombre del titular',
-                prefixIcon: Icon(Icons.person_outline),
-              ),
-              validator: (v) =>
-                  v == null || v.isEmpty ? 'Ingresá el nombre del titular' : null,
-              onSaved: (v) => nombre = v ?? '',
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    decoration: const InputDecoration(
-                      labelText: 'Vencimiento (MM/AA)',
-                      prefixIcon: Icon(Icons.date_range_outlined),
-                    ),
-                    validator: (v) => v == null || v.isEmpty
-                        ? 'Ingresá el vencimiento'
-                        : null,
-                    onSaved: (v) => vencimiento = v ?? '',
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextFormField(
-                    decoration: const InputDecoration(
-                      labelText: 'CVV',
-                      prefixIcon: Icon(Icons.lock_outline),
-                    ),
-                    keyboardType: TextInputType.number,
-                    maxLength: 3,
-                    validator: (v) =>
-                        v == null || v.length != 3 ? 'CVV inválido' : null,
-                    onSaved: (v) => cvv = v ?? '',
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.check_circle_outline),
-                label: const Text('Guardar tarjeta'),
-                onPressed: () {
-                  if (_formKey.currentState!.validate()) {
-                    _formKey.currentState!.save();
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Tarjeta agregada correctamente.'),
-                      ),
-                    );
-                  }
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-},
-
-  );
-}
-
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      isDismissible: true,
+      enableDrag: true,
+      builder: (context) => const _AgregarTarjetaModal(),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -186,11 +70,7 @@ class _PagosScreenState extends State<PagosScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Métodos de pago'),
-        // backgroundColor: cs.primary,
-        // foregroundColor: cs.onPrimary,
-      ),
+      appBar: AppBar(title: const Text('Métodos de pago')),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -349,6 +229,240 @@ class _PagosScreenState extends State<PagosScreen> {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Widget separado para el modal de agregar tarjeta
+// Widget separado para el modal de agregar tarjeta
+class _AgregarTarjetaModal extends StatefulWidget {
+  const _AgregarTarjetaModal();
+
+  @override
+  State<_AgregarTarjetaModal> createState() => _AgregarTarjetaModalState();
+}
+
+class _AgregarTarjetaModalState extends State<_AgregarTarjetaModal> {
+  final _formKey = GlobalKey<FormState>();
+  final _numeroController = TextEditingController();
+  final _nombreController = TextEditingController();
+  final _vencimientoController = TextEditingController();
+  final _cvvController = TextEditingController();
+
+  @override
+  void dispose() {
+    _numeroController.dispose();
+    _nombreController.dispose();
+    _vencimientoController.dispose();
+    _cvvController.dispose();
+    super.dispose();
+  }
+
+  void _guardarTarjeta() {
+    if (_formKey.currentState!.validate()) {
+      _formKey.currentState!.save();
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tarjeta agregada correctamente.')),
+      );
+    }
+  }
+
+  String _formatCardNumber(String input) {
+    final clean = input.replaceAll(RegExp(r'\D'), '');
+    final buffer = StringBuffer();
+    for (int i = 0; i < clean.length; i++) {
+      buffer.write(clean[i]);
+      if ((i + 1) % 4 == 0 && i + 1 != clean.length) buffer.write(' ');
+    }
+    return buffer.toString();
+  }
+
+  String _formatExpiryDate(String input) {
+    var clean = input.replaceAll(RegExp(r'\D'), '');
+    if (clean.length > 4) clean = clean.substring(0, 4);
+    final buffer = StringBuffer();
+    for (int i = 0; i < clean.length; i++) {
+      if (i == 2) buffer.write('/');
+      buffer.write(clean[i]);
+    }
+    return buffer.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: AnimatedPadding(
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: cs.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+            child: SingleChildScrollView(
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 50,
+                      height: 5,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    Text(
+                      'Agregar tarjeta',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 🔹 Número de tarjeta
+                    TextFormField(
+                      controller: _numeroController,
+                      decoration: const InputDecoration(
+                        labelText: 'Número de tarjeta',
+                        prefixIcon: Icon(Icons.credit_card),
+                        counterText: '',
+                      ),
+                      keyboardType: TextInputType.number,
+                      maxLength: 19, // 16 dígitos + 3 espacios
+                      textInputAction: TextInputAction.next,
+                      validator: (v) {
+                        final clean = v?.replaceAll(' ', '') ?? '';
+                        if (clean.isEmpty)
+                          return 'Ingresá el número de tarjeta';
+                        if (clean.length != 16) return 'Número incompleto';
+                        return null;
+                      },
+                      onChanged: (value) {
+                        final newText = _formatCardNumber(value);
+                        if (newText != value) {
+                          _numeroController.value = TextEditingValue(
+                            text: newText,
+                            selection: TextSelection.collapsed(
+                              offset: newText.length,
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 🔹 Nombre del titular
+                    TextFormField(
+                      controller: _nombreController,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre del titular',
+                        prefixIcon: Icon(Icons.person_outline),
+                      ),
+                      textInputAction: TextInputAction.next,
+                      textCapitalization: TextCapitalization.characters,
+                      validator: (v) => v == null || v.isEmpty
+                          ? 'Ingresá el nombre del titular'
+                          : null,
+                      onChanged: (value) {
+                        final upper = value.toUpperCase();
+                        if (upper != value) {
+                          _nombreController.value = TextEditingValue(
+                            text: upper,
+                            selection: TextSelection.collapsed(
+                              offset: upper.length,
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 🔹 Vencimiento y CVV
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _vencimientoController,
+                            decoration: const InputDecoration(
+                              labelText: 'Vencimiento (MM/AA)',
+                              prefixIcon: Icon(Icons.date_range_outlined),
+                            ),
+                            keyboardType: TextInputType.number,
+                            textInputAction: TextInputAction.next,
+                            maxLength: 5,
+                            validator: (v) {
+                              if (v == null || v.isEmpty) {
+                                return 'Ingresá el vencimiento';
+                              }
+                              if (!RegExp(
+                                r'^(0[1-9]|1[0-2])\/\d{2}$',
+                              ).hasMatch(v)) {
+                                return 'Formato inválido (MM/AA)';
+                              }
+                              return null;
+                            },
+                            onChanged: (value) {
+                              final newText = _formatExpiryDate(value);
+                              if (newText != value) {
+                                _vencimientoController.value = TextEditingValue(
+                                  text: newText,
+                                  selection: TextSelection.collapsed(
+                                    offset: newText.length,
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextFormField(
+                            controller: _cvvController,
+                            decoration: const InputDecoration(
+                              labelText: 'CVV',
+                              prefixIcon: Icon(Icons.lock_outline),
+                              counterText: '',
+                            ),
+                            keyboardType: TextInputType.number,
+                            maxLength: 3,
+                            textInputAction: TextInputAction.done,
+                            onFieldSubmitted: (_) => _guardarTarjeta(),
+                            validator: (v) => v == null || v.length != 3
+                                ? 'CVV inválido'
+                                : null,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.check_circle_outline),
+                        label: const Text('Guardar tarjeta'),
+                        onPressed: _guardarTarjeta,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),
