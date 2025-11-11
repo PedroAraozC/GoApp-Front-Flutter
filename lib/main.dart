@@ -4,6 +4,7 @@ import 'screens/auth/auth_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'screens/driver/solicitud.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -51,13 +52,16 @@ class GoApp extends StatelessWidget {
       ],
       supportedLocales: const [Locale('es', 'ES'), Locale('en', 'US')],
 
-      // Rutas
-      initialRoute: '/splash',
-      routes: {
-        '/splash': (_) => const SplashScreen(),
-        '/auth': (_) => const AuthScreen(),
-        '/home': (_) => const HomeScreen(user: {}),
-      },
+      
+      // initialRoute: '/splash',
+      // routes: {
+      //   '/splash': (_) => const SplashScreen(),
+      //   '/auth': (_) => const AuthScreen(),
+      //   '/home': (_) => const HomeScreen(user: {}),
+      // },
+
+      // Y usa 'home' para apuntar directo a la pantalla de prueba
+      home: const DriverHomeExampleScreen(),
     );
   }
 }
