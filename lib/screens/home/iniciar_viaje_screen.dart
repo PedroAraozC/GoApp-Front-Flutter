@@ -660,11 +660,18 @@ class _RideBottomSheet extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Duración: $durationText  •  Distancia: $distanceText'),
+            Text(
+              'Duración: $durationText  •  Distancia: $distanceText',
+              style: const TextStyle(color: Color.fromARGB(255, 0, 0, 0)),
+            ),
             const SizedBox(height: 8),
             Text(
               '\$${estimate.toStringAsFixed(0)}',
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                color: Color.fromARGB(255, 0, 0, 0),
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
             ),
             const SizedBox(height: 10),
             FilledButton.icon(

@@ -1,9 +1,10 @@
 // lib/screens/home/home_screen.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:google_sign_in/google_sign_in.dart';
+import 'package:google_sign_in/google_sign_in.dart'; // <- ya casi no se usa, puedes quitarlo si quieres
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:taxi_tuc/screens/perfil/viajes_screen.dart';
+
 import '../../services/socket_service.dart';
 import '../../screens/auth/auth_screen.dart';
 import '../../screens/perfil/perfil_screen.dart';
@@ -35,10 +36,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _connectSocket() async {
     try {
-      _socket.connect();
+      await _socket.connect();
       debugPrint('🔌 Conectando socket desde HomeScreen...');
 
       Future.delayed(const Duration(seconds: 1), () async {
+        // Podrías usar también UserPreferences.getUser()
         final prefs = await SharedPreferences.getInstance();
         final idUsuario =
             prefs.getInt('id_usuario') ?? widget.user['id_usuario'];
@@ -88,7 +90,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
-    // 🔸 No desconectamos aquí para mantener la conexión global viva
+    // No desconectamos el socket aquí para mantenerlo global si lo usas en más pantallas
     super.dispose();
   }
 
@@ -211,21 +213,16 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // 🔹 LOGOUT usando UserPreferences.fullLogout()
   Future<void> _logout(BuildContext context) async {
-    try {
-      await UserPreferences.clearUser();
-      final g = GoogleSignIn(scopes: ['email', 'profile']);
-      await g.signOut();
-      await g.disconnect();
-      _socket.disconnect();
-    } catch (_) {}
-    if (context.mounted) {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const AuthScreen()),
-        (_) => false,
-      );
-    }
+    await UserPreferences.fullLogout();
+
+    if (!context.mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const AuthScreen()),
+      (_) => false,
+    );
   }
 
   ImageProvider getUserImage(
@@ -238,11 +235,10 @@ class _HomeScreenState extends State<HomeScreen> {
     if (foto != null && foto.toString().isNotEmpty) {
       return NetworkImage(foto);
     } else {
-      // Cambia la imagen según el modo
       return AssetImage(
         brightness == Brightness.dark
-            ? 'assets/images/user_default.png' // fondo blanco
-            : 'assets/images/user_default_blanco.png', // fondo oscuro
+            ? 'assets/images/user_default.png'
+            : 'assets/images/user_default_blanco.png',
       );
     }
   }
@@ -345,13 +341,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   const Padding(padding: EdgeInsets.only(right: 8)),
                   Container(
-                    padding: const EdgeInsets.all(2), // Espacio para el borde
+                    padding: const EdgeInsets.all(2),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? const Color(0xFFFFCC00)
-                            : const Color(0xFFFFCC00),
+                        color: const Color(0xFFFFCC00),
                         width: 1.5,
                       ),
                     ),
@@ -359,9 +353,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       radius: 18,
                       backgroundColor:
                           Theme.of(context).brightness == Brightness.dark
-                          ? Colors
-                                .white // fondo blanco en modo oscuro
-                          : Colors.black, // fondo negro en modo claro
+                          ? Colors.white
+                          : Colors.black,
                       backgroundImage: getUserImage(context, user),
                     ),
                   ),

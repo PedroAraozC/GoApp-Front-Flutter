@@ -140,28 +140,8 @@ class PerfilInfoField extends StatelessWidget {
                     onSurface: theme.colorScheme.onSurface,
                   ),
                 ),
-<<<<<<< HEAD
-              ]
-
-        final currentValue = controller.text.trim();
-        final validValues = items.map((e) => e.value).toList();
-        final safeValue = validValues.contains(currentValue)
-            ? currentValue
-            : null;
-
-        return SizedBox(
-          height: kInputHeight,
-          child: DropdownButtonFormField<String>(
-            isExpanded: true,
-            initialValue: safeValue,
-            onChanged: (value) {
-              if (value != null && onGeneroChanged != null) {
-                onGeneroChanged!(value);
-              }
-=======
                 child: child!,
               );
->>>>>>> 5dabbc264851f876dcc8272ae4658c6dd2d08fbd
             },
           );
 

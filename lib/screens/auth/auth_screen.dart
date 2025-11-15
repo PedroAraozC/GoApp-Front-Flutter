@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 import 'package:taxi_tuc/screens/password/passwordRecovery/password_recovey.dart';
 import '../auth/services/auth_service.dart';
 import '../../services/google_auth_service.dart';
 import '../../services/socket_service.dart';
-import 'package:google_sign_in/google_sign_in.dart';
+import '../../services/user_preferences.dart';
 import '../home/home_screen.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../home/driver/driver_home_screen.dart';
 
 // ====== Colores de marca ======
 const Color kTaxiYellow = Color.fromARGB(255, 235, 213, 18);
@@ -38,7 +40,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
   final _authService = AuthService();
   final _authGoogleService = AuthGoogleService();
-  final _socket = SocketService(); // ✅ Socket persistente
+  final _socket = SocketService.instance; // ✅ Socket compartido
 
   @override
   void initState() {
@@ -91,33 +93,60 @@ class _AuthScreenState extends State<AuthScreen> {
         return;
       }
 
-      // Guardar sesión local
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('isLoggedIn', true);
-      await prefs.setInt('id_usuario', user['id_usuario']);
-      await prefs.setString('token', user['token'] ?? '');
-      await prefs.setString('nombre_usuario', user['nombre_usuario']);
-      await prefs.setString('email_usuario', user['email_usuario']);
+      // Obtenemos el rol (soportando String o int)
+      final dynamic rawRole = user['id_rol'];
+      final int roleId = rawRole is String
+          ? int.tryParse(rawRole) ?? 0
+          : (rawRole is int ? rawRole : 0);
+
+      // Armamos el mapa a guardar en UserPreferences
+      final userToSave = <String, dynamic>{
+        'id_usuario': user['id_usuario'],
+        'nombre_usuario': user['nombre_usuario'],
+        'apellido_usuario': user['apellido_usuario'],
+        'email_usuario': user['email_usuario'],
+        'telefono_usuario': user['telefono_usuario'],
+        'foto_perfil': user['foto_perfil'],
+        'token': user['token'],
+        'id_rol': roleId,
+        'auth_provider': user['auth_provider'],
+      };
+
+      // ✅ Guardar usuario + flag isLoggedIn
+      await UserPreferences.saveUser(userToSave);
 
       _showSnackbar('Bienvenido, ${user['nombre_usuario']}');
 
-      // ✅ Conectamos al socket (solo si no está conectado aún)
-      _socket.connect();
-      Future.delayed(const Duration(milliseconds: 500), () {
-        _socket.connect();
-        Future.delayed(const Duration(milliseconds: 500), () {
-          _socket.emit('usuario_conectado', {
-            'id_usuario': user['id_usuario'],
-            'tipo': 'pasajero',
-          });
-        });
-      });
+      // ✅ Conectamos al socket y registramos al usuario
+      final tipoSocket = roleId == 3 ? 'conductor' : 'pasajero';
+      await _socket.connect();
+      await _socket.registrarUsuario(
+        idUsuario: user['id_usuario'],
+        tipo: tipoSocket, // 'pasajero' o 'conductor'
+      );
 
       if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => HomeScreen(user: user)),
-      );
+
+      // 👇 REDIRECCIÓN SEGÚN ROL
+      if (roleId == 3) {
+        // Chofer
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const DriverHomeScreen()),
+        );
+      } else if (roleId == 2) {
+        // Pasajero
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => HomeScreen(user: userToSave)),
+        );
+      } else {
+        // Rol desconocido -> por seguridad al Home pasajero
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => HomeScreen(user: userToSave)),
+        );
+      }
     } catch (e) {
       _showSnackbar('Error al iniciar sesión: $e');
     } finally {
@@ -126,13 +155,18 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   // ======================
-  // Iniciar sesión con Google
+  // Iniciar sesión con Google (siempre mostrando selector de cuenta)
   // ======================
   Future<void> _handleGoogleSignIn() async {
     if (_isLoading) return;
     setState(() => _isLoading = true);
 
     try {
+      // 👇 Forzamos que SIEMPRE pregunte con qué cuenta entrar
+      try {
+        await _googleSignIn.signOut();
+      } catch (_) {}
+
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
       if (googleUser == null) {
         setState(() => _isLoading = false);
@@ -153,36 +187,60 @@ class _AuthScreenState extends State<AuthScreen> {
         return;
       }
 
-      // Guardar datos localmente
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('isLoggedIn', true);
-      await prefs.setInt('id_usuario', user['id_usuario'] ?? 0);
-      await prefs.setString('nombre_usuario', user['nombre_usuario'] ?? '');
-      await prefs.setString('apellido_usuario', user['apellido_usuario'] ?? '');
-      await prefs.setString('email_usuario', user['email_usuario'] ?? '');
-      await prefs.setString('telefono_usuario', user['telefono_usuario'] ?? '');
-      await prefs.setString('foto_perfil', user['foto_perfil'] ?? '');
-      await prefs.setString('token', token ?? '');
+      // Obtenemos el rol
+      final dynamic rawRole = user['id_rol'];
+      final int roleId = rawRole is String
+          ? int.tryParse(rawRole) ?? 0
+          : (rawRole is int ? rawRole : 0);
+
+      // Armamos el mapa a guardar
+      final userToSave = <String, dynamic>{
+        'id_usuario': user['id_usuario'],
+        'nombre_usuario': user['nombre_usuario'],
+        'apellido_usuario': user['apellido_usuario'],
+        'email_usuario': user['email_usuario'],
+        'telefono_usuario': user['telefono_usuario'],
+        'foto_perfil': user['foto_perfil'],
+        'token': token, // el token viene separado en la respuesta
+        'id_rol': roleId,
+        'auth_provider': user['auth_provider'],
+      };
+
+      // ✅ Guardar usuario + flag isLoggedIn
+      await UserPreferences.saveUser(userToSave);
 
       _showSnackbar('Bienvenido, ${user['nombre_usuario']}');
 
-      // ✅ Conectamos y emitimos el evento de conexión
-      _socket.connect();
-      Future.delayed(const Duration(milliseconds: 500), () {
-        _socket.connect();
-        Future.delayed(const Duration(milliseconds: 500), () {
-          _socket.emit('usuario_conectado', {
-            'id_usuario': user['id_usuario'],
-            'tipo': 'pasajero',
-          });
-        });
+      // ✅ Conectamos y registramos el usuario según rol
+      final tipoSocket = roleId == 3 ? 'conductor' : 'pasajero';
+      await _socket.connect();
+      _socket.emit('usuario_conectado', {
+        'id_usuario': user['id_usuario'],
+        'tipo': tipoSocket,
       });
 
       if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => HomeScreen(user: user)),
-      );
+
+      // 👇 REDIRECCIÓN SEGÚN ROL
+      if (roleId == 3) {
+        // Chofer
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const DriverHomeScreen()),
+        );
+      } else if (roleId == 2) {
+        // Pasajero
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => HomeScreen(user: userToSave)),
+        );
+      } else {
+        // Rol desconocido -> por seguridad al Home pasajero
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => HomeScreen(user: userToSave)),
+        );
+      }
     } catch (e) {
       await _googleSignIn.signOut();
       debugPrint('❌ Error Google SignIn: $e');
@@ -236,7 +294,7 @@ class _AuthScreenState extends State<AuthScreen> {
         _passwordConfirmController.clear();
         _nombreController.clear();
         _apellidoController.clear();
-        _selectedTab = 0;
+        setState(() => _selectedTab = 0);
       }
     } catch (e) {
       _showSnackbar('Error al registrar usuario: $e');
@@ -606,11 +664,8 @@ class _AuthScreenState extends State<AuthScreen> {
   }) {
     return OutlinedButton.icon(
       onPressed: onPressed,
-      icon: const FaIcon(FontAwesomeIcons.google, color: kGoogleRed),
-      label: const Text(
-        'Continuar con Google',
-        style: TextStyle(color: kGoogleRed),
-      ),
+      icon: FaIcon(icon, color: kGoogleRed),
+      label: Text(label, style: const TextStyle(color: kGoogleRed)),
       style: OutlinedButton.styleFrom(
         padding: const EdgeInsets.symmetric(vertical: 16),
         side: const BorderSide(color: kGoogleRed),
