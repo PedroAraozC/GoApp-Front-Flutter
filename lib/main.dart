@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:taxi_tuc/screens/home/driver_home_screen.dart';
 import 'screens/splash/splash_screen.dart';
 import 'screens/auth/auth_screen.dart';
 import 'screens/home/home_screen.dart';
@@ -56,7 +57,7 @@ class GoApp extends StatelessWidget {
       routes: {
         '/splash': (_) => const SplashScreen(),
         '/auth': (_) => const AuthScreen(),
-        '/home': (_) => const HomeScreen(user: {}),
+        '/home': (_) => const DriverHomeScreen(),
       },
     );
   }

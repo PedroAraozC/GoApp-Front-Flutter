@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:taxi_tuc/screens/home/driver_home_screen.dart';
 import '../../services/user_preferences.dart';
 //import 'package:shared_preferences/shared_preferences.dart';
 import '../../screens/home/home_screen.dart';
@@ -43,7 +44,8 @@ class _SplashScreenState extends State<SplashScreen>
       if (mounted) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => HomeScreen(user: user ?? {})),
+          //MaterialPageRoute(builder: (_) => HomeScreen(user: user ?? {})),
+          MaterialPageRoute(builder: (_) => DriverHomeScreen()),
         );
       }
     } else {

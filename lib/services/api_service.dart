@@ -160,4 +160,33 @@ class ApiService {
       return false;
     }
   }
+
+  Future<double?> getTodayEarnings() async {
+    final url = Uri.parse('$baseUrl/recaudacion/today');
+    final resp = await http.get(url);
+    if (resp.statusCode == 200) {
+      final data = json.decode(resp.body);
+      return (data['total'] as num).toDouble();
+    }
+    return 0.0;
+  }
+
+  Future<void> addEarning(double amount) async {
+    final url = Uri.parse('$baseUrl/recaudacion/add');
+    await http.post(
+      url,
+      body: json.encode({'amount': amount}),
+      headers: {'Content-Type': 'application/json'},
+    );
+  }
+
+  Future<bool> acceptRide(int idViaje, int idConductor) async {
+    final url = Uri.parse('$baseUrl/viajes/$idViaje/aceptar');
+    final resp = await http.post(
+      url,
+      body: json.encode({'id_conductor': idConductor}),
+      headers: {'Content-Type': 'application/json'},
+    );
+    return resp.statusCode == 200;
+  }
 }
