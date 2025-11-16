@@ -1,17 +1,18 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'dart:ui' as ui;
+
 import '../../services/api_service.dart';
-import '../../services/socket_service.dart';
 import '../../services/user_preferences.dart';
 import '../../screens/home/buscando_viaje_screen.dart';
 
@@ -26,8 +27,8 @@ class IniciarViajeScreen extends StatefulWidget {
 
 class _IniciarViajeScreenState extends State<IniciarViajeScreen>
     with TickerProviderStateMixin {
-  final SocketService _socket = SocketService.instance;
   final ApiService _api = ApiService();
+
   // ===========================
   // Variables de distancia/tiempo
   // ===========================
@@ -42,8 +43,6 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen>
 
   final TextEditingController _origenCtrl = TextEditingController();
   final TextEditingController _destinoCtrl = TextEditingController();
-  final FocusNode _origenFocus = FocusNode();
-  final FocusNode _destinoFocus = FocusNode();
 
   final _uuid = const Uuid();
   Timer? _debounce;
@@ -55,6 +54,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen>
   int _distanceMeters = 0;
   int _durationSeconds = 0;
 
+  // Tarifa (ajustá si cambia la tabla de precios)
   final double _baseFare = 900;
   final double _perKm = 900;
   final double _perMin = 90;
@@ -120,7 +120,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen>
         _origenCtrl.text = direccion;
       });
 
-      final icono = await _crearIconoNegro();
+      final icono = await _crearIconoOrigen();
       _setOrigen(_miUbicacion!, direccion, icono);
 
       _mapCtrl?.animateCamera(CameraUpdate.newLatLngZoom(_miUbicacion!, 15));
@@ -130,7 +130,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen>
     }
   }
 
-  Future<BitmapDescriptor> _crearIconoNegro() async {
+  Future<BitmapDescriptor> _crearIconoOrigen() async {
     final data = await rootBundle.load('assets/images/pin_origen.png');
     final codec = await ui.instantiateImageCodec(
       data.buffer.asUint8List(),
@@ -259,7 +259,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen>
     final desc = p.description ?? '${ll.latitude}, ${ll.longitude}';
 
     if (esOrigen) {
-      final icon = await _crearIconoNegro();
+      final icon = await _crearIconoOrigen();
       _setOrigen(ll, desc, icon);
       _origenCtrl.text = desc;
       setState(() {
@@ -274,7 +274,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen>
       });
     }
 
-    // 🔧 CAMBIO PRINCIPAL: Construir la ruta después de seleccionar predicción
+    // Construir la ruta después de seleccionar predicción
     await _construirRutaSiPosible();
   }
 
@@ -283,6 +283,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen>
     final origen = _origenMarker;
     final destino = _destinoMarker;
     if (origen == null || destino == null) return;
+
     try {
       final polyPoints = PolylinePoints();
       final result = await polyPoints.getRouteBetweenCoordinates(
@@ -305,9 +306,11 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen>
         _msg('No se pudo construir la ruta');
         return;
       }
+
       final pts = result.points
           .map((p) => LatLng(p.latitude, p.longitude))
           .toList();
+
       final polyline = Polyline(
         polylineId: const PolylineId('ruta'),
         points: pts,
@@ -376,9 +379,16 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen>
 
   // ================== CONFIRMAR VIAJE ==================
   Future<void> _confirmarViaje() async {
+    // Validaciones básicas
+    if (_origenMarker == null || _destinoMarker == null) {
+      _msg('Seleccioná origen y destino primero.');
+      return;
+    }
+
     try {
       final user = await UserPreferences.getUser();
       final idUsuario = user?['id_usuario'];
+
       if (idUsuario == null) {
         _msg('Usuario no encontrado.');
         return;
@@ -386,6 +396,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen>
 
       final origen = _origenMarker!.position;
       final destino = _destinoMarker!.position;
+
       final result = await _api.iniciarViaje(
         idUsuario: idUsuario,
         origenLat: origen.latitude,
@@ -397,22 +408,30 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen>
         precioEstimado: double.parse(_fare.toStringAsFixed(2)),
       );
 
-      final idViaje = (result?['id_viajes'] as num).toInt();
+      if (result == null) {
+        _msg('No se pudo iniciar el viaje. Intentá de nuevo.');
+        return;
+      }
+
+      // El backend devuelve el viaje con la PK id_viajes
+      final idViaje = (result['id_viajes'] as num).toInt();
       debugPrint('🟢 Viaje iniciado con ID: $idViaje');
 
-      _socket.emit('viaje_creado', {
-        'id_viaje': idViaje,
-        'id_usuario': idUsuario,
-      });
+      // 🚫 Ya NO emitimos "viaje_creado" desde el cliente.
+      // Eso lo hace el backend hacia la room "conductores".
+
       _mostrarSnack('Tu solicitud fue enviada.');
       setState(() => _buscando = true);
 
       if (!mounted) return;
-      await Future.delayed(const Duration(seconds: 2));
+      await Future.delayed(const Duration(seconds: 1));
+
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => BuscandoViajeScreen(id_viaje: idViaje),
+          builder: (_) => BuscandoViajeScreen(
+            idViaje: idViaje, // asegúrate que el constructor use esta key
+          ),
         ),
       );
     } catch (e) {
@@ -424,6 +443,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen>
   // ================== UTILIDADES ==================
   void _msg(String t) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t)));
+
   void _mostrarSnack(String mensaje) => _msg(mensaje);
 
   @override
@@ -466,6 +486,7 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen>
                   },
                 ),
 
+                // Campos de búsqueda
                 Positioned(
                   top: 16,
                   left: 16,
@@ -535,14 +556,19 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen>
                     ),
                   ),
 
+                // Bottom sheet con info y botón
                 if (_origenMarker != null && _destinoMarker != null)
                   Align(
                     alignment: Alignment.bottomCenter,
                     child: Padding(
                       padding: const EdgeInsets.all(12),
                       child: _RideBottomSheet(
-                        distanceText: '${(_km).toStringAsFixed(2)} km',
-                        durationText: '${(_mins).toStringAsFixed(0)} min',
+                        distanceText: _distanceText.isNotEmpty
+                            ? _distanceText
+                            : '${_km.toStringAsFixed(2)} km',
+                        durationText: _durationText.isNotEmpty
+                            ? _durationText
+                            : '${_mins.toStringAsFixed(0)} min',
                         estimate: _fare,
                         onConfirm: _confirmarViaje,
                       ),
@@ -619,7 +645,7 @@ class _PredictionsList extends StatelessWidget {
       decoration: BoxDecoration(
         color: cs.surface,
         borderRadius: BorderRadius.circular(10),
-        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 5)],
+        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 5)],
       ),
       constraints: const BoxConstraints(maxHeight: 250),
       child: ListView.separated(
@@ -662,13 +688,13 @@ class _RideBottomSheet extends StatelessWidget {
           children: [
             Text(
               'Duración: $durationText  •  Distancia: $distanceText',
-              style: const TextStyle(color: Color.fromARGB(255, 0, 0, 0)),
+              style: const TextStyle(color: Color(0xFF000000)),
             ),
             const SizedBox(height: 8),
             Text(
               '\$${estimate.toStringAsFixed(0)}',
               style: const TextStyle(
-                color: Color.fromARGB(255, 0, 0, 0),
+                color: Color(0xFF000000),
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
               ),

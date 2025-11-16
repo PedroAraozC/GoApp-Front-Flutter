@@ -17,22 +17,27 @@ class SocketService {
 
   bool get isConnected => _isConnected;
   IO.Socket? get rawSocket =>
-      _socket; // por si alguna vez necesitás acceso crudo
+      _socket; // acceso crudo si alguna vez lo necesitás
 
   /// 🔌 Conecta el socket (y espera a que realmente se conecte).
   /// Si ya está conectado, no hace nada.
   Future<void> connect() async {
-    if (_isConnected) {
+    if (_isConnected && _socket != null) {
       debugPrint('🟢 Socket ya está conectado.');
       return;
     }
+
+    // Si hay un intento en curso, esperamos a que termine
     if (_isConnecting) {
       debugPrint('⏳ Conexión ya en curso, esperando...');
-      // Espera a que termine un intento de conexión previo
       while (_isConnecting) {
         await Future.delayed(const Duration(milliseconds: 100));
       }
-      return;
+      // Después de esperar, si quedó conectado, listo
+      if (_isConnected && _socket != null) {
+        return;
+      }
+      // Si no quedó conectado, seguimos y reintentamos
     }
 
     final baseUrl = dotenv.env['API_URL'];
@@ -46,12 +51,17 @@ class SocketService {
 
     final completer = Completer<void>();
 
-    // Si ya había un socket viejo, lo cerramos
+    // Cerramos socket anterior si existía
     if (_socket != null) {
       try {
         _socket!.dispose();
-      } catch (_) {}
+      } catch (_) {
+        try {
+          _socket!.disconnect();
+        } catch (_) {}
+      }
       _socket = null;
+      _isConnected = false;
     }
 
     _socket = IO.io(
@@ -173,8 +183,8 @@ class SocketService {
     required int idUsuario,
     required String tipo,
   }) async {
-    // Si no hay conexión, intentamos una cortita sólo para avisar
-    if (!_isConnected) {
+    // Si no hay conexión, intentamos conectar brevemente solo para avisar
+    if (!_isConnected || _socket == null) {
       await connect();
     }
 
@@ -199,11 +209,19 @@ class SocketService {
 
   /// 🔴 Cierra la conexión manualmente (sin notificar usuario_desconectado).
   void disconnect() {
-    if (_socket == null) return;
+    if (_socket == null) {
+      _isConnected = false;
+      return;
+    }
     try {
       _socket!.disconnect();
       _socket!.dispose();
-    } catch (_) {}
+    } catch (_) {
+      try {
+        _socket!.disconnect();
+      } catch (_) {}
+    }
+    _socket = null;
     _isConnected = false;
     debugPrint('🔴 Socket desconectado manualmente');
   }

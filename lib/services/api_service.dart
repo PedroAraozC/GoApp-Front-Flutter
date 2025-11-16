@@ -56,10 +56,38 @@ class ApiService {
       final response = await http.get(url);
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data['result'];
+        final decoded = jsonDecode(response.body);
+        final result = decoded['result'];
+
+        debugPrint('📡 obtenerUsuarioPorId($idUsuario) → result: $result');
+
+        // Puede venir como LISTA [ { ... } ]
+        if (result is List) {
+          if (result.isEmpty) {
+            debugPrint('⚠️ result es una lista vacía');
+            return null;
+          }
+          if (result.first is Map<String, dynamic>) {
+            return Map<String, dynamic>.from(result.first);
+          }
+          // Si el primer elemento no es Map, lo intentamos castear igual
+          return Map<String, dynamic>.from(
+            Map<String, dynamic>.from(result.first as Map),
+          );
+        }
+
+        // O puede venir como OBJETO { ... }
+        if (result is Map) {
+          return Map<String, dynamic>.from(result);
+        }
+
+        debugPrint('⚠️ Formato inesperado en result: ${result.runtimeType}');
+        return null;
       }
-      debugPrint('⚠️ Error al obtener usuario: ${response.body}');
+
+      debugPrint(
+        '⚠️ Error HTTP ${response.statusCode} al obtener usuario: ${response.body}',
+      );
       return null;
     } catch (e) {
       debugPrint('❌ Error en obtenerUsuarioPorId(): $e');
@@ -81,7 +109,10 @@ class ApiService {
     double? precioEstimado,
   }) async {
     try {
-      final url = Uri.parse('$baseUrl/viajes/iniciar');
+      // 🔧 RUTA CORRECTA
+      final url = Uri.parse('$baseUrl/viajes/iniciarViaje');
+      debugPrint('🌐 POST $baseUrl/viajes/iniciarViaje');
+
       final body = jsonEncode({
         'id_usuario': idUsuario,
         'origen_lat': origenLat,
@@ -98,6 +129,9 @@ class ApiService {
         headers: {'Content-Type': 'application/json'},
         body: body,
       );
+
+      debugPrint('📥 Status iniciarViaje: ${response.statusCode}');
+      debugPrint('📥 Body: ${response.body}');
 
       if (response.statusCode == 201) {
         final data = jsonDecode(response.body);

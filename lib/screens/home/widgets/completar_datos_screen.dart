@@ -1,8 +1,9 @@
 // lib/screens/home/completar_datos_screen.dart
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../../services/api_service.dart';
 import '../../../services/perfil_services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class CompletarDatosScreen extends StatefulWidget {
   final Map<String, dynamic> user;
@@ -25,11 +26,9 @@ class _CompletarDatosScreenState extends State<CompletarDatosScreen> {
   late final TextEditingController _fechaController;
   late final TextEditingController _telefonoController;
   late final TextEditingController _emailController;
-  late final TextEditingController generoController;
 
   // Dropdown género
   List<Map<String, dynamic>> _generos = [];
-
   int? _idGeneroSeleccionado;
 
   bool _saving = false;
@@ -48,9 +47,9 @@ class _CompletarDatosScreenState extends State<CompletarDatosScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchGeneros();
 
     final u = widget.user;
+    debugPrint('🧾 [CompletarDatosScreen] user recibido: $u');
 
     _dniController = TextEditingController(
       text: _clean(u['dni'] ?? u['dni_usuario']),
@@ -65,10 +64,20 @@ class _CompletarDatosScreenState extends State<CompletarDatosScreen> {
       text: _clean(u['email'] ?? u['email_usuario']),
     );
 
-    final gRaw = u['id_genero'];
+    final gRaw = u['id_genero'] ?? u['idGenero'];
     _idGeneroSeleccionado = (gRaw is int)
         ? gRaw
         : int.tryParse('${gRaw ?? ''}');
+
+    debugPrint(
+      '📌 Valores iniciales -> DNI: ${_dniController.text}, '
+      'Fecha: ${_fechaController.text}, '
+      'Teléfono: ${_telefonoController.text}, '
+      'Email: ${_emailController.text}, '
+      'id_genero: $_idGeneroSeleccionado',
+    );
+
+    _fetchGeneros();
   }
 
   @override
@@ -84,11 +93,25 @@ class _CompletarDatosScreenState extends State<CompletarDatosScreen> {
     final service = PerfilService();
     try {
       final lista = await service.obtenerGeneros();
+      debugPrint('📥 Géneros recibidos: $lista');
+
       setState(() {
         _generos = lista;
       });
+
+      // Si no hay género seleccionado pero el user traía uno compatible, lo dejamos
+      if (_idGeneroSeleccionado != null) {
+        final existe = _generos.any(
+          (g) => (g['id_genero'] as int?) == _idGeneroSeleccionado,
+        );
+        if (!existe) {
+          debugPrint(
+            '⚠️ El id_genero=$_idGeneroSeleccionado no está en la lista de géneros.',
+          );
+        }
+      }
     } catch (e) {
-      debugPrint('Error al obtener géneros: $e');
+      debugPrint('❌ Error al obtener géneros: $e');
     }
   }
 
@@ -107,6 +130,14 @@ class _CompletarDatosScreenState extends State<CompletarDatosScreen> {
 
     setState(() => _saving = true);
     try {
+      debugPrint('📤 Enviando actualización de usuario:');
+      debugPrint('   id_usuario: $idUsuario');
+      debugPrint('   dni: ${_dniController.text.trim()}');
+      debugPrint('   fecha_nacimiento: ${_fechaController.text.trim()}');
+      debugPrint('   id_genero: $_idGeneroSeleccionado');
+      debugPrint('   telefono_usuario: ${_telefonoController.text.trim()}');
+      debugPrint('   email_usuario: ${_emailController.text.trim()}');
+
       final ok = await widget.api.actualizarUsuario(
         idUsuario: idUsuario,
         dni: _dniController.text.trim(),
@@ -120,6 +151,7 @@ class _CompletarDatosScreenState extends State<CompletarDatosScreen> {
       if (ok) {
         // ✅ Guardamos los datos actualizados localmente
         final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('id_usuario', idUsuario);
         await prefs.setString('dni', _dniController.text.trim());
         await prefs.setString('fecha_nacimiento', _fechaController.text.trim());
         await prefs.setInt('id_genero', _idGeneroSeleccionado ?? 0);
@@ -133,7 +165,7 @@ class _CompletarDatosScreenState extends State<CompletarDatosScreen> {
           const SnackBar(content: Text('Datos actualizados correctamente ✅')),
         );
 
-        Navigator.pop(context, true); // Éxito
+        Navigator.pop(context, true); // Éxito → devolvemos true
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('No se pudo guardar los cambios.')),
@@ -224,23 +256,17 @@ class _CompletarDatosScreenState extends State<CompletarDatosScreen> {
                     suffixIcon: Icon(Icons.calendar_today, color: Colors.grey),
                   ),
                   onTap: () async {
-                    FocusScope.of(
-                      context,
-                    ).requestFocus(FocusNode()); // cierra el teclado
+                    FocusScope.of(context).requestFocus(FocusNode());
 
                     DateTime? pickedDate = await showDatePicker(
                       context: context,
                       initialDate: DateTime.now().subtract(
                         const Duration(days: 365 * 20),
-                      ), // fecha inicial
+                      ),
                       firstDate: DateTime(1900),
                       lastDate: DateTime.now(),
-                      locale: const Locale(
-                        'es',
-                        'ES',
-                      ), // 🇪🇸 calendario en español
+                      locale: const Locale('es', 'ES'),
                       builder: (context, child) {
-                        // 🎨 Respeta completamente el tema del dispositivo
                         return Theme(data: Theme.of(context), child: child!);
                       },
                     );
@@ -292,7 +318,7 @@ class _CompletarDatosScreenState extends State<CompletarDatosScreen> {
 
                 // Género
                 DropdownButtonFormField<int>(
-                  initialValue: _idGeneroSeleccionado,
+                  value: _idGeneroSeleccionado,
                   items: _generos
                       .map(
                         (g) => DropdownMenuItem<int>(

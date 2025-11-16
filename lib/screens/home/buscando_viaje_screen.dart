@@ -5,7 +5,7 @@ import '../../services/socket_service.dart';
 class BuscandoViajeScreen extends StatefulWidget {
   final int? id_viaje; // opcional, por si querés pasar el ID del viaje actual
 
-  const BuscandoViajeScreen({super.key, this.id_viaje});
+  const BuscandoViajeScreen({super.key, this.id_viaje, required int idViaje});
 
   @override
   State<BuscandoViajeScreen> createState() => _BuscandoViajeScreenState();

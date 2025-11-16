@@ -1,8 +1,10 @@
 // lib/screens/perfil/perfil_screen.dart
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../services/socket_service.dart';
 import '../../services/perfil_services.dart';
+import '../../services/user_preferences.dart';
+
 import '../auth/auth_screen.dart';
 import 'datos_screen.dart';
 import 'pagos_screen.dart';
@@ -33,51 +35,78 @@ class _PerfilScreenState extends State<PerfilScreen> {
     _cargarPerfil();
   }
 
+  int? _parseId(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is String) return int.tryParse(v);
+    return null;
+  }
+
   Future<void> _cargarPerfil() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final idUsuario = widget.userId ?? prefs.getInt('id_usuario');
+      // 1) Leer usuario guardado localmente (UserPreferences)
+      final storedUser = await UserPreferences.getUser();
+
+      // 2) Determinar id_usuario a usar
+      final int? idUsuario =
+          widget.userId ??
+          _parseId(storedUser?['id_usuario']) ??
+          _parseId(widget.initialUser?['id_usuario']);
 
       if (idUsuario == null) {
-        debugPrint('⚠️ No se encontró id_usuario');
-        setState(() => _loading = false);
+        debugPrint(
+          '⚠️ No se encontró id_usuario ni en widget ni en UserPreferences',
+        );
+        setState(() {
+          _usuario = storedUser ?? widget.initialUser ?? {};
+          _loading = false;
+        });
         return;
       }
 
-      // Conectar socket si no está conectado
+      // 3) Conectar socket si hace falta y registrar pasajero
       if (!_socket.isConnected) {
-        _socket.connect();
-        await Future.delayed(const Duration(milliseconds: 600));
+        await _socket.connect();
       }
-
-      // Registrar usuario en el socket
-      _socket.emitirConexionUsuario(idUsuario, 'pasajero');
+      await _socket.emitirConexionUsuario(idUsuario, 'pasajero');
       debugPrint(
         '🧍 Usuario $idUsuario registrado en socket desde PerfilScreen',
       );
 
-      // Obtener datos desde el backend
-      final perfil = await _perfilService.obtenerPerfil(idUsuario);
+      // 4) Intentar obtener perfil desde el backend
+      final perfilCrudo = await _perfilService.obtenerPerfil(idUsuario);
+      Map<String, dynamic>? perfilNormalizado;
 
-      if (perfil != null && perfil.isNotEmpty) {
-        debugPrint('✅ Perfil obtenido del backend: $perfil');
-        setState(() {
-          _usuario = perfil;
-          _loading = false;
-        });
-      } else {
-        debugPrint('⚠️ No se obtuvo perfil, cargando desde prefs');
-        _usuario = {
-          'nombre_usuario': prefs.getString('nombre_usuario') ?? '',
-          'apellido_usuario': prefs.getString('apellido_usuario') ?? '',
-          'dni': prefs.getString('dni') ?? '',
-          'telefono_usuario': prefs.getString('telefono_usuario') ?? '',
-          'email_usuario': prefs.getString('email_usuario') ?? '',
-          'fecha_nacimiento': prefs.getString('fecha_nacimiento') ?? '',
-          'foto_perfil': prefs.getString('foto_perfil'),
-        };
-        setState(() => _loading = false);
+      if (perfilCrudo != null) {
+        // Intentar desenrollar distintas formas: {result: {...}} o {result: [ {...} ]}
+        if (perfilCrudo['result'] is List &&
+            (perfilCrudo['result'] as List).isNotEmpty) {
+          perfilNormalizado = Map<String, dynamic>.from(
+            (perfilCrudo['result'] as List).first,
+          );
+        } else if (perfilCrudo['result'] is Map) {
+          perfilNormalizado = Map<String, dynamic>.from(
+            perfilCrudo['result'] as Map,
+          );
+        } else if (perfilCrudo is Map<String, dynamic>) {
+          perfilNormalizado = Map<String, dynamic>.from(perfilCrudo);
+        }
       }
+
+      // 5) Merge de datos: primero los locales, luego los de backend pisan
+      final Map<String, dynamic> combinado = {
+        if (storedUser != null) ...storedUser,
+        if (widget.initialUser != null) ...widget.initialUser!,
+        if (perfilNormalizado != null) ...perfilNormalizado,
+      };
+
+      debugPrint('✅ Perfil combinado para mostrar en UI: $combinado');
+
+      if (!mounted) return;
+      setState(() {
+        _usuario = combinado;
+        _loading = false;
+      });
     } catch (e) {
       debugPrint('❌ Error al cargar perfil: $e');
       if (mounted) {
@@ -91,16 +120,20 @@ class _PerfilScreenState extends State<PerfilScreen> {
 
   Future<void> _logout() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final idUsuario = prefs.getInt('id_usuario');
+      final storedUser = await UserPreferences.getUser();
+      final idUsuario = _parseId(storedUser?['id_usuario']);
 
       if (idUsuario != null) {
-        _socket.emit('usuario_desconectado', {'id_usuario': idUsuario});
-        debugPrint('📤 Emitido evento usuario_desconectado → $idUsuario');
+        await _socket.disconnectAndNotify(
+          idUsuario: idUsuario,
+          tipo: 'pasajero',
+        );
+        debugPrint('📤 usuario_desconectado enviado para $idUsuario');
+      } else {
+        _socket.disconnect();
       }
 
-      await prefs.clear();
-      _socket.disconnect();
+      await UserPreferences.fullLogout();
 
       if (!mounted) return;
       Navigator.pushAndRemoveUntil(
@@ -127,15 +160,13 @@ class _PerfilScreenState extends State<PerfilScreen> {
     }
 
     final usuario = _usuario ?? {};
-    final ImageProvider fotoPerfil =
-        (usuario['foto_perfil'] != null &&
-            (usuario['foto_perfil'] as String).isNotEmpty)
-        ? NetworkImage(usuario['foto_perfil'])
-        : const AssetImage('assets/images/user_default.png');
 
-    final nombre = usuario['nombre_usuario'] ?? 'Usuario';
-    final apellido = usuario['apellido_usuario'] ?? '';
-    final email = usuario['email_usuario'] ?? '';
+    final nombre = (usuario['nombre_usuario'] ?? usuario['nombre'] ?? '')
+        .toString();
+    final apellido = (usuario['apellido_usuario'] ?? usuario['apellido'] ?? '')
+        .toString();
+    final email = (usuario['email_usuario'] ?? usuario['email'] ?? '')
+        .toString();
 
     return Scaffold(
       appBar: AppBar(
@@ -148,15 +179,13 @@ class _PerfilScreenState extends State<PerfilScreen> {
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
-              // 📸 Avatar
+              // 📸 Avatar con borde
               Container(
-                padding: const EdgeInsets.all(3), // espacio para el borde
+                padding: const EdgeInsets.all(3),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? const Color(0xFFFFCC00)
-                        : const Color(0xFFFFCC00),
+                    color: const Color(0xFFFFCC00),
                     width: 1.5,
                   ),
                 ),
@@ -164,23 +193,25 @@ class _PerfilScreenState extends State<PerfilScreen> {
                   radius: 50,
                   backgroundColor:
                       Theme.of(context).brightness == Brightness.dark
-                      ? Colors
-                            .white // fondo blanco para modo oscuro
-                      : Colors.black, // fondo negro para modo claro
+                      ? Colors.white
+                      : Colors.black,
                   backgroundImage: getUserImage(context, usuario),
                 ),
               ),
 
               const SizedBox(height: 12),
 
-              // 👤 Nombre
+              // 👤 Nombre completo
               Text(
-                '$apellido $nombre',
+                ('$apellido $nombre').trim().isEmpty
+                    ? 'Usuario'
+                    : '$apellido $nombre',
                 textAlign: TextAlign.center,
                 style: Theme.of(
                   context,
                 ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
               ),
+
               if (email.isNotEmpty)
                 Text(
                   email,
@@ -189,21 +220,6 @@ class _PerfilScreenState extends State<PerfilScreen> {
                   ).textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
                 ),
 
-              // const SizedBox(height: 24),
-              // const Divider(),
-
-              // // 🔹 Datos principales (lectura rápida)
-              // _buildInfoRow(Icons.badge, 'DNI', usuario['dni'] ?? '-'),
-              // _buildInfoRow(
-              //   Icons.phone,
-              //   'Teléfono',
-              //   usuario['telefono_usuario'] ?? usuario['telefono'] ?? '-',
-              // ),
-              // _buildInfoRow(
-              //   Icons.cake,
-              //   'Nacimiento',
-              //   usuario['fecha_nacimiento'] ?? '-',
-              // ),
               const SizedBox(height: 15),
               const Divider(),
 
@@ -216,7 +232,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
                   context,
                   MaterialPageRoute(
                     builder: (_) => DatosScreen(
-                      userId: widget.userId,
+                      userId: _parseId(usuario['id_usuario']),
                       initialUser: usuario,
                     ),
                   ),
@@ -262,6 +278,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
               ),
 
               const SizedBox(height: 30),
+
               // 🔻 Botón de logout
               SizedBox(
                 width: double.infinity,
@@ -286,38 +303,6 @@ class _PerfilScreenState extends State<PerfilScreen> {
     );
   }
 
-  // // 🔹 Helpers visuales
-  // Widget _buildInfoRow(IconData icon, String label, dynamic value) {
-  //   // Convierte automáticamente cualquier valor a texto seguro
-  //   final displayValue = (value == null || value.toString().trim().isEmpty)
-  //       ? '-'
-  //       : value.toString();
-
-  //   return Padding(
-  //     padding: const EdgeInsets.symmetric(vertical: 6.0),
-  //     child: Row(
-  //       children: [
-  //         Icon(icon, color: Colors.grey[700]),
-  //         const SizedBox(width: 10),
-  //         Expanded(
-  //           child: Text(
-  //             label,
-  //             style: const TextStyle(fontWeight: FontWeight.bold),
-  //           ),
-  //         ),
-  //         Flexible(
-  //           child: Text(
-  //             displayValue,
-  //             overflow: TextOverflow.ellipsis,
-  //             maxLines: 1,
-  //             style: const TextStyle(fontSize: 15),
-  //           ),
-  //         ),
-  //       ],
-  //     ),
-  //   );
-  // }
-
   Widget _buildMenuItem(
     BuildContext context, {
     required IconData icon,
@@ -341,12 +326,12 @@ class _PerfilScreenState extends State<PerfilScreen> {
     final brightness = Theme.of(context).brightness;
 
     if (foto != null && foto.toString().isNotEmpty) {
-      return NetworkImage(foto);
+      return NetworkImage(foto.toString());
     } else {
       return AssetImage(
         brightness == Brightness.dark
-            ? 'assets/images/user_default.png' // fondo blanco
-            : 'assets/images/user_default_blanco.png', // fondo oscuro
+            ? 'assets/images/user_default.png'
+            : 'assets/images/user_default_blanco.png',
       );
     }
   }
