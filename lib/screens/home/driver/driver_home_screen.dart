@@ -15,6 +15,7 @@ import 'package:http/http.dart' as http;
 import '../../../services/socket_service.dart';
 import '../../../services/api_service.dart';
 import '../../../services/user_preferences.dart';
+import 'driver_en_camino_screen.dart';
 
 class DriverHomeScreen extends StatefulWidget {
   const DriverHomeScreen({super.key});
@@ -45,7 +46,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   bool _listening = false;
   bool _accepted = false;
   bool _loading = false;
-  bool _isOnline = false; // 👈 conectado / desconectado para recibir viajes
+  bool _isOnline = false; // conectado / desconectado para recibir viajes
 
   late AnimationController _islandPulse;
 
@@ -58,25 +59,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
 
-    // 🔹 Inicialización general
     _initDriverHome();
   }
 
-  /// 🔹 Inicializa todo el flujo del panel de chofer
+  /// Inicializa todo el flujo del panel de chofer
   Future<void> _initDriverHome() async {
-    // 1) Verificar rol
     final isDriver = await _checkRoleAccess();
     if (!mounted || !isDriver) return;
 
-    // 2) Cargar iconos, ubicación y recaudación.
-    //    La conexión al socket + estado online se hace con el botón.
     await _initIcons();
     await _initLocation();
     await _loadTodayTotal();
   }
 
-  /// 🔹 Verifica que el usuario tenga id_rol = 3
-  /// Si no, lo manda a la pantalla home_screen (/home).
+  /// Verifica que el usuario tenga id_rol = 3
   Future<bool> _checkRoleAccess() async {
     try {
       final user = await UserPreferences.getUser();
@@ -89,7 +85,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       if (!mounted) return false;
 
       if (roleId != 3) {
-        // No es conductor → mandamos al home normal
         Navigator.of(
           context,
         ).pushNamedAndRemoveUntil('/home', (route) => false);
@@ -111,6 +106,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _islandPulse.dispose();
     _socket.off('viaje_creado');
     _socket.off('viaje_finalizado');
+    _socket.off('viaje_cancelado_busqueda');
     super.dispose();
   }
 
@@ -179,7 +175,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   Future<void> _initSocketListeners() async {
-    // Escuchar cuando un pasajero crea viaje
+    // viaje creado por pasajero → aparece tarjeta al chofer
     _socket.on('viaje_creado', (data) async {
       try {
         debugPrint('socket viaje_creado: $data');
@@ -195,16 +191,50 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       }
     });
 
-    // Escuchar cuando un viaje finaliza (para actualizar recaudación)
+    // viaje finalizado → actualizar recaudación
     _socket.on('viaje_finalizado', (data) async {
       try {
         debugPrint('socket viaje_finalizado: $data');
-        final amount = (data?['valor'] is num)
+        final amount = (data?['precio_final'] is num)
+            ? (data['precio_final'] as num).toDouble()
+            : (data?['valor'] is num)
             ? (data['valor'] as num).toDouble()
             : 0.0;
         await _addToTodayTotal(amount);
       } catch (e) {
         debugPrint('Error viaje_finalizado socket: $e');
+      }
+    });
+
+    // viaje cancelado mientras estaba "buscando" → limpiar tarjeta
+    _socket.on('viaje_cancelado_busqueda', (data) {
+      try {
+        debugPrint('socket viaje_cancelado_busqueda: $data');
+        final idCancelado =
+            data?['id_viajes'] ??
+            data?['id_viaje'] ??
+            data?['id']; // por las dudas
+        if (idCancelado == null || _incomingRide == null) return;
+
+        final idInt = idCancelado is num
+            ? idCancelado.toInt()
+            : int.tryParse(idCancelado.toString());
+
+        if (idInt == null) return;
+
+        if (_incomingRide!.idViajes == idInt) {
+          setState(() {
+            _incomingRide = null;
+            _accepted = false;
+            _polylines.clear();
+            _markers.removeWhere(
+              (m) => m.markerId.value.startsWith('passenger_'),
+            );
+          });
+          _showSnack('El pasajero canceló el viaje.');
+        }
+      } catch (e) {
+        debugPrint('Error procesando viaje_cancelado_busqueda: $e');
       }
     });
 
@@ -275,7 +305,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     }
   }
 
-  // 🔹 Conectarse (ONLINE)
+  // Conectarse (ONLINE)
   Future<void> _goOnline() async {
     try {
       final user = await UserPreferences.getUser();
@@ -286,13 +316,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         return;
       }
 
-      // 1) Conectar socket
       await _socket.connect();
-
-      // 2) Registrar chofer como conectado en socket
       await _socket.registrarUsuario(idUsuario: idUsuario, tipo: 'conductor');
 
-      // 3) Avisar al backend que el conductor está conectado
       final ok = await _api.cambiarEstadoConductor(
         idConductor: idUsuario,
         conectado: true,
@@ -301,7 +327,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         _showSnack('No se pudo actualizar el estado en el servidor.');
       }
 
-      // 4) Iniciar listeners solo una vez
       if (!_listening) {
         await _initSocketListeners();
       }
@@ -318,29 +343,27 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     }
   }
 
-  // 🔹 Desconectarse (OFFLINE)
+  // Desconectarse (OFFLINE)
   Future<void> _goOffline() async {
     try {
       final user = await UserPreferences.getUser();
       final idUsuario = user?['id_usuario'];
 
       if (idUsuario != null) {
-        // 1) Avisar al backend que el conductor está desconectado
         await _api.cambiarEstadoConductor(
           idConductor: idUsuario,
           conectado: false,
         );
 
-        // 2) Notificar desconexión por socket
         await _socket.notificarDesconexionUsuario(
           idUsuario: idUsuario,
           tipo: 'conductor',
         );
       }
 
-      // 3) Limpiar listeners y viaje actual
       _socket.off('viaje_creado');
       _socket.off('viaje_finalizado');
+      _socket.off('viaje_cancelado_busqueda');
 
       if (!mounted) return;
       setState(() {
@@ -357,7 +380,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     }
   }
 
-  // 🔹 CERRAR SESIÓN usando UserPreferences.fullLogout()
+  // CERRAR SESIÓN
   Future<void> _logout() async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -380,6 +403,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (confirm != true) return;
 
     try {
+      // notificar desconexión por socket antes de borrar prefs
+      final user = await UserPreferences.getUser();
+      final idUsuario = user?['id_usuario'];
+      if (idUsuario != null) {
+        await _socket.disconnectAndNotify(
+          idUsuario: idUsuario,
+          tipo: 'conductor',
+        );
+      }
+
       await UserPreferences.fullLogout();
       if (!mounted) return;
       Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
@@ -390,7 +423,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     }
   }
 
-  // Aceptar viaje → dibuja ruta al pasajero
+  // Aceptar viaje → navegar a pantalla "en camino"
   Future<void> _acceptRide() async {
     if (_incomingRide == null) return;
     setState(() => _loading = true);
@@ -415,8 +448,25 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           _accepted = true;
         });
 
-        _showSnack('Viaje aceptado. Calculando ruta al pasajero...');
-        await _drawRouteToPassenger(); // 👈 dibuja la ruta
+        _showSnack('Viaje aceptado. En camino al pasajero...');
+
+        if (!mounted) return;
+
+        final started = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => DriverEnCaminoScreen(ride: _incomingRide!),
+          ),
+        );
+
+        // Si en la otra pantalla iniciaron el viaje, limpiamos la tarjeta
+        if (started == true && mounted) {
+          setState(() {
+            _incomingRide = null;
+            _accepted = false;
+            _polylines.clear();
+          });
+        }
       } else {
         _showSnack('Error al aceptar viaje');
       }
@@ -428,14 +478,31 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     }
   }
 
+  // Rechazar viaje
   Future<void> _rejectRide() async {
     if (_incomingRide == null) return;
-    _socket.emit('viaje_rechazado', {'id_viajes': _incomingRide!.idViajes});
-    setState(() => _incomingRide = null);
-    _showSnack('Viaje rechazado');
+
+    try {
+      final idViaje = _incomingRide!.idViajes;
+
+      await _api.cancelarViaje(idViaje);
+
+      setState(() {
+        _incomingRide = null;
+        _accepted = false;
+        _polylines.clear();
+        _markers.removeWhere((m) => m.markerId.value.startsWith('passenger_'));
+      });
+
+      _showSnack('Viaje cancelado.');
+    } catch (e) {
+      debugPrint('Error al rechazar viaje: $e');
+      _showSnack('Error al rechazar el viaje.');
+    }
   }
 
-  // 🔹 Dibujar ruta hasta el pasajero usando Google Directions API
+  // --- Helpers polyline (lo podés dejar o borrar si no usás) ---
+
   Future<void> _drawRouteToPassenger() async {
     if (_driverLocation == null || _incomingRide == null) return;
 
@@ -876,7 +943,12 @@ class IncomingRide {
           ? DateTime.parse(parsed['hora_fin'].toString())
           : null,
       valor: (parsed['valor'] as num).toDouble(),
-      idEstado: (parsed['id_estado'] as num).toInt(),
+      idEstado: (parsed['id_estado'] ?? parsed['estado'] ?? 0) is num
+          ? (parsed['id_estado'] ?? parsed['estado'] ?? 0 as num).toInt()
+          : int.tryParse(
+                  (parsed['id_estado'] ?? parsed['estado'] ?? 0).toString(),
+                ) ??
+                0,
     );
   }
 }

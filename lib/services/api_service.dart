@@ -48,6 +48,32 @@ class ApiService {
   }
 
   // ==============================
+  // 🔹 Marcar viaje como "en curso" (chofer llegó al pasajero)
+  // ==============================
+  Future<bool> comenzarViaje(int idViaje) async {
+    try {
+      final url = Uri.parse('$baseUrl/viajes/$idViaje/comenzar');
+      debugPrint('PUT $url');
+
+      final resp = await http.put(url);
+
+      if (resp.statusCode == 200) {
+        debugPrint('✅ Viaje $idViaje marcado como EN CURSO');
+        return true;
+      } else {
+        debugPrint(
+          '⚠️ Error comenzarViaje($idViaje): '
+          '${resp.statusCode} → ${resp.body}',
+        );
+        return false;
+      }
+    } catch (e) {
+      debugPrint('❌ Error en comenzarViaje(): $e');
+      return false;
+    }
+  }
+
+  // ==============================
   // 🔹 Obtener datos del usuario por ID
   // ==============================
   Future<Map<String, dynamic>?> obtenerUsuarioPorId(int idUsuario) async {
@@ -224,7 +250,7 @@ class ApiService {
     final url = Uri.parse('$baseUrl/viajes/$idViaje/aceptar');
     final resp = await http.put(
       url,
-      body: json.encode({'id_conductor': idConductor}),
+      body: json.encode({'id_usuario': idConductor}),
       headers: {'Content-Type': 'application/json'},
     );
     return resp.statusCode == 200;
