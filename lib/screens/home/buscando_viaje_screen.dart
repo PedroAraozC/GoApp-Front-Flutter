@@ -1,11 +1,19 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/socket_service.dart';
+import '../../services/api_service.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:http/http.dart' as http;
+import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 
 class BuscandoViajeScreen extends StatefulWidget {
-  final int? id_viaje; // opcional, por si querés pasar el ID del viaje actual
+  final int id_viaje;
 
-  const BuscandoViajeScreen({super.key, this.id_viaje, required int idViaje});
+  const BuscandoViajeScreen({super.key, required this.id_viaje});
 
   @override
   State<BuscandoViajeScreen> createState() => _BuscandoViajeScreenState();
@@ -13,16 +21,57 @@ class BuscandoViajeScreen extends StatefulWidget {
 
 class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
   final SocketService _socket = SocketService.instance;
+  final ApiService _api = ApiService();
   bool _viajeAsignado = false;
   bool _viajeCancelado = false;
   bool _viajeEnCurso = false;
   bool _cancelando = false;
 
+  GoogleMapController? _mapCtrl;
+  LatLng? _passengerLocation;
+  LatLng? _driverLocation;
+  final Set<Marker> _markers = {};
+  final Set<Polyline> _polylines = {};
+
+  final PolylinePoints _polylinePoints = PolylinePoints();
+  final String _googleApiKey =
+      dotenv.env['GOOGLE_MAPS_API_KEY'] ?? dotenv.env['GOOGLE_API_KEY'] ?? '';
+
+  StreamSubscription<Position>? _positionSub;
+  
   @override
   void initState() {
     super.initState();
+     _initLocation();  
     _inicializarSocketListeners();
   }
+
+  Future<void> _initLocation() async {
+  try {
+    if (!await Geolocator.isLocationServiceEnabled()) return;
+    var p = await Geolocator.checkPermission();
+    if (p == LocationPermission.denied) {
+      p = await Geolocator.requestPermission();
+    }
+    if (p == LocationPermission.deniedForever) return;
+
+    final pos = await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.high,
+    );
+    _passengerLocation = LatLng(pos.latitude, pos.longitude);
+
+    _markers.add(
+      Marker(
+        markerId: const MarkerId('passenger'),
+        position: _passengerLocation!,
+        infoWindow: const InfoWindow(title: 'Tu ubicación'),
+      ),
+    );
+    setState(() {});
+  } catch (e) {
+    debugPrint('Error init location pasajero: $e');
+  }
+}
 
   Future<void> _inicializarSocketListeners() async {
     final prefs = await SharedPreferences.getInstance();
@@ -57,6 +106,8 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
       _mostrarSnack('Un conductor fue asignado a tu viaje 🚕');
     });
 
+    
+
     // ▶️ Evento: viaje en curso
     _socket.on('viaje_en_curso', (data) {
       debugPrint('▶️ Evento: viaje_en_curso -> $data');
@@ -89,7 +140,11 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
 
       // Opcional: Volver a la pantalla anterior después de 2 segundos
       Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) Navigator.pop(context);
+        if (!mounted) return;
+
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil('/home', (route) => false);
       });
     });
   }
@@ -99,45 +154,34 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
     setState(() => _cancelando = true);
 
     try {
-      // 🔁 Asegurar que el socket esté conectado de verdad
-      if (!_socket.isConnected) {
-        debugPrint('⚠️ Socket no conectado, esperando reconexión...');
-        await _socket.connect();
+      debugPrint('📤 Cancelando viaje con ID: ${widget.id_viaje}');
+      // 1) Llamar al backend para cancelar el viaje
+      final resp = await _api.cancelarViaje(widget.id_viaje!);
 
-        // Esperar hasta que el socket se conecte o 5 segundos máximo
-        int retries = 0;
-        while (!_socket.isConnected && retries < 10) {
-          await Future.delayed(const Duration(milliseconds: 500));
-          retries++;
-        }
+      if (!mounted) return;
 
-        if (!_socket.isConnected) {
-          throw Exception(
-            'No se pudo conectar al socket después de varios intentos',
-          );
-        }
+      final msg = resp['message']?.toString() ?? 'Respuesta desconocida';
+
+      if (resp['message'] == 'Viaje cancelado exitosamente') {
+        _mostrarSnack('Viaje cancelado correctamente');
+
+        // 2) Ir al menú principal del usuario
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/home', // 👈 ruta de tu HomeScreen de pasajero
+          (route) => false,
+        );
+      } else {
+        _mostrarSnack(msg);
       }
-
-      if (widget.id_viaje == null) {
-        _mostrarSnack('Error: ID de viaje no disponible');
-        setState(() => _cancelando = false);
-        return;
-      }
-
-      debugPrint(
-        '📤 Emitiendo evento viaje_cancelado con ID: ${widget.id_viaje}',
-      );
-      _socket.emit('viaje_cancelado', {
-        'id_viaje': widget.id_viaje,
-        'motivo': 'cancelado_por_usuario',
-      });
-
-      _mostrarSnack('Cancelando viaje...');
     } catch (e) {
       debugPrint('❌ Error al cancelar viaje: $e');
-      _mostrarSnack('Error al cancelar el viaje');
+      if (mounted) {
+        _mostrarSnack('Error al cancelar el viaje');
+      }
     } finally {
-      setState(() => _cancelando = false);
+      if (mounted) {
+        setState(() => _cancelando = false);
+      }
     }
   }
 
