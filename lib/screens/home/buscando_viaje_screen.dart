@@ -53,6 +53,13 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
     // 🚕 Evento: viaje asignado
     _socket.on('viaje_asignado', (data) {
       debugPrint('🚕 Evento: viaje_asignado -> $data');
+      final latDesde = double.tryParse(
+        (data['lat_desde'] ?? data['latDesde']).toString(),
+      );
+
+      final lonDesde = double.tryParse(
+        (data['lon_desde'] ?? data['lonDesde']).toString(),
+      );
 
       try {
         // 1) Validar que el viaje que llega por socket sea el mismo que este screen
@@ -104,6 +111,8 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
               direccionOrigen: direccionOrigen,
               direccionDestino: direccionDestino,
               precioEstimado: precioEstimado,
+              latOrigen: double.parse(data['lat_desde'].toString()),
+              lngOrigen: double.parse(data['lon_desde'].toString()),
             ),
           ),
         );
