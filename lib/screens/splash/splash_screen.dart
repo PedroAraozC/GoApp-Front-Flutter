@@ -77,8 +77,8 @@ class _SplashScreenState extends State<SplashScreen>
         // Rol desconocido → por seguridad al login
         Navigator.pushReplacement(
           context,
-          // MaterialPageRoute(builder: (_) => const AuthScreen()),
-          MaterialPageRoute(builder: (_) => const PagosScreen()),
+          MaterialPageRoute(builder: (_) => const AuthScreen()),
+          // MaterialPageRoute(builder: (_) => const PagosScreen()),
         );
       }
     } catch (e) {
