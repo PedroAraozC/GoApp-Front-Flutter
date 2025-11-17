@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:taxi_tuc/screens/home/driver/driver_home_screen.dart';
 import 'package:taxi_tuc/screens/home/home_screen.dart'; // 👈 import home pasajero
+import 'package:taxi_tuc/screens/perfil/pagos_screen.dart';
 import '../../services/user_preferences.dart';
 import '../../screens/auth/auth_screen.dart';
+import '../../screens/perfil/pagos_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -75,7 +77,8 @@ class _SplashScreenState extends State<SplashScreen>
         // Rol desconocido → por seguridad al login
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const AuthScreen()),
+          // MaterialPageRoute(builder: (_) => const AuthScreen()),
+          MaterialPageRoute(builder: (_) => const PagosScreen()),
         );
       }
     } catch (e) {
