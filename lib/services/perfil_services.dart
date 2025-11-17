@@ -7,19 +7,29 @@ class PerfilService {
 
   // ==============================
   // 📦 Obtener perfil de usuario
+  // → Devuelve el JSON COMPLETO que viene del backend
+  //    (ej: { result: {...} } o { result: [ {...} ] })
+  //    El PerfilScreen se encarga de normalizarlo.
   // ==============================
   Future<Map<String, dynamic>?> obtenerPerfil(int idUsuario) async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/usuarios/obtenerUsuarioId/$idUsuario'),
-      );
+      final url = Uri.parse('$baseUrl/usuarios/obtenerUsuarioId/$idUsuario');
+      final response = await http.get(url);
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['result'] != null) {
-          return Map<String, dynamic>.from(data['result']);
+        final decoded = jsonDecode(response.body);
+
+        if (decoded is Map<String, dynamic>) {
+          // Lo devolvemos tal cual, para que la pantalla decida cómo “desenvolver” result
+          return Map<String, dynamic>.from(decoded);
+        } else {
+          print(
+            '⚠️ Respuesta inesperada en obtenerPerfil (no es Map): $decoded',
+          );
+          return null;
         }
       }
+
       print('⚠️ No se pudo obtener el perfil: ${response.body}');
       return null;
     } catch (e) {
@@ -53,7 +63,8 @@ class PerfilService {
   }
 
   // ==============================
-  // ✏️ Actualizar datos de perfil
+  // ✏️ Actualizar datos de perfil (datos básicos)
+  // → Usa el mismo endpoint que ApiService: /usuarios/actualizarUsuario/:id
   // ==============================
   Future<bool> actualizarPerfil({
     required int idUsuario,
@@ -63,15 +74,18 @@ class PerfilService {
     int? idGenero,
   }) async {
     try {
-      final body = {
-        'telefono_usuario': telefono,
-        'email_usuario': email,
-        'fecha_nacimiento': fechaNacimiento,
-        'id_genero': idGenero,
-      };
+      // Solo mandamos los campos que no sean null
+      final Map<String, dynamic> body = {};
+
+      if (telefono != null) body['telefono_usuario'] = telefono;
+      if (email != null) body['email_usuario'] = email;
+      if (fechaNacimiento != null) body['fecha_nacimiento'] = fechaNacimiento;
+      if (idGenero != null) body['id_genero'] = idGenero;
+
+      final url = Uri.parse('$baseUrl/usuarios/actualizarUsuario/$idUsuario');
 
       final response = await http.put(
-        Uri.parse('$baseUrl/usuarios/$idUsuario'),
+        url,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(body),
       );
@@ -90,18 +104,26 @@ class PerfilService {
   }
 
   // ==============================
-  // 🔹 Obtener usuario por ID
+  // 🔹 Obtener usuario por ID (versión “normalizada”)
+  // → Devuelve directamente el usuario (Map) desde data.result
   // ==============================
   Future<Map<String, dynamic>?> obtenerUsuarioPorId(int idUsuario) async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/usuarios/$idUsuario'),
-      );
+      final url = Uri.parse('$baseUrl/usuarios/obtenerUsuarioId/$idUsuario');
+      final response = await http.get(url);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['result'] != null) {
-          return Map<String, dynamic>.from(data['result']);
+
+        final result = data['result'];
+
+        if (result is List && result.isNotEmpty) {
+          return Map<String, dynamic>.from(result.first);
+        } else if (result is Map<String, dynamic>) {
+          return Map<String, dynamic>.from(result);
+        } else {
+          print('⚠️ Formato inesperado en obtenerUsuarioPorId: $result');
+          return null;
         }
       }
 
@@ -114,14 +136,14 @@ class PerfilService {
   }
 
   // ==============================
-  // ✏️ Actualizar usuario
+  // ✏️ Actualizar usuario (uso genérico con Map)
   // ==============================
   Future<bool> actualizarUsuario(
     int idUsuario,
     Map<String, dynamic> data,
   ) async {
     try {
-      final url = Uri.parse('$baseUrl/usuarios/$idUsuario');
+      final url = Uri.parse('$baseUrl/usuarios/actualizarUsuario/$idUsuario');
       final response = await http.put(
         url,
         headers: {'Content-Type': 'application/json'},

@@ -37,6 +37,7 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
 
     try {
       final result = await AuthService.recuperarPassword(dni, email);
+      debugPrint("🖋️Enviando solicitud de recuperación para $email y DNI $dni");
 
       if (!mounted) return;
 

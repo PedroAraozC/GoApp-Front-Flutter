@@ -39,6 +39,11 @@ flutter:
     - .env
     - assets/images/pin_origen.png
     - assets/images/pin_destino.png
+    - assets/images/user_default_blanco.png
+    - assets/images/user_default.png
+    - assets/images/app_icon.png
+    - assets/images/splash_inicio.png
+    - assets/images/taxi-icon.png
 
 flutter_launcher_icons:
   android: true
