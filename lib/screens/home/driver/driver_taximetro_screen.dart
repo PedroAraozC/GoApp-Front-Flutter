@@ -3,9 +3,9 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:vibration/vibration.dart';
 import 'package:flutter/services.dart'; // Para tono del sistema
-import 'package:flutter_vibrate/flutter_vibrate.dart';
+import 'package:flutter/services.dart';
+import 'package:audioplayers/audioplayers.dart';
 
 class TaximetroScreen extends StatefulWidget {
   const TaximetroScreen({super.key});
@@ -30,6 +30,8 @@ class _TaximetroScreenState extends State<TaximetroScreen> {
   Timer? timer;
   StreamSubscription<Position>? posicionSub;
   Position? ultimaPosicion;
+
+  final AudioPlayer _audioPlayer = AudioPlayer();
 
   @override
   void dispose() {
@@ -137,15 +139,14 @@ class _TaximetroScreenState extends State<TaximetroScreen> {
               const SizedBox(height: 30),
               ElevatedButton.icon(
                 onPressed: () async {
-                  // Vibración + sonido del sistema
-                  if (await Vibrate.canVibrate) {
-                    Vibrate.feedback(FeedbackType.success);
-                  }
+                  // Vibración del sistema
+                  await HapticFeedback.mediumImpact();
+
+                  // Sonido de alerta
                   SystemSound.play(SystemSoundType.alert);
 
                   Navigator.pop(context);
 
-                  // Reiniciar valores
                   setState(() {
                     viajeActivo = false;
                     total = 0.0;
@@ -173,9 +174,20 @@ class _TaximetroScreenState extends State<TaximetroScreen> {
     );
   }
 
-  void _calcularTarifa() {
+  void _calcularTarifa() async {
     final fichas = (distanciaTotal ~/ metrosPorFicha);
-    total = bajadaDeBandera + (fichas * valorFicha);
+    final nuevoTotal = bajadaDeBandera + (fichas * valorFicha);
+
+    if (nuevoTotal > total) {
+      // Sonido click real
+      await _audioPlayer.play(AssetSource('sounds/click.mp3'));
+      // Vibración leve
+      await HapticFeedback.lightImpact();
+    }
+
+    setState(() {
+      total = nuevoTotal;
+    });
   }
 
   void _toggleModoPrueba() {
@@ -237,12 +249,12 @@ class _TaximetroScreenState extends State<TaximetroScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
+        child: Column(
+          children: [
+            // 🔺 Encabezado fijo arriba
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Column(
                 children: [
                   Text(
                     'TAXÍMETRO',
@@ -265,88 +277,123 @@ class _TaximetroScreenState extends State<TaximetroScreen> {
                   ),
                 ],
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Text(
-                    '${velocidadActual.toStringAsFixed(1)} km/h',
-                    style: GoogleFonts.orbitron(
-                      textStyle: const TextStyle(
-                        color: Colors.greenAccent,
-                        fontSize: 48,
+            ),
+
+            // 🔹 Contenido central (centrado verticalmente)
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      '${velocidadActual.toStringAsFixed(1)} km/h',
+                      style: GoogleFonts.orbitron(
+                        textStyle: const TextStyle(
+                          color: Colors.greenAccent,
+                          fontSize: 52,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Distancia: ${distanciaKm.toStringAsFixed(2)} km',
-                    style: GoogleFonts.orbitron(
-                      textStyle: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
+                    const SizedBox(height: 20),
+                    Text(
+                      'Distancia: ${(distanciaTotal / 1000).toStringAsFixed(2)} km',
+                      style: GoogleFonts.orbitron(
+                        textStyle: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Tiempo: $tiempo',
-                    style: GoogleFonts.orbitron(
-                      textStyle: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
+                    const SizedBox(height: 10),
+                    Text(
+                      'Tiempo: ${_formatearTiempo(cronometro.elapsed)}',
+                      style: GoogleFonts.orbitron(
+                        textStyle: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    '\$${total.toStringAsFixed(0)}',
-                    style: GoogleFonts.orbitron(
-                      textStyle: const TextStyle(
-                        color: Colors.redAccent,
-                        fontSize: 56,
+                    const SizedBox(height: 40),
+                    TweenAnimationBuilder<double>(
+                      tween: Tween<double>(begin: 0, end: total),
+                      duration: const Duration(milliseconds: 500),
+                      builder: (context, value, child) {
+                        return Text(
+                          '\$${value.toStringAsFixed(0)}',
+                          style: GoogleFonts.orbitron(
+                            textStyle: const TextStyle(
+                              color: Colors.redAccent,
+                              fontSize: 80,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // 🔻 Botones grandes abajo
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _toggleModoPrueba,
+                    icon: const Icon(Icons.science_outlined, size: 30),
+                    label: Text(
+                      modoPrueba ? 'Modo Prueba\nON' : 'Modo Prueba\nOFF',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
-                    ),
-                  ),
-                ],
-              ),
-              Column(
-                children: [
-                  ElevatedButton.icon(
-                    onPressed: _toggleModoPrueba,
-                    icon: const Icon(Icons.science_outlined),
-                    label: Text(
-                      modoPrueba
-                          ? 'Desactivar Modo Prueba'
-                          : 'Activar Modo Prueba',
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: modoPrueba
                           ? Colors.amber
                           : Colors.blueGrey[800],
                       foregroundColor: Colors.white,
-                      minimumSize: const Size(double.infinity, 50),
+                      minimumSize: const Size(double.infinity, 90),
+                      shape: const RoundedRectangleBorder(
+                        borderRadius: BorderRadius.zero,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  ElevatedButton.icon(
+                ),
+                Expanded(
+                  child: ElevatedButton.icon(
                     onPressed: viajeActivo ? _detenerViaje : _iniciarViaje,
-                    icon: Icon(viajeActivo ? Icons.flag : Icons.play_arrow),
+                    icon: Icon(
+                      viajeActivo ? Icons.flag : Icons.play_arrow,
+                      size: 36,
+                    ),
                     label: Text(
-                      viajeActivo ? 'Finalizar viaje' : 'Iniciar viaje',
+                      viajeActivo ? 'FINALIZAR\nVIAJE' : 'INICIAR\nVIAJE',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: viajeActivo
                           ? Colors.greenAccent[700]
                           : Colors.redAccent[700],
                       foregroundColor: Colors.black,
-                      minimumSize: const Size(double.infinity, 50),
+                      minimumSize: const Size(double.infinity, 90),
+                      shape: const RoundedRectangleBorder(
+                        borderRadius: BorderRadius.zero,
+                      ),
                     ),
                   ),
-                ],
-              ),
-            ],
-          ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
