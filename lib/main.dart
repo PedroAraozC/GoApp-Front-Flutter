@@ -71,7 +71,7 @@ class GoApp extends StatelessWidget {
 
 /// Wrapper para cargar el usuario guardado y abrir HomeScreen correctamente
 class _HomeWrapper extends StatelessWidget {
-  const _HomeWrapper({super.key});
+  const _HomeWrapper();
 
   @override
   Widget build(BuildContext context) {

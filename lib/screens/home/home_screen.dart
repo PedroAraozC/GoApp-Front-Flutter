@@ -1,7 +1,7 @@
 // lib/screens/home/home_screen.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:google_sign_in/google_sign_in.dart'; // <- ya casi no se usa, puedes quitarlo si quieres
+// <- ya casi no se usa, puedes quitarlo si quieres
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:taxi_tuc/screens/perfil/viajes_screen.dart';
 

@@ -360,11 +360,11 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
                             children: [
                               const Icon(Icons.access_time, size: 18),
                               const SizedBox(width: 4),
-                              Text('$_durationText'),
+                              Text(_durationText),
                               const SizedBox(width: 16),
                               const Icon(Icons.route, size: 18),
                               const SizedBox(width: 4),
-                              Text('$_distanceText'),
+                              Text(_distanceText),
                             ],
                           ),
                         ],

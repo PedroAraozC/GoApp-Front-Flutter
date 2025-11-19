@@ -1,13 +1,13 @@
 // lib/screens/home/driver/driver_home_screen.dart
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
@@ -16,7 +16,7 @@ import '../../../services/socket_service.dart';
 import '../../../services/api_service.dart';
 import '../../../services/user_preferences.dart';
 import 'driver_en_camino_screen.dart';
-
+import './driver_taximetro_screen.dart';
 class DriverHomeScreen extends StatefulWidget {
   const DriverHomeScreen({super.key});
 
@@ -718,30 +718,67 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   left: 16,
                   right: 16,
                   bottom: _incomingRide != null ? 100 : 24,
-                  child: ElevatedButton.icon(
-                    onPressed: _isOnline ? _goOffline : _goOnline,
-                    icon: Icon(
-                      _isOnline ? Icons.wifi_off_rounded : Icons.wifi_rounded,
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 14,
-                        horizontal: 16,
-                      ),
-                      backgroundColor: _isOnline
+                  child: Row(
+                    children: [
+                      Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _isOnline ? _goOffline : _goOnline,
+                        icon: Icon(
+                        _isOnline
+                          ? Icons.wifi_off_rounded
+                          : Icons.wifi_rounded,
+                        ),
+                        style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 14,
+                          horizontal: 16,
+                        ),
+                        backgroundColor: _isOnline
                           ? Colors.redAccent
                           : Colors.green,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30),
-                      ),
-                    ),
-                    label: Text(
-                      _isOnline
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                        ),
+                        label: Text(
+                        _isOnline
                           ? 'Desconectarse (no recibir viajes)'
                           : 'Conectarse (recibir viajes)',
-                      style: const TextStyle(fontSize: 16),
-                    ),
+                        style: const TextStyle(fontSize: 16),
+                        ),
+                      ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () async {
+                        if (!mounted) return;
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(
+                          builder: (_) => TaximetroScreen(),
+                          ),
+                        );
+                        },
+                        icon: const Icon(Icons.attach_money),
+                        style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 14,
+                          horizontal: 16,
+                        ),
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                        ),
+                        label: const Text(
+                        'Viaje Rápido',
+                        style: TextStyle(fontSize: 16),
+                        ),
+                      ),
+                      ),
+                    ],
                   ),
                 ),
 
