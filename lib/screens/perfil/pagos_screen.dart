@@ -90,7 +90,7 @@ class _PagosScreenState extends State<PagosScreen> {
                     // Último: botón para agregar método
                     if (index == _metodos.length) {
                       return Card(
-                        color: isDark ? cs.surfaceVariant : cs.surface,
+                        color: isDark ? cs.surfaceContainerHighest : cs.surface,
                         elevation: 1,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
@@ -137,7 +137,7 @@ class _PagosScreenState extends State<PagosScreen> {
                     return Card(
                       color: seleccionado
                           ? cs.primaryContainer.withValues(alpha: 0.2)
-                          : (isDark ? cs.surfaceVariant : cs.surface),
+                          : (isDark ? cs.surfaceContainerHighest : cs.surface),
                       elevation: seleccionado ? 3 : 1,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
@@ -347,8 +347,9 @@ class _AgregarTarjetaModalState extends State<_AgregarTarjetaModal> {
                       textInputAction: TextInputAction.next,
                       validator: (v) {
                         final clean = v?.replaceAll(' ', '') ?? '';
-                        if (clean.isEmpty)
+                        if (clean.isEmpty) {
                           return 'Ingresá el número de tarjeta';
+                        }
                         if (clean.length != 16) return 'Número incompleto';
                         return null;
                       },

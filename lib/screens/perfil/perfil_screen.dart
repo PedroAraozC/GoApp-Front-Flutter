@@ -88,9 +88,8 @@ class _PerfilScreenState extends State<PerfilScreen> {
           perfilNormalizado = Map<String, dynamic>.from(
             perfilCrudo['result'] as Map,
           );
-        } else if (perfilCrudo is Map<String, dynamic>) {
-          perfilNormalizado = Map<String, dynamic>.from(perfilCrudo);
-        }
+        } else        perfilNormalizado = Map<String, dynamic>.from(perfilCrudo);
+      
       }
 
       // 5) Merge de datos: primero los locales, luego los de backend pisan
