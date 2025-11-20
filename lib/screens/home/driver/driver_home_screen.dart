@@ -1,7 +1,6 @@
 // lib/screens/home/driver/driver_home_screen.dart
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ffi';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -15,8 +14,10 @@ import 'package:http/http.dart' as http;
 import '../../../services/socket_service.dart';
 import '../../../services/api_service.dart';
 import '../../../services/user_preferences.dart';
+import '../../../services/taximetro_service.dart';
 import 'driver_en_camino_screen.dart';
 import './driver_taximetro_screen.dart';
+
 class DriverHomeScreen extends StatefulWidget {
   const DriverHomeScreen({super.key});
 
@@ -28,6 +29,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     with TickerProviderStateMixin {
   final SocketService _socket = SocketService.instance;
   final ApiService _api = ApiService();
+  final taximetro = TaximetroService.instance;
 
   GoogleMapController? _mapCtrl;
   LatLng? _driverLocation;
@@ -36,19 +38,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   BitmapDescriptor? _iconDriver;
   BitmapDescriptor? _iconPassenger;
 
-  // Viaje entrante
   IncomingRide? _incomingRide;
-
-  // Recaudación del día
   double _todayTotal = 0.0;
-
-  // Estado UI
   bool _listening = false;
   bool _accepted = false;
   bool _loading = false;
   bool _isOnline = false; // conectado / desconectado para recibir viajes
 
   late AnimationController _islandPulse;
+  Timer? _taximetroTimer;
 
   @override
   void initState() {
@@ -60,9 +58,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     )..repeat(reverse: true);
 
     _initDriverHome();
+
+    _taximetroTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && taximetro.viajeActivo) setState(() {});
+    });
   }
 
-  /// Inicializa todo el flujo del panel de chofer
   Future<void> _initDriverHome() async {
     final isDriver = await _checkRoleAccess();
     if (!mounted || !isDriver) return;
@@ -72,7 +73,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     await _loadTodayTotal();
   }
 
-  /// Verifica que el usuario tenga id_rol = 3
+  @override
+  void dispose() {
+    _taximetroTimer?.cancel();
+    _mapCtrl?.dispose();
+    _islandPulse.dispose();
+    _socket.off('viaje_creado');
+    _socket.off('viaje_finalizado');
+    _socket.off('viaje_cancelado_busqueda');
+    super.dispose();
+  }
+
   Future<bool> _checkRoleAccess() async {
     try {
       final user = await UserPreferences.getUser();
@@ -98,16 +109,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
       return false;
     }
-  }
-
-  @override
-  void dispose() {
-    _mapCtrl?.dispose();
-    _islandPulse.dispose();
-    _socket.off('viaje_creado');
-    _socket.off('viaje_finalizado');
-    _socket.off('viaje_cancelado_busqueda');
-    super.dispose();
   }
 
   Future<void> _initIcons() async {
@@ -656,7 +657,57 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   myLocationEnabled: true,
                 ),
 
-                // Isla superior: recaudación del día
+                // if (taximetro.viajeActivo)
+                //   Positioned(
+                //     bottom: 100,
+                //     right: 16,
+                //     child: GestureDetector(
+                //       onTap: () async {
+                //         await Navigator.of(context).push(
+                //           MaterialPageRoute(
+                //             builder: (_) => const TaximetroScreen(),
+                //           ),
+                //         );
+                //         setState(() {});
+                //       },
+                //       child: AnimatedContainer(
+                //         duration: const Duration(milliseconds: 300),
+                //         padding: const EdgeInsets.symmetric(
+                //           vertical: 10,
+                //           horizontal: 16,
+                //         ),
+                //         decoration: BoxDecoration(
+                //           color: Colors.black87,
+                //           borderRadius: BorderRadius.circular(30),
+                //           boxShadow: const [
+                //             BoxShadow(
+                //               color: Colors.black26,
+                //               offset: Offset(0, 3),
+                //               blurRadius: 6,
+                //             ),
+                //           ],
+                //         ),
+                //         child: Row(
+                //           mainAxisSize: MainAxisSize.min,
+                //           children: [
+                //             const Icon(
+                //               Icons.local_taxi,
+                //               color: Colors.greenAccent,
+                //             ),
+                //             const SizedBox(width: 8),
+                //             Text(
+                //               '${taximetro.total.toStringAsFixed(0)}',
+                //               style: const TextStyle(
+                //                 color: Colors.white,
+                //                 fontSize: 18,
+                //                 fontWeight: FontWeight.bold,
+                //               ),
+                //             ),
+                //           ],
+                //         ),
+                //       ),
+                //     ),
+                //   ),
                 Positioned(
                   top: 16,
                   left: 16,
@@ -721,62 +772,60 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   child: Row(
                     children: [
                       Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: _isOnline ? _goOffline : _goOnline,
-                        icon: Icon(
-                        _isOnline
-                          ? Icons.wifi_off_rounded
-                          : Icons.wifi_rounded,
+                        child: ElevatedButton.icon(
+                          onPressed: _isOnline ? _goOffline : _goOnline,
+                          icon: Icon(
+                            _isOnline
+                                ? Icons.wifi_off_rounded
+                                : Icons.wifi_rounded,
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 14,
+                              horizontal: 16,
+                            ),
+                            backgroundColor: _isOnline
+                                ? Colors.redAccent
+                                : Colors.green,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30),
+                            ),
+                          ),
+                          label: Text(
+                            _isOnline
+                                ? 'Desconectarse (no recibir viajes)'
+                                : 'Conectarse (recibir viajes)',
+                            style: const TextStyle(fontSize: 16),
+                          ),
                         ),
-                        style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 14,
-                          horizontal: 16,
-                        ),
-                        backgroundColor: _isOnline
-                          ? Colors.redAccent
-                          : Colors.green,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                        ),
-                        label: Text(
-                        _isOnline
-                          ? 'Desconectarse (no recibir viajes)'
-                          : 'Conectarse (recibir viajes)',
-                        style: const TextStyle(fontSize: 16),
-                        ),
-                      ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () async {
-                        if (!mounted) return;
-                        await Navigator.of(context).push(
-                          MaterialPageRoute(
-                          builder: (_) => TaximetroScreen(),
+                        child: ElevatedButton.icon(
+                          onPressed: () async {
+                            if (!mounted) return;
+                            await Navigator.of(context).pushNamed(
+                              "/taximetro",
+                            );
+                          },
+                          icon: const Icon(Icons.attach_money),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 14,
+                              horizontal: 16,
+                            ),
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30),
+                            ),
                           ),
-                        );
-                        },
-                        icon: const Icon(Icons.attach_money),
-                        style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 14,
-                          horizontal: 16,
+                          label: const Text(
+                            'Viaje Rápido',
+                            style: TextStyle(fontSize: 16),
+                          ),
                         ),
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                        ),
-                        label: const Text(
-                        'Viaje Rápido',
-                        style: TextStyle(fontSize: 16),
-                        ),
-                      ),
                       ),
                     ],
                   ),

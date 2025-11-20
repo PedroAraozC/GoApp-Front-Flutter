@@ -3,9 +3,9 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:flutter/services.dart'; // Para tono del sistema
 import 'package:flutter/services.dart';
 import 'package:audioplayers/audioplayers.dart';
+import '../../../services/taximetro_service.dart';
 
 class TaximetroScreen extends StatefulWidget {
   const TaximetroScreen({super.key});
@@ -19,37 +19,64 @@ class _TaximetroScreenState extends State<TaximetroScreen> {
   static const double valorFicha = 90.0;
   static const double metrosPorFicha = 100.0;
 
-  bool modoPrueba = false;
-  bool viajeActivo = false;
-
-  double total = 0.0;
-  double distanciaTotal = 0.0;
-  double velocidadActual = 0.0;
-
-  Stopwatch cronometro = Stopwatch();
-  Timer? timer;
-  StreamSubscription<Position>? posicionSub;
-  Position? ultimaPosicion;
-
+  final service = TaximetroService.instance;
   final AudioPlayer _audioPlayer = AudioPlayer();
+  Timer? _timerPrueba;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Si el viaje sigue activo, reanudamos todo
+    if (service.viajeActivo) {
+      if (!service.cronometro.isRunning) {
+        service.cronometro.start();
+      }
+
+      service.timer?.cancel();
+      service.timer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() {});
+      });
+
+      // Reanudar seguimiento real
+      service.iniciarSeguimientoDistancia();
+
+      // Si estaba en modo prueba, reactivar también
+      if (service.modoPrueba) {
+        _timerPrueba = Timer.periodic(const Duration(seconds: 1), (t) {
+          if (!mounted) return;
+          if (!service.modoPrueba || !service.viajeActivo) {
+            t.cancel();
+            return;
+          }
+
+          service.distanciaTotal += Random().nextDouble() * 30;
+          service.velocidadActual = 20 + Random().nextDouble() * 40;
+          _calcularTarifa();
+          if (mounted) setState(() {});
+        });
+      }
+    }
+  }
 
   @override
   void dispose() {
-    posicionSub?.cancel();
-    timer?.cancel();
+    service.timer?.cancel();
+    _timerPrueba?.cancel();
     super.dispose();
   }
 
   Future<void> _iniciarViaje() async {
     setState(() {
-      viajeActivo = true;
-      total = bajadaDeBandera;
-      distanciaTotal = 0.0;
-      velocidadActual = 0.0;
+      service.viajeActivo = true;
+      service.total = bajadaDeBandera;
+      service.distanciaTotal = 0.0;
+      service.velocidadActual = 0.0;
     });
 
     bool servicioHabilitado = await Geolocator.isLocationServiceEnabled();
     if (!servicioHabilitado) {
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Por favor activá el GPS')));
@@ -62,43 +89,25 @@ class _TaximetroScreenState extends State<TaximetroScreen> {
       if (permiso == LocationPermission.denied) return;
     }
 
-    cronometro.reset();
-    cronometro.start();
+    service.cronometro.reset();
+    service.cronometro.start();
 
-    timer = Timer.periodic(const Duration(seconds: 1), (_) => setState(() {}));
+    service.timer?.cancel();
+    service.timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
 
-    posicionSub =
-        Geolocator.getPositionStream(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.best,
-            distanceFilter: 5,
-          ),
-        ).listen((posicion) {
-          if (ultimaPosicion != null && !modoPrueba) {
-            final distancia = Geolocator.distanceBetween(
-              ultimaPosicion!.latitude,
-              ultimaPosicion!.longitude,
-              posicion.latitude,
-              posicion.longitude,
-            );
-
-            distanciaTotal += distancia;
-            velocidadActual = posicion.speed * 3.6;
-            _calcularTarifa();
-          }
-          ultimaPosicion = posicion;
-          setState(() {});
-        });
+    service.iniciarSeguimientoDistancia();
   }
 
   void _detenerViaje() {
-    cronometro.stop();
-    posicionSub?.cancel();
-    timer?.cancel();
+    service.detenerSeguimiento();
 
-    final duracion = _formatearTiempo(cronometro.elapsed);
-    final distanciaKm = (distanciaTotal / 1000).toStringAsFixed(2);
-    final totalFinal = total.toStringAsFixed(0);
+    final duracion = _formatearTiempo(service.cronometro.elapsed);
+    final distanciaKm = (service.distanciaTotal / 1000).toStringAsFixed(2);
+    final totalFinal = service.total.toStringAsFixed(0);
+
+    if (!mounted) return;
 
     showDialog(
       context: context,
@@ -110,7 +119,6 @@ class _TaximetroScreenState extends State<TaximetroScreen> {
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const Icon(Icons.local_taxi, color: Colors.redAccent, size: 60),
               const SizedBox(height: 10),
@@ -121,15 +129,12 @@ class _TaximetroScreenState extends State<TaximetroScreen> {
                     color: Colors.greenAccent,
                     fontSize: 26,
                     fontWeight: FontWeight.bold,
-                    letterSpacing: 1.5,
                   ),
                 ),
               ),
               const SizedBox(height: 30),
               _datoFinal('⏱ Tiempo', duracion, Colors.white),
-              const SizedBox(height: 10),
               _datoFinal('📏 Distancia', '$distanciaKm km', Colors.white),
-              const SizedBox(height: 10),
               _datoFinal(
                 '💰 Total',
                 '\$$totalFinal',
@@ -139,32 +144,24 @@ class _TaximetroScreenState extends State<TaximetroScreen> {
               const SizedBox(height: 30),
               ElevatedButton.icon(
                 onPressed: () async {
-                  // Vibración del sistema
                   await HapticFeedback.mediumImpact();
-
-                  // Sonido de alerta
                   SystemSound.play(SystemSoundType.alert);
-
+                  if (!mounted) return;
                   Navigator.pop(context);
-
                   setState(() {
-                    viajeActivo = false;
-                    total = 0.0;
-                    distanciaTotal = 0.0;
-                    velocidadActual = 0.0;
-                    cronometro.reset();
+                    service.viajeActivo = false;
+                    service.total = 0.0;
+                    service.distanciaTotal = 0.0;
+                    service.velocidadActual = 0.0;
+                    service.cronometro.reset();
                   });
                 },
-
-                icon: const Icon(Icons.check_circle_outline, size: 26),
-                label: const Text('Aceptar', style: TextStyle(fontSize: 20)),
+                icon: const Icon(Icons.check_circle_outline),
+                label: const Text('Aceptar'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.greenAccent,
                   foregroundColor: Colors.black,
                   minimumSize: const Size(double.infinity, 55),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
                 ),
               ),
             ],
@@ -175,35 +172,39 @@ class _TaximetroScreenState extends State<TaximetroScreen> {
   }
 
   void _calcularTarifa() async {
-    final fichas = (distanciaTotal ~/ metrosPorFicha);
+    final fichas = (service.distanciaTotal ~/ metrosPorFicha);
     final nuevoTotal = bajadaDeBandera + (fichas * valorFicha);
 
-    if (nuevoTotal > total) {
-      // Sonido click real
+    if (nuevoTotal > service.total) {
       await _audioPlayer.play(AssetSource('sounds/click.mp3'));
-      // Vibración leve
       await HapticFeedback.lightImpact();
     }
 
+    if (!mounted) return;
     setState(() {
-      total = nuevoTotal;
+      service.total = nuevoTotal;
     });
   }
 
   void _toggleModoPrueba() {
-    setState(() => modoPrueba = !modoPrueba);
+    setState(() => service.modoPrueba = !service.modoPrueba);
 
-    if (modoPrueba) {
-      Timer.periodic(const Duration(seconds: 1), (t) {
-        if (!modoPrueba || !viajeActivo) {
+    if (service.modoPrueba) {
+      _timerPrueba?.cancel();
+      _timerPrueba = Timer.periodic(const Duration(seconds: 1), (t) {
+        if (!mounted) return;
+        if (!service.modoPrueba || !service.viajeActivo) {
           t.cancel();
           return;
         }
-        distanciaTotal += Random().nextDouble() * 30;
-        velocidadActual = 20 + Random().nextDouble() * 40;
+
+        service.distanciaTotal += Random().nextDouble() * 30;
+        service.velocidadActual = 20 + Random().nextDouble() * 40;
         _calcularTarifa();
-        setState(() {});
+        if (mounted) setState(() {});
       });
+    } else {
+      _timerPrueba?.cancel();
     }
   }
 
@@ -223,11 +224,7 @@ class _TaximetroScreenState extends State<TaximetroScreen> {
       children: [
         Text(
           label,
-          style: const TextStyle(
-            color: Colors.white70,
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-          ),
+          style: const TextStyle(color: Colors.white70, fontSize: 20),
         ),
         Text(
           valor,
@@ -243,51 +240,39 @@ class _TaximetroScreenState extends State<TaximetroScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final distanciaKm = distanciaTotal / 1000;
-    final tiempo = _formatearTiempo(cronometro.elapsed);
+    final tiempo = _formatearTiempo(service.cronometro.elapsed);
 
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
         child: Column(
           children: [
-            // 🔺 Encabezado fijo arriba
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Column(
-                children: [
-                  Text(
-                    'TAXÍMETRO',
-                    style: GoogleFonts.orbitron(
-                      textStyle: const TextStyle(
-                        color: Colors.redAccent,
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    modoPrueba ? '🧪 MODO PRUEBA ACTIVADO' : 'GPS ACTIVO',
-                    style: TextStyle(
-                      color: modoPrueba ? Colors.amber : Colors.greenAccent,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
+            const SizedBox(height: 10),
+            Text(
+              'TAXÍMETRO',
+              style: GoogleFonts.orbitron(
+                textStyle: const TextStyle(
+                  color: Colors.redAccent,
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
-
-            // 🔹 Contenido central (centrado verticalmente)
+            Text(
+              service.modoPrueba ? '🧪 MODO PRUEBA ACTIVADO' : 'GPS ACTIVO',
+              style: TextStyle(
+                color: service.modoPrueba ? Colors.amber : Colors.greenAccent,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
             Expanded(
               child: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Text(
-                      '${velocidadActual.toStringAsFixed(1)} km/h',
+                      '${service.velocidadActual.toStringAsFixed(1)} km/h',
                       style: GoogleFonts.orbitron(
                         textStyle: const TextStyle(
                           color: Colors.greenAccent,
@@ -297,7 +282,7 @@ class _TaximetroScreenState extends State<TaximetroScreen> {
                     ),
                     const SizedBox(height: 20),
                     Text(
-                      'Distancia: ${(distanciaTotal / 1000).toStringAsFixed(2)} km',
+                      'Distancia: ${(service.distanciaTotal / 1000).toStringAsFixed(2)} km',
                       style: GoogleFonts.orbitron(
                         textStyle: const TextStyle(
                           color: Colors.white,
@@ -307,7 +292,7 @@ class _TaximetroScreenState extends State<TaximetroScreen> {
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      'Tiempo: ${_formatearTiempo(cronometro.elapsed)}',
+                      'Tiempo: $tiempo',
                       style: GoogleFonts.orbitron(
                         textStyle: const TextStyle(
                           color: Colors.white,
@@ -316,28 +301,20 @@ class _TaximetroScreenState extends State<TaximetroScreen> {
                       ),
                     ),
                     const SizedBox(height: 40),
-                    TweenAnimationBuilder<double>(
-                      tween: Tween<double>(begin: 0, end: total),
-                      duration: const Duration(milliseconds: 500),
-                      builder: (context, value, child) {
-                        return Text(
-                          '\$${value.toStringAsFixed(0)}',
-                          style: GoogleFonts.orbitron(
-                            textStyle: const TextStyle(
-                              color: Colors.redAccent,
-                              fontSize: 80,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        );
-                      },
+                    Text(
+                      '\$${service.total.toStringAsFixed(0)}',
+                      style: GoogleFonts.orbitron(
+                        textStyle: const TextStyle(
+                          color: Colors.redAccent,
+                          fontSize: 80,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ),
             ),
-
-            // 🔻 Botones grandes abajo
             Row(
               children: [
                 Expanded(
@@ -345,7 +322,9 @@ class _TaximetroScreenState extends State<TaximetroScreen> {
                     onPressed: _toggleModoPrueba,
                     icon: const Icon(Icons.science_outlined, size: 30),
                     label: Text(
-                      modoPrueba ? 'Modo Prueba\nON' : 'Modo Prueba\nOFF',
+                      service.modoPrueba
+                          ? 'Modo Prueba\nON'
+                          : 'Modo Prueba\nOFF',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         fontSize: 18,
@@ -353,7 +332,7 @@ class _TaximetroScreenState extends State<TaximetroScreen> {
                       ),
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: modoPrueba
+                      backgroundColor: service.modoPrueba
                           ? Colors.amber
                           : Colors.blueGrey[800],
                       foregroundColor: Colors.white,
@@ -366,13 +345,17 @@ class _TaximetroScreenState extends State<TaximetroScreen> {
                 ),
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: viajeActivo ? _detenerViaje : _iniciarViaje,
+                    onPressed: service.viajeActivo
+                        ? _detenerViaje
+                        : _iniciarViaje,
                     icon: Icon(
-                      viajeActivo ? Icons.flag : Icons.play_arrow,
+                      service.viajeActivo ? Icons.flag : Icons.play_arrow,
                       size: 36,
                     ),
                     label: Text(
-                      viajeActivo ? 'FINALIZAR\nVIAJE' : 'INICIAR\nVIAJE',
+                      service.viajeActivo
+                          ? 'FINALIZAR\nVIAJE'
+                          : 'INICIAR\nVIAJE',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         fontSize: 18,
@@ -380,7 +363,7 @@ class _TaximetroScreenState extends State<TaximetroScreen> {
                       ),
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: viajeActivo
+                      backgroundColor: service.viajeActivo
                           ? Colors.greenAccent[700]
                           : Colors.redAccent[700],
                       foregroundColor: Colors.black,
