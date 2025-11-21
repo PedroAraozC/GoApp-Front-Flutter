@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:taxi_tuc/screens/perfil/pagos_screen.dart';
+import 'package:taxi_tuc/screens/home/driver/driver_home_screen.dart';
+import 'package:taxi_tuc/screens/home/home_screen.dart'; // 👈 import home pasajero
 import '../../services/user_preferences.dart';
-//import 'package:shared_preferences/shared_preferences.dart';
-import '../../screens/home/home_screen.dart';
 import '../../screens/auth/auth_screen.dart';
-import '../../screens/perfil/pagos_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -34,28 +32,61 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller.forward();
 
+    // ⏳ Después de la animación, verificamos sesión y rol
     Future.delayed(const Duration(seconds: 3), _checkAuthStatus);
   }
 
   Future<void> _checkAuthStatus() async {
-    final isLoggedIn = await UserPreferences.isLoggedIn();
+    try {
+      final isLoggedIn = await UserPreferences.isLoggedIn();
 
-    if (isLoggedIn) {
-      final user = await UserPreferences.getUser();
-      if (mounted) {
+      if (!isLoggedIn) {
+        // No hay sesión → ir al login
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const AuthScreen()),
+        );
+        return;
+      }
+
+      // Sí hay sesión → cargamos datos del usuario
+      final user = await UserPreferences.getUser(); // Map<String, dynamic>?
+      final dynamic rawRole = user?['id_rol'];
+      final int roleId = rawRole is String
+          ? int.tryParse(rawRole) ?? 0
+          : (rawRole is int ? rawRole : 0);
+
+      if (!mounted) return;
+
+      if (roleId == 3) {
+        // 👨‍✈️ Conductor
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const DriverHomeScreen()),
+        );
+      } else if (roleId == 2) {
+        // 🧑‍✈️ Pasajero
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => HomeScreen(user: user ?? {})),
         );
-      }
-    } else {
-      if (mounted) {
+      } else {
+        // Rol desconocido → por seguridad al login
         Navigator.pushReplacement(
           context,
-          // MaterialPageRoute(builder: (_) => const AuthScreen()),
-          MaterialPageRoute(builder: (_) => const PagosScreen()),
+          MaterialPageRoute(builder: (_) => const AuthScreen()),
+          // MaterialPageRoute(builder: (_) => const PagosScreen()),
         );
       }
+    } catch (e) {
+      debugPrint('Error en _checkAuthStatus: $e');
+      if (!mounted) return;
+      // Si algo falla, mandamos al login
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const AuthScreen()),
+      );
     }
   }
 

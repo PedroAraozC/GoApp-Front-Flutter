@@ -1,9 +1,10 @@
 // lib/screens/home/home_screen.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:google_sign_in/google_sign_in.dart';
+// <- ya casi no se usa, puedes quitarlo si quieres
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:taxi_tuc/screens/perfil/viajes_screen.dart';
+
 import '../../services/socket_service.dart';
 import '../../screens/auth/auth_screen.dart';
 import '../../screens/perfil/perfil_screen.dart';
@@ -35,10 +36,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _connectSocket() async {
     try {
-      _socket.connect();
+      await _socket.connect();
       debugPrint('🔌 Conectando socket desde HomeScreen...');
 
       Future.delayed(const Duration(seconds: 1), () async {
+        // Podrías usar también UserPreferences.getUser()
         final prefs = await SharedPreferences.getInstance();
         final idUsuario =
             prefs.getInt('id_usuario') ?? widget.user['id_usuario'];
@@ -88,7 +90,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
-    // 🔸 No desconectamos aquí para mantener la conexión global viva
+    // No desconectamos el socket aquí para mantenerlo global si lo usas en más pantallas
     super.dispose();
   }
 
@@ -143,63 +145,123 @@ class _HomeScreenState extends State<HomeScreen> {
       return false;
     }
 
-    if (isEmptyVal(u['dni'])) return true;
-    if (isEmptyVal(u['fecha_nacimiento'])) return true;
-    int? g = u['id_genero'] is int
+    // DNI puede venir con diferentes claves
+    if (isEmptyVal(u['dni'] ?? u['dni_usuario'])) return true;
+
+    // Fecha
+    if (isEmptyVal(u['fecha_nacimiento'] ?? u['fechaNacimiento'])) return true;
+
+    // Género
+    int? genero = u['id_genero'] is int
         ? u['id_genero']
         : int.tryParse('${u['id_genero'] ?? ''}');
-    if (g == null || g == 0) return true;
-    if (isEmptyVal(u['telefono'])) return true;
-    if (isEmptyVal(u['email'])) return true;
+    if (genero == null || genero == 0) return true;
+
+    // Teléfono – considerar ambas claves
+    if (isEmptyVal(u['telefono'] ?? u['telefono_usuario'])) return true;
+
+    // Email – considerar ambas claves
+    if (isEmptyVal(u['email'] ?? u['email_usuario'])) return true;
+
     return false;
   }
 
   Future<void> _checkUserProfileAndNavigate(BuildContext context) async {
     final api = ApiService();
-    final local = _normalizeUser(widget.user);
-    final id = local['id_usuario'];
 
-    debugPrint('👤 Verificando perfil del usuario...');
+    // 1) Normalizamos lo que vino por parámetro en HomeScreen
+    final localNormalized = _normalizeUser(widget.user);
+    debugPrint('👤 [Home] user recibido (normalizado): $localNormalized');
 
+    int? id = localNormalized['id_usuario'] is int
+        ? localNormalized['id_usuario'] as int
+        : int.tryParse('${localNormalized['id_usuario'] ?? ''}');
+
+    // 2) Si no hay id_usuario en widget.user, intentamos sacar de SharedPreferences
     if (id == null) {
-      if (_needsProfileCompletion(local)) {
-        await _openCompletarDatos(local, api);
-        return;
+      final prefs = await SharedPreferences.getInstance();
+      final idPrefs = prefs.getInt('id_usuario');
+      if (idPrefs != null) {
+        id = idPrefs;
+        debugPrint(
+          '📥 [Home] id_usuario tomado de SharedPreferences: $idPrefs',
+        );
       }
-      if (mounted) {
+    }
+
+    // 3) Si aun así no tenemos id → solo podemos trabajar con lo local
+    if (id == null) {
+      debugPrint('⚠️ [Home] No hay id_usuario. Uso solo datos locales.');
+      if (_needsProfileCompletion(localNormalized)) {
+        debugPrint('📌 [Home] Perfil incompleto (sin id). Abriendo modal...');
+        await _openCompletarDatos(localNormalized, api);
+        return;
+      } else {
+        debugPrint(
+          '✅ [Home] Perfil OK (sin id pero con datos). Navegando a IniciarViaje...',
+        );
+        if (!mounted) return;
         Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const IniciarViajeScreen()),
         );
+        return;
       }
-      return;
     }
 
-    final fresh = await api.obtenerUsuarioPorId(id);
-    final userFresh = _normalizeUser({...local, ...?fresh});
+    // 4) Ya tenemos id_usuario → traemos SIEMPRE lo más fresco del backend
+    debugPrint(
+      '🔄 [Home] Obteniendo usuario fresco del backend para id=$id...',
+    );
+    final freshFromApi = await api.obtenerUsuarioPorId(id);
+
+    debugPrint('📡 [Home] Respuesta obtenerUsuarioPorId: $freshFromApi');
+
+    // Mezclamos: primero local, luego lo del backend (lo del backend pisa a local)
+    final merged = {...localNormalized, ...?freshFromApi};
+    final userFresh = _normalizeUser(merged);
+
+    debugPrint('✨ [Home] userFresh (normalizado tras merge): $userFresh');
+
+    // Guardamos lo más actualizado en UserPreferences
     await UserPreferences.saveUser(userFresh);
 
+    // 5) Verificamos si necesita completar perfil
     if (_needsProfileCompletion(userFresh)) {
+      debugPrint('📌 [Home] Perfil incompleto. Abriendo CompletarDatos...');
       final updated = await _openCompletarDatos(userFresh, api);
-      if (updated == true && mounted) {
+
+      // Si el usuario guardó, volvemos a pedir al backend para asegurarnos
+      if (updated == true) {
+        debugPrint(
+          '✅ [Home] Usuario guardó datos en modal. Re-cargando desde backend...',
+        );
         final fresh2 = await api.obtenerUsuarioPorId(id);
-        final userFresh2 = _normalizeUser({...?fresh2, ...userFresh});
+        debugPrint('📡 [Home] obtenerUsuarioPorId (post-guardar): $fresh2');
+
+        final merged2 = {...userFresh, ...?fresh2};
+        final userFresh2 = _normalizeUser(merged2);
+
         await UserPreferences.saveUser(userFresh2);
+        debugPrint('✨ [Home] userFresh2 final: $userFresh2');
+
         if (!mounted) return;
         Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const IniciarViajeScreen()),
         );
       }
+      // Si canceló, simplemente no hacemos nada más
       return;
     }
 
-    if (mounted) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const IniciarViajeScreen()),
-      );
-    }
+    // 6) Perfil ya está completo → vamos directo a iniciar viaje
+    debugPrint('✅ [Home] Perfil completo. Navegando a IniciarViajeScreen...');
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const IniciarViajeScreen()),
+    );
   }
 
   Future<bool?> _openCompletarDatos(Map<String, dynamic> user, ApiService api) {
@@ -211,21 +273,16 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // 🔹 LOGOUT usando UserPreferences.fullLogout()
   Future<void> _logout(BuildContext context) async {
-    try {
-      await UserPreferences.clearUser();
-      final g = GoogleSignIn(scopes: ['email', 'profile']);
-      await g.signOut();
-      await g.disconnect();
-      _socket.disconnect();
-    } catch (_) {}
-    if (context.mounted) {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const AuthScreen()),
-        (_) => false,
-      );
-    }
+    await UserPreferences.fullLogout();
+
+    if (!context.mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const AuthScreen()),
+      (_) => false,
+    );
   }
 
   ImageProvider getUserImage(
@@ -238,11 +295,10 @@ class _HomeScreenState extends State<HomeScreen> {
     if (foto != null && foto.toString().isNotEmpty) {
       return NetworkImage(foto);
     } else {
-      // Cambia la imagen según el modo
       return AssetImage(
         brightness == Brightness.dark
-            ? 'assets/images/user_default.png' // fondo blanco
-            : 'assets/images/user_default_blanco.png', // fondo oscuro
+            ? 'assets/images/user_default.png'
+            : 'assets/images/user_default_blanco.png',
       );
     }
   }
@@ -345,13 +401,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   const Padding(padding: EdgeInsets.only(right: 8)),
                   Container(
-                    padding: const EdgeInsets.all(2), // Espacio para el borde
+                    padding: const EdgeInsets.all(2),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? const Color(0xFFFFCC00)
-                            : const Color(0xFFFFCC00),
+                        color: const Color(0xFFFFCC00),
                         width: 1.5,
                       ),
                     ),
@@ -359,9 +413,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       radius: 18,
                       backgroundColor:
                           Theme.of(context).brightness == Brightness.dark
-                          ? Colors
-                                .white // fondo blanco en modo oscuro
-                          : Colors.black, // fondo negro en modo claro
+                          ? Colors.white
+                          : Colors.black,
                       backgroundImage: getUserImage(context, user),
                     ),
                   ),

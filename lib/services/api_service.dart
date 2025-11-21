@@ -35,14 +35,40 @@ class ApiService {
       );
 
       if (response.statusCode == 200) {
-        print('✅ Usuario actualizado correctamente');
+        debugPrint('✅ Usuario actualizado correctamente');
         return true;
       } else {
-        print('⚠️ Error al actualizar usuario: ${response.body}');
+        debugPrint('⚠️ Error al actualizar usuario: ${response.body}');
         return false;
       }
     } catch (e) {
-      print('❌ Error en actualizarUsuario(): $e');
+      debugPrint('❌ Error en actualizarUsuario(): $e');
+      return false;
+    }
+  }
+
+  // ==============================
+  // 🔹 Marcar viaje como "en curso" (chofer llegó al pasajero)
+  // ==============================
+  Future<bool> comenzarViaje(int idViaje) async {
+    try {
+      final url = Uri.parse('$baseUrl/viajes/$idViaje/comenzar');
+      debugPrint('PUT $url');
+
+      final resp = await http.put(url);
+
+      if (resp.statusCode == 200) {
+        debugPrint('✅ Viaje $idViaje marcado como EN CURSO');
+        return true;
+      } else {
+        debugPrint(
+          '⚠️ Error comenzarViaje($idViaje): '
+          '${resp.statusCode} → ${resp.body}',
+        );
+        return false;
+      }
+    } catch (e) {
+      debugPrint('❌ Error en comenzarViaje(): $e');
       return false;
     }
   }
@@ -56,13 +82,41 @@ class ApiService {
       final response = await http.get(url);
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data['result'];
+        final decoded = jsonDecode(response.body);
+        final result = decoded['result'];
+
+        debugPrint('📡 obtenerUsuarioPorId($idUsuario) → result: $result');
+
+        // Puede venir como LISTA [ { ... } ]
+        if (result is List) {
+          if (result.isEmpty) {
+            debugPrint('⚠️ result es una lista vacía');
+            return null;
+          }
+          if (result.first is Map<String, dynamic>) {
+            return Map<String, dynamic>.from(result.first);
+          }
+          // Si el primer elemento no es Map, lo intentamos castear igual
+          return Map<String, dynamic>.from(
+            Map<String, dynamic>.from(result.first as Map),
+          );
+        }
+
+        // O puede venir como OBJETO { ... }
+        if (result is Map) {
+          return Map<String, dynamic>.from(result);
+        }
+
+        debugPrint('⚠️ Formato inesperado en result: ${result.runtimeType}');
+        return null;
       }
-      print('⚠️ Error al obtener usuario: ${response.body}');
+
+      debugPrint(
+        '⚠️ Error HTTP ${response.statusCode} al obtener usuario: ${response.body}',
+      );
       return null;
     } catch (e) {
-      print('❌ Error en obtenerUsuarioPorId(): $e');
+      debugPrint('❌ Error en obtenerUsuarioPorId(): $e');
       return null;
     }
   }
@@ -81,7 +135,10 @@ class ApiService {
     double? precioEstimado,
   }) async {
     try {
-      final url = Uri.parse('$baseUrl/viajes/iniciar');
+      // 🔧 RUTA CORRECTA
+      final url = Uri.parse('$baseUrl/viajes/iniciarViaje');
+      debugPrint('🌐 POST $baseUrl/viajes/iniciarViaje');
+
       final body = jsonEncode({
         'id_usuario': idUsuario,
         'origen_lat': origenLat,
@@ -99,16 +156,19 @@ class ApiService {
         body: body,
       );
 
+      debugPrint('📥 Status iniciarViaje: ${response.statusCode}');
+      debugPrint('📥 Body: ${response.body}');
+
       if (response.statusCode == 201) {
         final data = jsonDecode(response.body);
-        print('🆕 Viaje iniciado correctamente');
+        debugPrint('🆕 Viaje iniciado correctamente');
         return data['result'];
       } else {
-        print('⚠️ Error al iniciar viaje: ${response.body}');
+        debugPrint('⚠️ Error al iniciar viaje: ${response.body}');
         return null;
       }
     } catch (e) {
-      print('❌ Error en iniciarViaje(): $e');
+      debugPrint('❌ Error en iniciarViaje(): $e');
       return null;
     }
   }
@@ -149,14 +209,89 @@ class ApiService {
       );
 
       if (response.statusCode == 200) {
-        print('🏁 Viaje finalizado correctamente');
+        debugPrint('🏁 Viaje finalizado correctamente');
         return true;
       } else {
-        print('⚠️ Error al finalizar viaje: ${response.body}');
+        debugPrint('⚠️ Error al finalizar viaje: ${response.body}');
         return false;
       }
     } catch (e) {
-      print('❌ Error en finalizarViaje(): $e');
+      debugPrint('❌ Error en finalizarViaje(): $e');
+      return false;
+    }
+  }
+
+  // ==============================
+  // 🔹 Recaudación de hoy
+  // ==============================
+  Future<double?> getTodayEarnings() async {
+    final url = Uri.parse('$baseUrl/recaudacion/today');
+    final resp = await http.get(url);
+    if (resp.statusCode == 200) {
+      final data = json.decode(resp.body);
+      return (data['total'] as num).toDouble();
+    }
+    return 0.0;
+  }
+
+  Future<void> addEarning(double amount) async {
+    final url = Uri.parse('$baseUrl/recaudacion/add');
+    await http.post(
+      url,
+      body: json.encode({'amount': amount}),
+      headers: {'Content-Type': 'application/json'},
+    );
+  }
+
+  // ==============================
+  // 🔹 Aceptar viaje (chofer)
+  // ==============================
+  Future<bool> acceptRide(int idViaje, int idConductor) async {
+    final url = Uri.parse('$baseUrl/viajes/$idViaje/aceptar');
+    final resp = await http.put(
+      url,
+      body: json.encode({'id_usuario': idConductor}),
+      headers: {'Content-Type': 'application/json'},
+    );
+    return resp.statusCode == 200;
+  }
+
+  // ==============================
+  // 🔹 Cambiar estado del conductor
+  // ==============================
+  Future<bool> cambiarEstadoConductor({
+    required int idConductor,
+    required bool conectado,
+  }) async {
+    try {
+      final url = Uri.parse('$baseUrl/conductores/cambiarEstado');
+      debugPrint('🔁 Llamando a $url');
+
+      final body = json.encode({
+        'id_usuario': idConductor, // 👈 nombre que usa tu back
+        'conectado': conectado ? 1 : 0, // 1 = conectado, 0 = desconectado
+      });
+
+      final response = await http.put(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: body,
+      );
+
+      if (response.statusCode == 200) {
+        debugPrint(
+          '✅ Estado de conductor actualizado a ${conectado ? "conectado" : "desconectado"}',
+        );
+        return true;
+      } else {
+        debugPrint(
+          '⚠️ Error al cambiar estado del conductor: '
+          '${response.statusCode} → ${response.body}',
+        );
+        return false;
+      }
+    } catch (e) {
+      debugPrint('❌ Excepción en cambiarEstadoConductor(): $e');
       return false;
     }
   }
