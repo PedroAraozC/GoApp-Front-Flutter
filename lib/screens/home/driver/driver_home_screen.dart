@@ -10,6 +10,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
+import 'package:taxi_tuc/screens/carnet_conductor/carnet_digital_screen.dart';
 
 import '../../../services/socket_service.dart';
 import '../../../services/api_service.dart';
@@ -17,6 +18,7 @@ import '../../../services/user_preferences.dart';
 import '../../../services/taximetro_service.dart';
 import 'driver_en_camino_screen.dart';
 import './driver_taximetro_screen.dart';
+import '';
 
 class DriverHomeScreen extends StatefulWidget {
   const DriverHomeScreen({super.key});
@@ -631,6 +633,48 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            const DrawerHeader(
+              decoration: BoxDecoration(color: Colors.black87),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Icon(Icons.local_taxi, color: Colors.amber, size: 48),
+                  SizedBox(height: 10),
+                  Text(
+                    'Menú Conductor',
+                    style: TextStyle(color: Colors.white, fontSize: 24),
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.badge),
+              title: const Text('Mi Carnet Digital'),
+              onTap: () {
+                Navigator.pop(context); // Cierra el drawer
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const CarnetDigitalScreen()),
+                );
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.settings),
+              title: const Text('Configuración'),
+              onTap: () {
+                Navigator.pop(context);
+                // TODO: Navegar a configuración
+              },
+            ),
+          ],
+        ),
+      ),
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
         title: const Text('Panel Chofer'),
