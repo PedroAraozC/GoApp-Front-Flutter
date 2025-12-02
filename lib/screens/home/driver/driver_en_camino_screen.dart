@@ -11,7 +11,7 @@ import 'package:taxi_tuc/screens/home/driver/driver_viaje_en_curso_screen.dart';
 import 'package:taxi_tuc/services/socket_service.dart';
 
 import '../../../services/api_service.dart';
-import 'driver_home_screen.dart'; // Para usar IncomingRide
+import 'driver_map_screen.dart'; // Para usar IncomingRide
 
 class DriverEnCaminoScreen extends StatefulWidget {
   final IncomingRide ride; // viaje aceptado

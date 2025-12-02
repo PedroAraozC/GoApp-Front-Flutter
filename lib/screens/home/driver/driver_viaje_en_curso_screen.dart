@@ -8,7 +8,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 
 import '../../../services/api_service.dart';
-import 'driver_home_screen.dart'; // Para usar IncomingRide
+import 'driver_map_screen.dart'; // Para usar IncomingRide
 
 class DriverViajeEnCursoScreen extends StatefulWidget {
   final IncomingRide ride;

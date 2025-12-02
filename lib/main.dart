@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:taxi_tuc/screens/home/driver/driver_home_screen.dart';
 
 import 'screens/splash/splash_screen.dart';
 import 'screens/auth/auth_screen.dart';
 import 'screens/home/home_screen.dart'; // Home pasajero
-import 'screens/home/driver/driver_home_screen.dart'; // Panel chofer
+import 'screens/home/driver/driver_map_screen.dart'; // Panel chofer
 import 'services/user_preferences.dart'; // 👈 para leer el usuario guardado
 import 'screens/home/widgets/taximetro_overlay.dart'; // 👈 overlay global del taxímetro
 import './screens/home/driver/driver_taximetro_screen.dart';
@@ -60,6 +61,7 @@ class GoApp extends StatelessWidget {
         );
       },
       initialRoute: '/splash',
+      
       routes: {
         '/splash': (_) => const SplashScreen(),
         '/auth': (_) => const AuthScreen(),
