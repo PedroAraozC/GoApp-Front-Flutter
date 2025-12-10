@@ -61,7 +61,6 @@ class GoApp extends StatelessWidget {
         );
       },
       initialRoute: '/splash',
-      
       routes: {
         '/splash': (_) => const SplashScreen(),
         '/auth': (_) => const AuthScreen(),

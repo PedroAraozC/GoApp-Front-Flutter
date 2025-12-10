@@ -1,4 +1,5 @@
 // lib/screens/.../buscando_viaje_screen.dart
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/socket_service.dart';
@@ -53,14 +54,7 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
     // 🚕 Evento: viaje asignado
     _socket.on('viaje_asignado', (data) {
       debugPrint('🚕 Evento: viaje_asignado -> $data');
-      final latDesde = double.tryParse(
-        (data['lat_desde'] ?? data['latDesde']).toString(),
-      );
-
-      final lonDesde = double.tryParse(
-        (data['lon_desde'] ?? data['lonDesde']).toString(),
-      );
-
+      
       try {
         // 1) Validar que el viaje que llega por socket sea el mismo que este screen
         final rawId =
@@ -184,6 +178,32 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
         debugPrint('❌ Error procesando viaje_cancelado: $e');
       }
     });
+
+    // 🔄 Evento: viaje vuelve a buscar conductor (cancelado por conductor)
+    _socket.on('viaje_buscando_conductor', (data) {
+      debugPrint('🔄 Evento: viaje_buscando_conductor -> $data');
+      
+      try {
+        final rawId = data?['id_viajes'] ?? data?['id_viaje'] ?? data?['id'];
+        if (rawId == null) return;
+
+        final idSocket = rawId is num
+            ? rawId.toInt()
+            : int.tryParse(rawId.toString());
+
+        if (idSocket == null || idSocket != widget.idViaje) return;
+
+        if (mounted) {
+          setState(() {
+            _viajeAsignado = false;
+            _viajeEnCurso = false;
+          });
+        }
+        _mostrarSnack('El conductor canceló. Buscando otro conductor...');
+      } catch (e) {
+        debugPrint('❌ Error procesando viaje_buscando_conductor: $e');
+      }
+    });
   }
 
   Future<void> _cancelarViaje() async {
@@ -191,15 +211,60 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
     setState(() => _cancelando = true);
 
     try {
-      // 1) Cancelar en el backend
-      await _api.cancelarViaje(widget.idViaje);
-      _mostrarSnack('Cancelando viaje...');
+      final prefs = await SharedPreferences.getInstance();
+      
+      // Intentar obtener id_usuario de múltiples fuentes
+      int? idUsuario = prefs.getInt('id_usuario');
+      
+      // Si no está en SharedPreferences, intentar desde user_data
+      if (idUsuario == null) {
+        final userData = prefs.getString('user_data');
+        if (userData != null) {
+          try {
+            final user = jsonDecode(userData) as Map<String, dynamic>;
+            final rawId = user['id_usuario'];
+            if (rawId != null) {
+              idUsuario = rawId is int 
+                  ? rawId 
+                  : int.tryParse(rawId.toString());
+              // Guardar en SharedPreferences para futuras referencias
+              if (idUsuario != null) {
+                await prefs.setInt('id_usuario', idUsuario);
+              }
+            }
+          } catch (e) {
+            debugPrint('❌ Error parseando user_data: $e');
+          }
+        }
+      }
+      
+      if (idUsuario == null) {
+        debugPrint('❌ No se pudo obtener id_usuario de ninguna fuente');
+        _mostrarSnack('Error: No se encontró el ID de usuario. Por favor, cierra sesión y vuelve a iniciar.');
+        if (mounted) setState(() => _cancelando = false);
+        return;
+      }
 
-      // 2) El controlador cancelarViaje ya emite "viaje_cancelado"
-      //    y el listener de arriba se encarga de navegar al home.
+      debugPrint('✅ ID usuario obtenido para cancelar: $idUsuario');
+
+      // 1) Cancelar en el backend con tipo "pasajero"
+      final ok = await _api.cancelarViaje(
+        idViaje: widget.idViaje,
+        idUsuario: idUsuario,
+        tipo: 'pasajero',
+      );
+      
+      if (ok) {
+        _mostrarSnack('Cancelando viaje...');
+        // 2) El controlador cancelarViaje ya emite "viaje_cancelado"
+        //    y el listener de arriba se encarga de navegar al home.
+      } else {
+        _mostrarSnack('Error al cancelar el viaje');
+        if (mounted) setState(() => _cancelando = false);
+      }
     } catch (e) {
       debugPrint('❌ Error al cancelar viaje: $e');
-      _mostrarSnack('Error al cancelar el viaje');
+      _mostrarSnack('Error al cancelar el viaje: $e');
       if (mounted) setState(() => _cancelando = false);
     }
   }
@@ -222,6 +287,7 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
     _socket.off('viaje_en_curso');
     _socket.off('viaje_finalizado');
     _socket.off('viaje_cancelado');
+    _socket.off('viaje_buscando_conductor');
     super.dispose();
   }
 

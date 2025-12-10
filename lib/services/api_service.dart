@@ -47,31 +47,6 @@ class ApiService {
     }
   }
 
-  // ==============================
-  // 🔹 Marcar viaje como "en curso" (chofer llegó al pasajero)
-  // ==============================
-  Future<bool> comenzarViaje(int idViaje) async {
-    try {
-      final url = Uri.parse('$baseUrl/viajes/$idViaje/comenzar');
-      debugPrint('PUT $url');
-
-      final resp = await http.put(url);
-
-      if (resp.statusCode == 200) {
-        debugPrint('✅ Viaje $idViaje marcado como EN CURSO');
-        return true;
-      } else {
-        debugPrint(
-          '⚠️ Error comenzarViaje($idViaje): '
-          '${resp.statusCode} → ${resp.body}',
-        );
-        return false;
-      }
-    } catch (e) {
-      debugPrint('❌ Error en comenzarViaje(): $e');
-      return false;
-    }
-  }
 
   // ==============================
   // 🔹 Obtener datos del usuario por ID
@@ -173,53 +148,6 @@ class ApiService {
     }
   }
 
-  // ==============================
-  // 🔹 Cancelar viaje
-  // ==============================
-  Future<void> cancelarViaje(int idViaje) async {
-    final url = Uri.parse('$baseUrl/viajes/$idViaje/cancelar');
-    final response = await http.put(url);
-
-    if (response.statusCode != 200) {
-      throw Exception('Error al cancelar viaje: ${response.body}');
-    }
-  }
-
-  // ==============================
-  // 🔹 Finalizar viaje
-  // ==============================
-  Future<bool> finalizarViaje({
-    required int idViaje,
-    double? precioFinal,
-    double? distanciaKm,
-    double? duracionMin,
-  }) async {
-    try {
-      final url = Uri.parse('$baseUrl/viajes/$idViaje/finalizar');
-      final body = jsonEncode({
-        'precio_final': precioFinal,
-        'distancia_km': distanciaKm,
-        'duracion_min': duracionMin,
-      });
-
-      final response = await http.put(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: body,
-      );
-
-      if (response.statusCode == 200) {
-        debugPrint('🏁 Viaje finalizado correctamente');
-        return true;
-      } else {
-        debugPrint('⚠️ Error al finalizar viaje: ${response.body}');
-        return false;
-      }
-    } catch (e) {
-      debugPrint('❌ Error en finalizarViaje(): $e');
-      return false;
-    }
-  }
 
   // ==============================
   // 🔹 Recaudación de hoy
@@ -250,10 +178,171 @@ class ApiService {
     final url = Uri.parse('$baseUrl/viajes/$idViaje/aceptar');
     final resp = await http.put(
       url,
-      body: json.encode({'id_usuario': idConductor}),
+      body: json.encode({'id_conductor': idConductor}),
       headers: {'Content-Type': 'application/json'},
     );
     return resp.statusCode == 200;
+  }
+
+  // ==============================
+  // 🔹 Rechazar viaje (chofer)
+  // ==============================
+  Future<bool> rechazarViaje(int idViaje, int idConductor) async {
+    try {
+      final url = Uri.parse('$baseUrl/viajes/$idViaje/rechazar');
+      final resp = await http.put(
+        url,
+        body: json.encode({'id_conductor': idConductor}),
+        headers: {'Content-Type': 'application/json'},
+      );
+      return resp.statusCode == 200;
+    } catch (e) {
+      debugPrint('❌ Error en rechazarViaje(): $e');
+      return false;
+    }
+  }
+
+  // ==============================
+  // 🔹 Actualizar ubicación en tiempo real
+  // ==============================
+  Future<bool> actualizarUbicacion({
+    required int idViaje,
+    required double lat,
+    required double lng,
+    required int idUsuario,
+    required String tipo, // "conductor" o "pasajero"
+  }) async {
+    try {
+      final url = Uri.parse('$baseUrl/viajes/$idViaje/actualizarUbicacion');
+      final resp = await http.put(
+        url,
+        body: json.encode({
+          'lat': lat,
+          'lng': lng,
+          'id_usuario': idUsuario,
+          'tipo': tipo,
+        }),
+        headers: {'Content-Type': 'application/json'},
+      );
+      return resp.statusCode == 200;
+    } catch (e) {
+      debugPrint('❌ Error en actualizarUbicacion(): $e');
+      return false;
+    }
+  }
+
+  // ==============================
+  // 🔹 Conductor llegó al punto de encuentro
+  // ==============================
+  Future<bool> llegarEncuentro({
+    required int idViaje,
+    required int idConductor,
+  }) async {
+    try {
+      final url = Uri.parse('$baseUrl/viajes/$idViaje/llegarEncuentro');
+      final resp = await http.put(
+        url,
+        body: json.encode({'id_conductor': idConductor}),
+        headers: {'Content-Type': 'application/json'},
+      );
+      return resp.statusCode == 200;
+    } catch (e) {
+      debugPrint('❌ Error en llegarEncuentro(): $e');
+      return false;
+    }
+  }
+
+  // ==============================
+  // 🔹 Comenzar viaje (actualizado para requerir id_conductor)
+  // ==============================
+  Future<bool> comenzarViaje(int idViaje, int idConductor) async {
+    try {
+      final url = Uri.parse('$baseUrl/viajes/$idViaje/comenzar');
+      debugPrint('PUT $url');
+
+      final resp = await http.put(
+        url,
+        body: json.encode({'id_conductor': idConductor}),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (resp.statusCode == 200) {
+        debugPrint('✅ Viaje $idViaje marcado como EN CURSO');
+        return true;
+      } else {
+        debugPrint(
+          '⚠️ Error comenzarViaje($idViaje): '
+          '${resp.statusCode} → ${resp.body}',
+        );
+        return false;
+      }
+    } catch (e) {
+      debugPrint('❌ Error en comenzarViaje(): $e');
+      return false;
+    }
+  }
+
+  // ==============================
+  // 🔹 Finalizar viaje (actualizado para requerir id_conductor)
+  // ==============================
+  Future<bool> finalizarViaje({
+    required int idViaje,
+    required int idConductor,
+    double? precioFinal,
+    double? distanciaKm,
+    double? duracionMin,
+  }) async {
+    try {
+      final url = Uri.parse('$baseUrl/viajes/$idViaje/finalizar');
+      final body = jsonEncode({
+        'id_conductor': idConductor,
+        'precio_final': precioFinal,
+        'distancia_km': distanciaKm,
+        'duracion_min': duracionMin,
+      });
+
+      final response = await http.put(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: body,
+      );
+
+      if (response.statusCode == 200) {
+        debugPrint('🏁 Viaje finalizado correctamente');
+        return true;
+      } else {
+        debugPrint('⚠️ Error al finalizar viaje: ${response.body}');
+        return false;
+      }
+    } catch (e) {
+      debugPrint('❌ Error en finalizarViaje(): $e');
+      return false;
+    }
+  }
+
+  // ==============================
+  // 🔹 Cancelar viaje (actualizado para requerir tipo)
+  // ==============================
+  Future<bool> cancelarViaje({
+    required int idViaje,
+    required int idUsuario,
+    required String tipo, // "pasajero" o "conductor"
+  }) async {
+    try {
+      final url = Uri.parse('$baseUrl/viajes/$idViaje/cancelar');
+      final resp = await http.put(
+        url,
+        body: json.encode({
+          'id_usuario': idUsuario,
+          'tipo': tipo,
+        }),
+        headers: {'Content-Type': 'application/json'},
+      );
+      return resp.statusCode == 200;
+    } catch (e) {
+      debugPrint('❌ Error en cancelarViaje(): $e');
+      return false;
+    }
   }
 
   // ==============================

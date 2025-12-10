@@ -44,8 +44,8 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
 
-  final bool _viajeCancelado = false;
-  final bool _cancelando = false;
+  bool _viajeCancelado = false;
+  bool _cancelando = false;
 
   @override
   void initState() {
@@ -72,11 +72,21 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
     }
 
     await _socket.emitirConexionUsuario(idUsuario, 'pasajero');
+    
+    // Unirse al room del viaje para recibir actualizaciones
+    await _socket.unirseAViaje(
+      idViaje: widget.idViaje,
+      userId: idUsuario,
+      tipo: 'pasajero',
+    );
 
-    // 🔊 UBICACIÓN DEL CONDUCTOR
-    _socket.on('ubicacion_conductor', (data) async {
-      print("📍 LLEGA UBICACIÓN → $data");
+    // 🔊 UBICACIÓN DEL CONDUCTOR (nuevo sistema)
+    _socket.onUbicacionEnTiempoReal((data) async {
+      debugPrint("📍 LLEGA UBICACIÓN EN TIEMPO REAL → $data");
       try {
+        // Solo procesar si es del conductor
+        if (data['tipo'] != 'conductor') return;
+        
         final lat = double.tryParse(data["lat"].toString());
         final lng = double.tryParse(data["lng"].toString());
         if (lat == null || lng == null) return;
@@ -85,9 +95,85 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
 
         _actualizarMarkers();
         await _drawRoute(); // 👈 siempre actualizar ruta
-        _moverCamara(_posConductor!);
+        if (_posConductor != null) {
+          _moverCamara(_posConductor!);
+        }
       } catch (e) {
         debugPrint("❌ Error procesando ubicación del conductor: $e");
+      }
+    });
+
+    // 🔊 CONDUCTOR LLEGÓ AL ENCUENTRO
+    _socket.onConductorLlegoEncuentro((data) {
+      debugPrint("🚕 Conductor llegó al punto de encuentro → $data");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🚕 El conductor llegó al punto de encuentro'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    });
+
+    // ▶️ VIAJE EN CURSO
+    _socket.onViajeEnCurso((data) {
+      debugPrint("▶️ Viaje en curso → $data");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('▶️ El viaje ha comenzado'),
+            backgroundColor: Colors.blue,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        // Aquí podrías navegar a una pantalla de viaje en curso si la tienes
+      }
+    });
+
+    // 🏁 VIAJE FINALIZADO
+    _socket.onViajeFinalizado((data) {
+      debugPrint("🏁 Viaje finalizado → $data");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🏁 Viaje finalizado. ¡Gracias por usar GoApp!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+        // Navegar a pantalla de calificación o home
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) {
+            Navigator.of(context).pushNamedAndRemoveUntil(
+              '/home',
+              (route) => false,
+            );
+          }
+        });
+      }
+    });
+
+    // ❌ VIAJE CANCELADO
+    _socket.onViajeCancelado((data) {
+      debugPrint("❌ Viaje cancelado → $data");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('❌ El viaje fue cancelado'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) {
+            Navigator.of(context).pushNamedAndRemoveUntil(
+              '/home',
+              (route) => false,
+            );
+          }
+        });
       }
     });
   }
@@ -291,18 +377,60 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
 
                   const Spacer(),
 
-                  ElevatedButton(
-                    onPressed: _cancelando
-                        ? null
-                        : () => _api.cancelarViaje(widget.idViaje),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.redAccent,
-                      minimumSize: const Size.fromHeight(48),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30),
-                      ),
-                    ),
-                    child: const Text("Cancelar viaje"),
+                  FutureBuilder(
+                    future: SharedPreferences.getInstance(),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData) {
+                        return const SizedBox.shrink();
+                      }
+                      final prefs = snapshot.data!;
+                      final idUsuario = prefs.getInt('id_usuario');
+                      
+                      return ElevatedButton(
+                        onPressed: _cancelando || idUsuario == null
+                            ? null
+                            : () async {
+                                setState(() => _cancelando = true);
+                                try {
+                                  final ok = await _api.cancelarViaje(
+                                    idViaje: widget.idViaje,
+                                    idUsuario: idUsuario!,
+                                    tipo: 'pasajero',
+                                  );
+                                  if (!ok) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Error al cancelar el viaje'),
+                                        ),
+                                      );
+                                    }
+                                  }
+                                } catch (e) {
+                                  debugPrint('Error al cancelar: $e');
+                                } finally {
+                                  if (mounted) setState(() => _cancelando = false);
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.redAccent,
+                          minimumSize: const Size.fromHeight(48),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                        ),
+                        child: _cancelando
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text("Cancelar viaje"),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -315,7 +443,11 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
 
   @override
   void dispose() {
-    _socket.off('ubicacion_conductor');
+    _socket.off('ubicacion_en_tiempo_real');
+    _socket.off('conductor_llego_encuentro');
+    _socket.off('viaje_en_curso');
+    _socket.off('viaje_finalizado');
+    _socket.off('viaje_cancelado');
     super.dispose();
   }
 }

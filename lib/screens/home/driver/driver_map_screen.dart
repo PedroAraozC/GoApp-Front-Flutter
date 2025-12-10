@@ -181,16 +181,31 @@ class _DriverMapScreenState extends State<DriverMapScreen>
     // viaje creado por pasajero → aparece tarjeta al chofer
     _socket.on('viaje_creado', (data) async {
       try {
-        debugPrint('socket viaje_creado: $data');
+        debugPrint('🚕 [Driver] Evento viaje_creado recibido: $data');
+        
+        if (data == null) {
+          debugPrint('⚠️ [Driver] viaje_creado recibió data null');
+          return;
+        }
+
         final ride = IncomingRide.fromSocket(data);
+        debugPrint('✅ [Driver] Viaje parseado: ID=${ride.idViajes}, Origen=${ride.direccionDesde}');
+        
+        if (!mounted) return;
+        
         setState(() {
           _incomingRide = ride;
           _accepted = false;
         });
+        
         await _addPassengerMarker(ride);
         await _fitMapToDriverAndPassenger();
+        
+        _showSnack('Nuevo viaje disponible 🚕');
+        debugPrint('✅ [Driver] Tarjeta de viaje mostrada al conductor');
       } catch (e) {
-        debugPrint('Error procesando viaje_creado: $e');
+        debugPrint('❌ [Driver] Error procesando viaje_creado: $e');
+        debugPrint('❌ [Driver] Stack trace: ${StackTrace.current}');
       }
     });
 
@@ -238,6 +253,35 @@ class _DriverMapScreenState extends State<DriverMapScreen>
         }
       } catch (e) {
         debugPrint('Error procesando viaje_cancelado_busqueda: $e');
+      }
+    });
+
+    // viaje tomado por otro conductor → limpiar tarjeta
+    _socket.onViajeTomado((data) {
+      try {
+        debugPrint('socket viaje_tomado: $data');
+        final idTomado = data?['id_viajes'] ?? data?['id_viaje'] ?? data?['id'];
+        if (idTomado == null || _incomingRide == null) return;
+
+        final idInt = idTomado is num
+            ? idTomado.toInt()
+            : int.tryParse(idTomado.toString());
+
+        if (idInt == null) return;
+
+        if (_incomingRide!.idViajes == idInt) {
+          setState(() {
+            _incomingRide = null;
+            _accepted = false;
+            _polylines.clear();
+            _markers.removeWhere(
+              (m) => m.markerId.value.startsWith('passenger_'),
+            );
+          });
+          _showSnack('Otro conductor tomó este viaje.');
+        }
+      } catch (e) {
+        debugPrint('Error procesando viaje_tomado: $e');
       }
     });
 
@@ -316,22 +360,58 @@ class _DriverMapScreenState extends State<DriverMapScreen>
 
       if (idUsuario == null) {
         _showSnack('No se encontró información del usuario.');
+        debugPrint('❌ [Driver] id_usuario es null en _goOnline');
         return;
       }
 
-      await _socket.connect();
-      await _socket.registrarUsuario(idUsuario: idUsuario, tipo: 'conductor');
+      debugPrint('🔌 [Driver] Conectando conductor ${idUsuario}...');
 
+      // 1) Conectar socket (con manejo de errores mejorado)
+      try {
+        await _socket.connect();
+      } catch (e) {
+        debugPrint('⚠️ [Driver] Error en connect(), pero continuando: $e');
+        // Continuar aunque haya error, el socket intentará reconectar
+      }
+      
+      // Esperar un momento para que la conexión se establezca
+      await Future.delayed(const Duration(milliseconds: 1000));
+      
+      // Verificar conexión después de esperar
+      if (!_socket.isConnected) {
+        debugPrint('⚠️ [Driver] Socket no conectado después de 1 segundo, pero continuando...');
+        _showSnack('Conectando al servidor... (puede tardar unos segundos)');
+        // Continuar de todas formas, el socket intentará reconectar
+      } else {
+        debugPrint('✅ [Driver] Socket conectado exitosamente');
+      }
+
+      // 2) Registrar usuario en socket (esto lo une al room "conductores")
+      // Intentar registrar aunque el socket no esté completamente conectado
+      try {
+        await _socket.registrarUsuario(idUsuario: idUsuario, tipo: 'conductor');
+        debugPrint('✅ [Driver] Conductor ${idUsuario} registrado en socket');
+      } catch (e) {
+        debugPrint('⚠️ [Driver] Error al registrar usuario, pero continuando: $e');
+        // El socket intentará reconectar y registrar automáticamente
+      }
+
+      // 3) Actualizar estado en BD
       final ok = await _api.cambiarEstadoConductor(
         idConductor: idUsuario,
         conectado: true,
       );
       if (!ok) {
         _showSnack('No se pudo actualizar el estado en el servidor.');
+        debugPrint('⚠️ [Driver] No se pudo actualizar estado del conductor');
+      } else {
+        debugPrint('✅ [Driver] Estado del conductor actualizado a conectado');
       }
 
+      // 4) Inicializar listeners si no están activos
       if (!_listening) {
         await _initSocketListeners();
+        debugPrint('✅ [Driver] Listeners de socket inicializados');
       }
 
       if (!mounted) return;
@@ -340,8 +420,9 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       });
 
       _showSnack('Estás conectado y disponible para recibir viajes.');
+      debugPrint('✅ [Driver] Conductor ${idUsuario} ONLINE y listo para recibir viajes');
     } catch (e) {
-      debugPrint('Error al ponerse online: $e');
+      debugPrint('❌ [Driver] Error al ponerse online: $e');
       _showSnack('Error al conectarse: $e');
     }
   }
@@ -367,6 +448,7 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       _socket.off('viaje_creado');
       _socket.off('viaje_finalizado');
       _socket.off('viaje_cancelado_busqueda');
+      _socket.off('viaje_tomado');
 
       if (!mounted) return;
       setState(() {
@@ -440,13 +522,9 @@ class _DriverMapScreenState extends State<DriverMapScreen>
         return;
       }
 
+      // El nuevo acceptRide ya usa id_conductor internamente
       final res = await _api.acceptRide(_incomingRide!.idViajes, driverId);
       if (res == true) {
-        _socket.emit('viaje_aceptado', {
-          'id_viajes': _incomingRide!.idViajes,
-          'id_conductor': driverId,
-        });
-
         setState(() {
           _accepted = true;
         });
@@ -486,18 +564,31 @@ class _DriverMapScreenState extends State<DriverMapScreen>
     if (_incomingRide == null) return;
 
     try {
+      final user = await UserPreferences.getUser();
+      final driverId = user?['id_usuario'];
+      
+      if (driverId == null) {
+        _showSnack('No se encontró id de conductor.');
+        return;
+      }
+
       final idViaje = _incomingRide!.idViajes;
 
-      await _api.cancelarViaje(idViaje);
+      // Usar el nuevo método rechazarViaje
+      final ok = await _api.rechazarViaje(idViaje, driverId);
 
-      setState(() {
-        _incomingRide = null;
-        _accepted = false;
-        _polylines.clear();
-        _markers.removeWhere((m) => m.markerId.value.startsWith('passenger_'));
-      });
+      if (ok) {
+        setState(() {
+          _incomingRide = null;
+          _accepted = false;
+          _polylines.clear();
+          _markers.removeWhere((m) => m.markerId.value.startsWith('passenger_'));
+        });
 
-      _showSnack('Viaje cancelado.');
+        _showSnack('Viaje rechazado.');
+      } else {
+        _showSnack('Error al rechazar el viaje.');
+      }
     } catch (e) {
       debugPrint('Error al rechazar viaje: $e');
       _showSnack('Error al rechazar el viaje.');
@@ -1098,9 +1189,18 @@ class IncomingRide {
     required this.idEstado,
   });
 
+  static double _parseDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? 0.0;
+    return 0.0;
+  }
+
   factory IncomingRide.fromSocket(dynamic json) {
-    final parsed = json is String ? jsonDecode(json) : json;
-    return IncomingRide(
+    try {
+      final parsed = json is String ? jsonDecode(json) : json;
+      debugPrint('📦 [IncomingRide] Parsing: $parsed');
+      
+      return IncomingRide(
       idViajes: (parsed['id_viajes']) is num
           ? (parsed['id_viajes'] as num).toInt()
           : int.parse(parsed['id_viajes'].toString()),
@@ -1112,25 +1212,30 @@ class IncomingRide {
           : null,
       direccionDesde:
           parsed['direccion_desde'] ?? parsed['direccionDesde'] ?? '',
-      latDesde: (parsed['lat_desde'] as num).toDouble(),
-      lonDesde: (parsed['lon_desde'] as num).toDouble(),
+      latDesde: _parseDouble(parsed['lat_desde'] ?? parsed['latDesde'] ?? 0),
+      lonDesde: _parseDouble(parsed['lon_desde'] ?? parsed['lonDesde'] ?? 0),
       direccionHasta:
           parsed['direccion_hasta'] ?? parsed['direccionHasta'] ?? '',
-      latHasta: (parsed['lat_hasta'] as num).toDouble(),
-      lonHasta: (parsed['lon_hasta'] as num).toDouble(),
+      latHasta: _parseDouble(parsed['lat_hasta'] ?? parsed['latHasta'] ?? parsed['lat_desde'] ?? 0),
+      lonHasta: _parseDouble(parsed['lon_hasta'] ?? parsed['lonHasta'] ?? parsed['lon_desde'] ?? 0),
       horaInicio: parsed['hora_inicio'] != null
           ? DateTime.parse(parsed['hora_inicio'].toString())
           : null,
       horaFin: parsed['hora_fin'] != null
           ? DateTime.parse(parsed['hora_fin'].toString())
           : null,
-      valor: (parsed['valor'] as num).toDouble(),
-      idEstado: (parsed['id_estado'] ?? parsed['estado'] ?? 0) is num
-          ? (parsed['id_estado'] ?? parsed['estado'] ?? 0 as num).toInt()
+      valor: _parseDouble(parsed['valor'] ?? 0),
+      idEstado: (parsed['id_estado'] ?? parsed['estado'] ?? 1) is num
+          ? (parsed['id_estado'] ?? parsed['estado'] ?? 1 as num).toInt()
           : int.tryParse(
-                  (parsed['id_estado'] ?? parsed['estado'] ?? 0).toString(),
+                  (parsed['id_estado'] ?? parsed['estado'] ?? 1).toString(),
                 ) ??
-                0,
-    );
+                1,
+      );
+    } catch (e) {
+      debugPrint('❌ [IncomingRide] Error parsing: $e');
+      debugPrint('❌ [IncomingRide] JSON recibido: $json');
+      rethrow;
+    }
   }
 }

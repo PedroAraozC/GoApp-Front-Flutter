@@ -8,6 +8,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 
 import '../../../services/api_service.dart';
+import '../../../services/socket_service.dart';
 import 'driver_map_screen.dart'; // Para usar IncomingRide
 
 class DriverViajeEnCursoScreen extends StatefulWidget {
@@ -22,6 +23,7 @@ class DriverViajeEnCursoScreen extends StatefulWidget {
 
 class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
   final ApiService _api = ApiService();
+  final SocketService _socket = SocketService.instance;
 
   GoogleMapController? _mapCtrl;
   LatLng? _driverPos;
@@ -41,6 +43,20 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
     super.initState();
     _destPos = LatLng(widget.ride.latHasta, widget.ride.lonHasta);
     _initLocationAndTracking();
+    _inicializarSocket();
+  }
+
+  Future<void> _inicializarSocket() async {
+    // Unirse al room del viaje para enviar ubicaciones
+    if (widget.ride.idConductor == null) {
+      debugPrint('⚠️ idConductor es null, no se puede unir al viaje');
+      return;
+    }
+    await _socket.unirseAViaje(
+      idViaje: widget.ride.idViajes,
+      userId: widget.ride.idConductor!,
+      tipo: 'conductor',
+    );
   }
 
   @override
@@ -72,6 +88,7 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
           _driverPos = LatLng(p.latitude, p.longitude);
           _setMarkers();
           _buildRoute(); // actualiza ruta / tiempo / distancia
+          _enviarUbicacion(p.latitude, p.longitude);
         });
 
     await _buildRoute();
@@ -259,13 +276,42 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
     );
   }
 
+  // =============== ENVIAR UBICACIÓN ===============
+  void _enviarUbicacion(double lat, double lng) {
+    if (widget.ride.idConductor == null) return;
+    
+    // Enviar por Socket.IO
+    _socket.enviarUbicacion(
+      idViaje: widget.ride.idViajes,
+      lat: lat,
+      lng: lng,
+      idUsuario: widget.ride.idConductor!,
+      tipo: 'conductor',
+    );
+
+    // También actualizar por REST API (opcional)
+    _api.actualizarUbicacion(
+      idViaje: widget.ride.idViajes,
+      lat: lat,
+      lng: lng,
+      idUsuario: widget.ride.idConductor!,
+      tipo: 'conductor',
+    );
+  }
+
   // =============== FINALIZAR VIAJE ===============
   Future<void> _onFinalizarViaje() async {
+    if (widget.ride.idConductor == null) {
+      _msg('Error: No se encontró el ID del conductor');
+      return;
+    }
+    
     setState(() => _finishingTrip = true);
     try {
       // Podrías calcular distancia/duración reales y pasarlas acá
       final ok = await _api.finalizarViaje(
         idViaje: widget.ride.idViajes,
+        idConductor: widget.ride.idConductor!,
         // distanciaKm: ...,
         // duracionMin: ...,
         // precioFinal: ...,
