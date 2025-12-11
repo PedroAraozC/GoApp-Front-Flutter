@@ -29,6 +29,22 @@ class UserPreferences {
     return jsonDecode(jsonString) as Map<String, dynamic>;
   }
 
+  
+  /// ============================================================\
+  /// 🔹 Devuelve solo el ID del usuario logueado\
+  /// ============================================================\
+  static Future<int?> getIdUsuario() async {
+    final user = await getUser();
+    if (user == null) return null;
+    // Asumimos que el ID se guarda como 'id_usuario' (tipo num)\
+    if (user['id_usuario'] is num) {
+      return (user['id_usuario'] as num).toInt();
+    }
+    return null;
+  }
+  
+  // --- FIN DE LA NUEVA FUNCIÓN ---
+
   /// ============================================================
   /// 🔹 Devuelve si el usuario está logueado
   /// ============================================================

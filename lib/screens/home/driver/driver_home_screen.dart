@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -28,6 +29,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   final SocketService _socket = SocketService.instance;
   final ApiService _api = ApiService();
 
+  final PolylinePoints _polylinePoints = PolylinePoints();
+  // Asumo que la API Key está disponible vía dotenv
+  final String _googleApiKey = dotenv.env['GOOGLE_API_KEY'] ?? '';
+
   GoogleMapController? _mapCtrl;
   LatLng? _driverLocation;
   final Set<Marker> _markers = {};
@@ -45,7 +50,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   bool _listening = false;
   bool _accepted = false;
   bool _loading = false;
-  bool _isOnline = false; // conectado / desconectado para recibir viajes
+  bool _isOnline = false; // 👈 conectado / desconectado para recibir viajes
+
+  StreamSubscription<Position>? _positionSub;
 
   late AnimationController _islandPulse;
 
@@ -105,7 +112,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _islandPulse.dispose();
     _socket.off('viaje_creado');
     _socket.off('viaje_finalizado');
-    _socket.off('viaje_cancelado_busqueda');
+    _socket.off('posicion_pasajero'); // si después lo usás
+    _positionSub?.cancel(); // 👈 importante
     super.dispose();
   }
 
@@ -148,12 +156,36 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         _showSnack('Permiso de ubicación denegado permanentemente.');
         return;
       }
+
+      // posición inicial
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
       _driverLocation = LatLng(pos.latitude, pos.longitude);
       _addDriverMarker();
       setState(() {});
+
+      // 🔁 stream de ubicación
+      _positionSub?.cancel();
+      _positionSub =
+          Geolocator.getPositionStream(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: 10, // cada 10m
+            ),
+          ).listen((pos) {
+            _driverLocation = LatLng(pos.latitude, pos.longitude);
+            _addDriverMarker();
+
+            // Enviamos al pasajero sólo si hay viaje aceptado
+            if (_accepted && _incomingRide != null) {
+              _socket.emit('posicion_conductor', {
+                'id_viajes': _incomingRide!.idViajes,
+                'lat': pos.latitude,
+                'lng': pos.longitude,
+              });
+            }
+          });
     } catch (e) {
       debugPrint('Error init location driver: $e');
     }
@@ -422,7 +454,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     }
   }
 
-  // Aceptar viaje → navegar a pantalla "en camino"
+  // Aceptar viaje → dibuja ruta al pasajero
   Future<void> _acceptRide() async {
     if (_incomingRide == null) return;
     setState(() => _loading = true);

@@ -1,14 +1,19 @@
-// lib/screens/.../buscando_viaje_screen.dart
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/socket_service.dart';
 import '../../services/api_service.dart';
-import 'viaje_asignado_screen.dart'; // 👈 ajustá la ruta si es necesario
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:http/http.dart' as http;
+import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 
 class BuscandoViajeScreen extends StatefulWidget {
-  final int idViaje; // ID del viaje actual
+  final int id_viaje;
 
-  const BuscandoViajeScreen({super.key, required this.idViaje});
+  const BuscandoViajeScreen({super.key, required this.id_viaje});
 
   @override
   State<BuscandoViajeScreen> createState() => _BuscandoViajeScreenState();
@@ -17,18 +22,55 @@ class BuscandoViajeScreen extends StatefulWidget {
 class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
   final SocketService _socket = SocketService.instance;
   final ApiService _api = ApiService();
-
   bool _viajeAsignado = false;
   bool _viajeCancelado = false;
   bool _viajeEnCurso = false;
   bool _cancelando = false;
 
-  bool _navegandoADetalle = false; // para evitar navegar dos veces
+  GoogleMapController? _mapCtrl;
+  LatLng? _passengerLocation;
+  LatLng? _driverLocation;
+  final Set<Marker> _markers = {};
+  final Set<Polyline> _polylines = {};
+
+  final PolylinePoints _polylinePoints = PolylinePoints();
+  final String _googleApiKey =
+      dotenv.env['GOOGLE_MAPS_API_KEY'] ?? dotenv.env['GOOGLE_API_KEY'] ?? '';
+
+  StreamSubscription<Position>? _positionSub;
 
   @override
   void initState() {
     super.initState();
+    _initLocation();
     _inicializarSocketListeners();
+  }
+
+  Future<void> _initLocation() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) return;
+      var p = await Geolocator.checkPermission();
+      if (p == LocationPermission.denied) {
+        p = await Geolocator.requestPermission();
+      }
+      if (p == LocationPermission.deniedForever) return;
+
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      _passengerLocation = LatLng(pos.latitude, pos.longitude);
+
+      _markers.add(
+        Marker(
+          markerId: const MarkerId('passenger'),
+          position: _passengerLocation!,
+          infoWindow: const InfoWindow(title: 'Tu ubicación'),
+        ),
+      );
+      setState(() {});
+    } catch (e) {
+      debugPrint('Error init location pasajero: $e');
+    }
   }
 
   Future<void> _inicializarSocketListeners() async {
@@ -38,87 +80,30 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
     // Conectamos si no está conectado todavía
     if (!_socket.isConnected) {
       await _socket.connect();
+      await Future.delayed(const Duration(milliseconds: 500));
       debugPrint('🔌 Socket conectado desde BuscandoViajeScreen');
     }
 
-    // Registramos al usuario en el socket como pasajero
+    // ✅ Registramos al usuario en el socket
     if (idUsuario != null) {
       await _socket.emitirConexionUsuario(idUsuario, 'pasajero');
       debugPrint(
-        '✅ Pasajero $idUsuario registrado en socket desde BuscandoViajeScreen',
+        '✅ Usuario $idUsuario registrado en socket desde BuscandoViajeScreen',
       );
       _mostrarSnack('Conectado al servidor.');
     }
 
+    // 🆕 Evento: viaje creado
+    _socket.on('viaje_creado', (data) {
+      debugPrint('🆕 Evento: viaje_creado -> $data');
+      _mostrarSnack('Tu solicitud de viaje fue enviada correctamente.');
+    });
+
     // 🚕 Evento: viaje asignado
     _socket.on('viaje_asignado', (data) {
       debugPrint('🚕 Evento: viaje_asignado -> $data');
-      final latDesde = double.tryParse(
-        (data['lat_desde'] ?? data['latDesde']).toString(),
-      );
-
-      final lonDesde = double.tryParse(
-        (data['lon_desde'] ?? data['lonDesde']).toString(),
-      );
-
-      try {
-        // 1) Validar que el viaje que llega por socket sea el mismo que este screen
-        final rawId =
-            data?['id_viajes'] ??
-            data?['id_viaje'] ??
-            data?['id']; // por las dudas
-        if (rawId == null) return;
-
-        final idSocket = rawId is num
-            ? rawId.toInt()
-            : int.tryParse(rawId.toString());
-
-        if (idSocket == null || idSocket != widget.idViaje) {
-          debugPrint(
-            'ℹ️ viaje_asignado de otro viaje (idSocket=$idSocket, actual=${widget.idViaje})',
-          );
-          return;
-        }
-
-        if (!mounted || _navegandoADetalle || _viajeCancelado) return;
-
-        setState(() {
-          _viajeAsignado = true;
-          _navegandoADetalle = true;
-        });
-
-        _mostrarSnack('Un conductor fue asignado a tu viaje 🚕');
-
-        // 2) Extraer datos del viaje para mostrar en la pantalla siguiente
-        final direccionOrigen =
-            (data['direccion_desde'] ?? data['direccionDesde'] ?? '')
-                .toString();
-        final direccionDestino =
-            (data['direccion_hasta'] ?? data['direccionHasta'] ?? '')
-                .toString();
-
-        final dynamic rawValor = data['valor'];
-        final double? precioEstimado = rawValor is num
-            ? rawValor.toDouble()
-            : double.tryParse(rawValor?.toString() ?? '');
-
-        // 3) Navegar a la pantalla de viaje asignado
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ViajeAsignadoScreen(
-              idViaje: widget.idViaje,
-              direccionOrigen: direccionOrigen,
-              direccionDestino: direccionDestino,
-              precioEstimado: precioEstimado,
-              latOrigen: double.parse(data['lat_desde'].toString()),
-              lngOrigen: double.parse(data['lon_desde'].toString()),
-            ),
-          ),
-        );
-      } catch (e) {
-        debugPrint('❌ Error procesando viaje_asignado: $e');
-      }
+      if (mounted) setState(() => _viajeAsignado = true);
+      _mostrarSnack('Un conductor fue asignado a tu viaje 🚕');
     });
 
     // ▶️ Evento: viaje en curso
@@ -138,51 +123,27 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
         });
       }
       _mostrarSnack('El viaje ha finalizado. ¡Gracias por usar GoApp!');
-      // En este flujo normalmente ya estarías en otra pantalla.
     });
 
-    // ❌ Evento: viaje cancelado (desde servidor / conductor / usuario)
+    // ❌ Evento: viaje cancelado
     _socket.on('viaje_cancelado', (data) {
       debugPrint('❌ Evento: viaje_cancelado -> $data');
-
-      try {
-        // Filtrar por ID de viaje: solo reaccionamos si es ESTE viaje
-        final rawId =
-            data?['id_viajes'] ??
-            data?['id_viaje'] ??
-            data?['id']; // por las dudas
-        if (rawId == null) return;
-
-        final idSocket = rawId is num
-            ? rawId.toInt()
-            : int.tryParse(rawId.toString());
-
-        if (idSocket == null || idSocket != widget.idViaje) {
-          debugPrint(
-            'ℹ️ viaje_cancelado de otro viaje (idSocket=$idSocket, actual=${widget.idViaje})',
-          );
-          return;
-        }
-
-        if (mounted) {
-          setState(() {
-            _viajeCancelado = true;
-            _cancelando = false;
-          });
-        }
-        _mostrarSnack('Tu viaje fue cancelado.');
-
-        // 👉 Ir directamente al Home después de 2 segundos
-        Future.delayed(const Duration(seconds: 2), () {
-          if (!mounted) return;
-          Navigator.of(context).pushNamedAndRemoveUntil(
-            '/home', // 👈 ajustá el nombre de la ruta de tu home si es distinto
-            (route) => false,
-          );
+      if (mounted) {
+        setState(() {
+          _viajeCancelado = true;
+          _cancelando = false;
         });
-      } catch (e) {
-        debugPrint('❌ Error procesando viaje_cancelado: $e');
       }
+      _mostrarSnack('Tu viaje fue cancelado.');
+
+      // Opcional: Volver a la pantalla anterior después de 2 segundos
+      Future.delayed(const Duration(seconds: 2), () {
+        if (!mounted) return;
+
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil('/home', (route) => false);
+      });
     });
   }
 
@@ -191,16 +152,34 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
     setState(() => _cancelando = true);
 
     try {
-      // 1) Cancelar en el backend
-      await _api.cancelarViaje(widget.idViaje);
-      _mostrarSnack('Cancelando viaje...');
+      debugPrint('📤 Cancelando viaje con ID: ${widget.id_viaje}');
+      // 1) Llamar al backend para cancelar el viaje
+      final resp = await _api.cancelarViaje(widget.id_viaje!);
 
-      // 2) El controlador cancelarViaje ya emite "viaje_cancelado"
-      //    y el listener de arriba se encarga de navegar al home.
+      if (!mounted) return;
+
+      final msg = resp['message']?.toString() ?? 'Respuesta desconocida';
+
+      if (resp['message'] == 'Viaje cancelado exitosamente') {
+        _mostrarSnack('Viaje cancelado correctamente');
+
+        // 2) Ir al menú principal del usuario
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/home', // 👈 ruta de tu HomeScreen de pasajero
+          (route) => false,
+        );
+      } else {
+        _mostrarSnack(msg);
+      }
     } catch (e) {
       debugPrint('❌ Error al cancelar viaje: $e');
-      _mostrarSnack('Error al cancelar el viaje');
-      if (mounted) setState(() => _cancelando = false);
+      if (mounted) {
+        _mostrarSnack('Error al cancelar el viaje');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _cancelando = false);
+      }
     }
   }
 
@@ -217,11 +196,7 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
 
   @override
   void dispose() {
-    // Dejamos la conexión global del socket, pero limpiamos listeners de esta pantalla
-    _socket.off('viaje_asignado');
-    _socket.off('viaje_en_curso');
-    _socket.off('viaje_finalizado');
-    _socket.off('viaje_cancelado');
+    // ⚠️ No desconectamos el socket: queremos mantener la sesión global
     super.dispose();
   }
 

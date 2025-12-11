@@ -176,12 +176,31 @@ class ApiService {
   // ==============================
   // 🔹 Cancelar viaje
   // ==============================
-  Future<void> cancelarViaje(int idViaje) async {
-    final url = Uri.parse('$baseUrl/viajes/$idViaje/cancelar');
-    final response = await http.put(url);
+  Future<Map<String, dynamic>> cancelarViaje(int idViaje) async {
+    try {
+      final url = Uri.parse('$baseUrl/viajes/$idViaje/cancelar');
+      debugPrint('🔁 Cancelando viaje: $url');
 
-    if (response.statusCode != 200) {
-      throw Exception('Error al cancelar viaje: ${response.body}');
+      final response = await http.put(
+        url,
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      final decodedResponse = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        debugPrint('✅ Viaje cancelado exitosamente');
+        return decodedResponse;
+      } else {
+        debugPrint('⚠️ Error al cancelar viaje: ${response.body}');
+        // Devolvemos el JSON del error para que la UI lo muestre
+        return decodedResponse;
+      }
+    } catch (e) {
+      debugPrint('❌ Excepción en cancelarViaje: $e');
+      return {
+        'message': 'Error de conexión al cancelar el viaje.',
+      };
     }
   }
 
