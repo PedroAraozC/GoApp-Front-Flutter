@@ -44,8 +44,8 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
 
-  bool _viajeCancelado = false;
-  bool _cancelando = false;
+  final bool _viajeCancelado = false;
+  final bool _cancelando = false;
 
   @override
   void initState() {
