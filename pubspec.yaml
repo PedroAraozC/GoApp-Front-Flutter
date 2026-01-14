@@ -17,6 +17,7 @@ dependencies:
     sdk: flutter
   intl: ^0.20.2
   google_sign_in: ^6.2.1
+  google_fonts: ^6.2.1
   http: ^1.5.0
   geolocator: ^10.1.0
   geocoding: ^2.1.0
@@ -25,6 +26,7 @@ dependencies:
   uuid: ^4.4.0
   font_awesome_flutter: ^10.10.0
   flutter_launcher_icons: ^0.14.4
+  audioplayers: ^6.0.0
 
 dev_dependencies:
   flutter_test:
@@ -44,6 +46,7 @@ flutter:
     - assets/images/app_icon.png
     - assets/images/splash_inicio.png
     - assets/images/taxi-icon.png
+    - assets/sounds/click.mp3
 
 flutter_launcher_icons:
   android: true

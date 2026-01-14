@@ -429,7 +429,8 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen>
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => BuscandoViajeScreen(id_viaje: idViaje, // asegúrate que el constructor use esta key
+          builder: (_) => BuscandoViajeScreen(
+            idViaje: idViaje, // asegúrate que el constructor use esta key
           ),
         ),
       );

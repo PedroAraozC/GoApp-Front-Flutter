@@ -11,7 +11,7 @@ import 'package:taxi_tuc/screens/home/driver/driver_viaje_en_curso_screen.dart';
 import 'package:taxi_tuc/services/socket_service.dart';
 
 import '../../../services/api_service.dart';
-import 'driver_home_screen.dart'; // Para usar IncomingRide
+import 'driver_map_screen.dart'; // Para usar IncomingRide
 
 class DriverEnCaminoScreen extends StatefulWidget {
   final IncomingRide ride; // viaje aceptado
@@ -33,16 +33,33 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
   final Set<Polyline> _polylines = {};
 
   StreamSubscription<Position>? _positionSub;
+  final SocketService _socket = SocketService.instance;
 
   String _distanceText = '--';
   String _durationText = '--';
+  bool _llegandoEncuentro = false;
   bool _startingTrip = false;
+  bool _llegueAlEncuentro = false;
 
   @override
   void initState() {
     super.initState();
     _passengerPos = LatLng(widget.ride.latDesde, widget.ride.lonDesde);
     _initLocationAndTracking();
+    _inicializarSocket();
+  }
+
+  Future<void> _inicializarSocket() async {
+    // Unirse al room del viaje para enviar ubicaciones
+    if (widget.ride.idConductor == null) {
+      debugPrint('⚠️ idConductor es null, no se puede unir al viaje');
+      return;
+    }
+    await _socket.unirseAViaje(
+      idViaje: widget.ride.idViajes,
+      userId: widget.ride.idConductor!,
+      tipo: 'conductor',
+    );
   }
 
   @override
@@ -260,12 +277,57 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
     );
   }
 
-  // ================= INICIAR VIAJE =================
-  // ================= INICIAR VIAJE =================
-  Future<void> _onIniciarViaje() async {
+  // ================= LLEGAR AL ENCUENTRO =================
+  Future<void> _onLlegarEncuentro() async {
+    if (widget.ride.idConductor == null) {
+      _msg('Error: No se encontró el ID del conductor');
+      return;
+    }
+    
+    setState(() => _llegandoEncuentro = true);
+    try {
+      final ok = await _api.llegarEncuentro(
+        idViaje: widget.ride.idViajes,
+        idConductor: widget.ride.idConductor!,
+      );
+      
+      if (!ok) {
+        _msg('No se pudo registrar la llegada al encuentro.');
+        return;
+      }
+
+      _msg('✅ Llegada al encuentro registrada. Esperando pasajero...');
+      
+      if (mounted) {
+        setState(() => _llegueAlEncuentro = true);
+      }
+    } catch (e) {
+      debugPrint('Error llegar encuentro: $e');
+      _msg('Error al registrar llegada: $e');
+    } finally {
+      if (mounted) setState(() => _llegandoEncuentro = false);
+    }
+  }
+
+  // ================= COMENZAR VIAJE =================
+  Future<void> _onComenzarViaje() async {
+    if (widget.ride.idConductor == null) {
+      _msg('Error: No se encontró el ID del conductor');
+      return;
+    }
+    
+    if (!_llegueAlEncuentro) {
+      _msg('Primero debes registrar que llegaste al encuentro');
+      return;
+    }
+
     setState(() => _startingTrip = true);
     try {
-      final ok = await _api.comenzarViaje(widget.ride.idViajes);
+      final ok = await _api.comenzarViaje(
+        widget.ride.idViajes,
+        widget.ride.idConductor!,
+      );
+      
       if (!ok) {
         _msg('No se pudo marcar el viaje como "en curso".');
         return;
@@ -373,24 +435,58 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
                   ),
                 ),
 
-                // Botón inferior: Iniciar viaje (cuando ya llegó)
+                // Botones inferiores
                 Positioned(
                   left: 16,
                   right: 16,
                   bottom: 24,
-                  child: FilledButton.icon(
-                    onPressed: _startingTrip ? null : _onIniciarViaje,
-                    icon: _startingTrip
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.flag),
-                    label: const Text('Llegué al pasajero / Iniciar viaje'),
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Botón: Llegar al encuentro
+                      if (!_llegueAlEncuentro)
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: _llegandoEncuentro ? null : _onLlegarEncuentro,
+                            icon: _llegandoEncuentro
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.location_on),
+                            label: const Text('Llegué al punto de encuentro'),
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              backgroundColor: Colors.orange,
+                            ),
+                          ),
+                        ),
+                      
+                      // Botón: Comenzar viaje (solo cuando ya llegó)
+                      if (_llegueAlEncuentro) ...[
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: _startingTrip ? null : _onComenzarViaje,
+                            icon: _startingTrip
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.play_arrow),
+                            label: const Text('Comenzar viaje'),
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              backgroundColor: Colors.green,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ],
@@ -399,18 +495,25 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
   }
 
   void _enviarUbicacionAlPasajero(double lat, double lng) {
-    final ride = widget.ride;
+    if (widget.ride.idConductor == null) return;
+    
+    // Usar el nuevo sistema de ubicación
+    _socket.enviarUbicacion(
+      idViaje: widget.ride.idViajes,
+      lat: lat,
+      lng: lng,
+      idUsuario: widget.ride.idConductor!,
+      tipo: 'conductor',
+    );
 
-    // Necesitamos el ID del pasajero
-    final idPasajero = ride.idPasajero; // debes asegurarte que ride trae esto
-
-    SocketService.instance.emit("ubicacion_conductor", {
-      "id_usuario": ride.idConductor, // id del conductor (usuario)
-      "id_pasajero": idPasajero,
-      "lat": lat,
-      "lng": lng,
-      "id_viajes": ride.idViajes,
-    });
+    // También actualizar por REST API (opcional, para persistencia)
+    _api.actualizarUbicacion(
+      idViaje: widget.ride.idViajes,
+      lat: lat,
+      lng: lng,
+      idUsuario: widget.ride.idConductor!,
+      tipo: 'conductor',
+    );
 
     debugPrint("📤 Enviada ubicación del chofer → $lat, $lng");
   }

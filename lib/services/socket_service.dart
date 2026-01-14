@@ -14,6 +14,7 @@ class SocketService {
   IO.Socket? _socket;
   bool _isConnected = false;
   bool _isConnecting = false;
+  Map<String, dynamic>? _pendingRegistration; // Para guardar registro pendiente si el socket no está conectado
 
   bool get isConnected => _isConnected;
   IO.Socket? get rawSocket =>
@@ -21,23 +22,28 @@ class SocketService {
 
   /// 🔌 Conecta el socket (y espera a que realmente se conecte).
   /// Si ya está conectado, no hace nada.
+  /// Si hay un error, permite que el socket intente reconectar en segundo plano.
   Future<void> connect() async {
     if (_isConnected && _socket != null) {
-      debugPrint('🟢 Socket ya está conectado.');
+      debugPrint('🟢 [Socket] Ya está conectado.');
       return;
     }
 
-    // Si hay un intento en curso, esperamos a que termine
+    // Si hay un intento en curso, esperamos un poco pero no bloqueamos indefinidamente
     if (_isConnecting) {
-      debugPrint('⏳ Conexión ya en curso, esperando...');
-      while (_isConnecting) {
+      debugPrint('⏳ [Socket] Conexión ya en curso, esperando máximo 3 segundos...');
+      int attempts = 0;
+      while (_isConnecting && attempts < 30) {
         await Future.delayed(const Duration(milliseconds: 100));
+        attempts++;
       }
       // Después de esperar, si quedó conectado, listo
       if (_isConnected && _socket != null) {
+        debugPrint('✅ [Socket] Conexión completada durante la espera');
         return;
       }
       // Si no quedó conectado, seguimos y reintentamos
+      debugPrint('⚠️ [Socket] La conexión anterior no se completó, iniciando nueva conexión');
     }
 
     final baseUrl = dotenv.env['API_URL'];
@@ -46,10 +52,17 @@ class SocketService {
       return;
     }
 
-    debugPrint('🔌 Intentando conectar a socket: $baseUrl');
+    // Limpiar URL: remover trailing slash y asegurar formato correcto
+    String cleanUrl = baseUrl.trim();
+    if (cleanUrl.endsWith('/')) {
+      cleanUrl = cleanUrl.substring(0, cleanUrl.length - 1);
+    }
+
+    debugPrint('🔌 [Socket] Intentando conectar a: $cleanUrl');
     _isConnecting = true;
 
     final completer = Completer<void>();
+    bool connectionHandled = false;
 
     // Cerramos socket anterior si existía
     if (_socket != null) {
@@ -64,59 +77,117 @@ class SocketService {
       _isConnected = false;
     }
 
+    // Crear socket con configuración mejorada
     _socket = IO.io(
-      baseUrl,
+      cleanUrl,
       IO.OptionBuilder()
-          .setTransports(['websocket'])
+          .setTransports(['websocket', 'polling']) // Permitir ambos transportes
+          .enableAutoConnect()
           .enableReconnection()
           .setReconnectionDelay(1000)
+          .setReconnectionDelayMax(5000)
           .setReconnectionAttempts(10)
+          .setTimeout(20000) // Timeout de 20 segundos
+          .setExtraHeaders({})
           .build(),
     );
 
     // 🟢 Conectado
     _socket!.onConnect((_) {
       _isConnected = true;
-      _isConnecting = false;
-      debugPrint('✅ Conectado al servidor Socket.IO');
-      if (!completer.isCompleted) completer.complete();
+      if (!connectionHandled) {
+        connectionHandled = true;
+        _isConnecting = false;
+        debugPrint('✅ [Socket] Conectado al servidor Socket.IO exitosamente');
+        if (!completer.isCompleted) {
+          completer.complete();
+        }
+      } else {
+        debugPrint('✅ [Socket] Reconectado exitosamente');
+      }
+      
+      // Si hay un usuario pendiente de registrar, registrarlo ahora
+      if (_pendingRegistration != null) {
+        debugPrint('🔄 [Socket] Re-emitiendo registro pendiente: $_pendingRegistration');
+        _socket!.emit('usuario_conectado', _pendingRegistration);
+        _pendingRegistration = null;
+      }
     });
 
     // 🔴 Desconectado
-    _socket!.onDisconnect((_) {
+    _socket!.onDisconnect((reason) {
       _isConnected = false;
-      debugPrint('⚠️ Socket desconectado');
+      debugPrint('⚠️ [Socket] Desconectado. Razón: $reason');
+      if (!connectionHandled && !completer.isCompleted) {
+        connectionHandled = true;
+        _isConnecting = false;
+        completer.completeError('Desconectado: $reason');
+      }
     });
 
     // ❌ Error de conexión
     _socket!.onConnectError((err) {
-      _isConnected = false;
-      _isConnecting = false;
-      debugPrint('❌ Error de conexión al socket: $err');
-      if (!completer.isCompleted) {
-        completer.completeError(err ?? 'Error de conexión');
+      debugPrint('❌ [Socket] Error de conexión: $err');
+      if (!connectionHandled && !completer.isCompleted) {
+        connectionHandled = true;
+        _isConnected = false;
+        _isConnecting = false;
+        completer.completeError(err ?? 'Error de conexión al socket');
       }
     });
 
     // 🔁 Reconectado automáticamente
-    _socket!.onReconnect((_) {
+    _socket!.onReconnect((attemptNumber) {
       _isConnected = true;
-      debugPrint('🔁 Reconexion automática exitosa');
+      debugPrint('🔁 [Socket] Reconexión automática exitosa (intento $attemptNumber)');
     });
 
-    // Esperar hasta que se conecte o falle
+    // Error general
+    _socket!.onError((err) {
+      debugPrint('❌ [Socket] Error general: $err');
+    });
+
+    // Esperar hasta que se conecte o falle (aumentado a 20 segundos)
+    // Si hay timeout, no lanzar excepción, permitir que reconecte en segundo plano
     try {
       await completer.future.timeout(
-        const Duration(seconds: 5),
+        const Duration(seconds: 20),
         onTimeout: () {
-          _isConnecting = false;
-          throw Exception('⏱️ Timeout al conectar con el socket.');
+          if (!connectionHandled) {
+            connectionHandled = true;
+            _isConnecting = false;
+            debugPrint('⏱️ [Socket] Timeout después de 20 segundos, pero el socket seguirá intentando');
+            debugPrint('⏱️ [Socket] La conexión puede establecerse en segundo plano');
+            // Completar sin error para no bloquear, el socket seguirá intentando
+            if (!completer.isCompleted) {
+              completer.complete(); // Completar sin error
+            }
+          }
         },
       );
+      if (_isConnected) {
+        debugPrint('✅ [Socket] Conexión establecida correctamente');
+      } else {
+        debugPrint('⚠️ [Socket] Completer completó pero socket no está conectado aún');
+        debugPrint('⚠️ [Socket] El socket seguirá intentando en segundo plano');
+      }
     } catch (e) {
-      debugPrint('❌ No se pudo establecer conexión con el socket: $e');
+      debugPrint('❌ [Socket] Excepción durante conexión: $e');
+      // No marcar como desconectado si el socket sigue intentando
+      if (e.toString().contains('Timeout')) {
+        debugPrint('⚠️ [Socket] Timeout, pero el socket seguirá intentando reconectar en segundo plano');
+        // El socket seguirá intentando reconectar automáticamente
+        // No lanzar la excepción para no bloquear
+      } else {
+        // Para otros errores, también permitir que continúe
+        debugPrint('⚠️ [Socket] Error, pero permitiendo que el socket continúe intentando');
+      }
     } finally {
       _isConnecting = false;
+      // Si el socket existe pero no está conectado, seguirá intentando en segundo plano
+      if (_socket != null && !_isConnected) {
+        debugPrint('ℹ️ [Socket] Socket creado pero no conectado aún, seguirá intentando automáticamente');
+      }
     }
   }
 
@@ -158,22 +229,60 @@ class SocketService {
   /// 🧍 Registrar usuario (pasajero o conductor) en el socket.
   ///
   /// [tipo] debería ser 'pasajero' o 'conductor'.
+  /// Si el socket no está conectado, intentará conectarse primero.
   Future<void> registrarUsuario({
     required int idUsuario,
     required String tipo,
   }) async {
-    await connect();
+    // Intentar conectar si no está conectado
     if (!_isConnected || _socket == null) {
-      debugPrint(
-        '❌ No se pudo registrar usuario en socket: sin conexión. id=$idUsuario tipo=$tipo',
-      );
+      debugPrint('🔄 [Socket] Socket no conectado, intentando conectar...');
+      try {
+        await connect();
+      } catch (e) {
+        debugPrint('⚠️ [Socket] Error en connect() durante registrarUsuario: $e');
+        // Continuar de todas formas
+      }
+    }
+
+    // Esperar un momento para que la conexión se establezca
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    if (_socket == null) {
+      debugPrint('❌ [Socket] Socket es null, no se puede registrar usuario');
       return;
     }
 
     final payload = {'id_usuario': idUsuario, 'tipo': tipo};
 
-    _socket!.emit('usuario_conectado', payload);
-    debugPrint('🧍 Evento usuario_conectado emitido → $payload');
+    // Guardar el payload por si el socket se desconecta y necesita re-registrarse
+    _pendingRegistration = payload;
+
+    // Emitir el evento incluso si no está completamente conectado
+    // El socket lo procesará cuando se conecte
+    try {
+      _socket!.emit('usuario_conectado', payload);
+      debugPrint('🧍 [Socket] Evento usuario_conectado emitido → $payload');
+      
+      // Si no está conectado, guardar el payload para emitirlo cuando se conecte
+      if (!_isConnected) {
+        debugPrint('⚠️ [Socket] Socket no conectado aún, el evento se procesará cuando se conecte');
+        debugPrint('⚠️ [Socket] El payload se guardó para re-emitir cuando se conecte');
+      }
+      
+      // Esperar un momento para que el servidor procese el join
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      // Verificar que el socket está en los rooms correctos
+      if (tipo == 'conductor') {
+        debugPrint('✅ [Socket] Conductor $idUsuario debería estar en room "conductores"');
+      } else if (tipo == 'pasajero') {
+        debugPrint('✅ [Socket] Pasajero $idUsuario debería estar en room "pasajeros"');
+      }
+    } catch (e) {
+      debugPrint('❌ [Socket] Error al emitir usuario_conectado: $e');
+      // No lanzar excepción, permitir que continúe
+    }
   }
 
   /// 📴 Notificar al servidor que el usuario se desconectó (pasajero o conductor).
@@ -234,5 +343,131 @@ class SocketService {
       await notificarDesconexionUsuario(idUsuario: idUsuario, tipo: tipo);
     }
     disconnect();
+  }
+
+  // =========================================================
+  // 🚕 Eventos de viajes
+  // =========================================================
+
+  /// 🚕 Unirse al room de un viaje para seguimiento en tiempo real
+  Future<void> unirseAViaje({
+    required int idViaje,
+    required int userId,
+    required String tipo,
+  }) async {
+    await connect();
+    if (!_isConnected || _socket == null) {
+      debugPrint('❌ No se pudo unir a viaje: sin conexión');
+      return;
+    }
+
+    _socket!.emit('join_viaje', {
+      'id_viaje': idViaje,
+      'user_id': userId,
+      'tipo': tipo,
+    });
+    debugPrint('🚕 Unido a viaje $idViaje como $tipo');
+  }
+
+  /// 🚕 Salir del room de un viaje
+  Future<void> salirDeViaje({
+    required int idViaje,
+    required int userId,
+  }) async {
+    if (!_isConnected || _socket == null) return;
+
+    _socket!.emit('leave_viaje', {
+      'id_viaje': idViaje,
+      'user_id': userId,
+    });
+    debugPrint('🚕 Salido de viaje $idViaje');
+  }
+
+  /// 📍 Enviar ubicación actualizada en tiempo real
+  Future<void> enviarUbicacion({
+    required int idViaje,
+    required double lat,
+    required double lng,
+    required int idUsuario,
+    required String tipo,
+  }) async {
+    await connect();
+    if (!_isConnected || _socket == null) {
+      debugPrint('❌ No se pudo enviar ubicación: sin conexión');
+      return;
+    }
+
+    _socket!.emit('ubicacion_actualizada', {
+      'id_viaje': idViaje,
+      'lat': lat,
+      'lng': lng,
+      'id_usuario': idUsuario,
+      'tipo': tipo,
+    });
+    debugPrint('📍 Ubicación enviada: $lat, $lng');
+  }
+
+  // =========================================================
+  // 📥 Listeners para eventos de viajes
+  // =========================================================
+
+  /// 📥 Escuchar cuando se crea un nuevo viaje (para conductores)
+  void onViajeCreado(Function(dynamic) callback) {
+    on('viaje_creado', callback);
+  }
+
+  /// 📥 Escuchar cuando un viaje es asignado (para pasajero)
+  void onViajeAsignado(Function(dynamic) callback) {
+    on('viaje_asignado', callback);
+  }
+
+  /// 📥 Escuchar cuando un viaje es aceptado (para conductor)
+  void onViajeAceptado(Function(dynamic) callback) {
+    on('viaje_aceptado', callback);
+  }
+
+  /// 📥 Escuchar cuando el conductor llegó al punto de encuentro
+  void onConductorLlegoEncuentro(Function(dynamic) callback) {
+    on('conductor_llego_encuentro', callback);
+  }
+
+  /// 📥 Escuchar cuando el viaje comienza
+  void onViajeEnCurso(Function(dynamic) callback) {
+    on('viaje_en_curso', callback);
+  }
+
+  /// 📥 Escuchar cuando el viaje finaliza
+  void onViajeFinalizado(Function(dynamic) callback) {
+    on('viaje_finalizado', callback);
+  }
+
+  /// 📥 Escuchar cuando un viaje es cancelado
+  void onViajeCancelado(Function(dynamic) callback) {
+    on('viaje_cancelado', callback);
+  }
+
+  /// 📥 Escuchar cuando un viaje vuelve a buscar conductor (cancelado por conductor)
+  void onViajeBuscandoConductor(Function(dynamic) callback) {
+    on('viaje_buscando_conductor', callback);
+  }
+
+  /// 📥 Escuchar actualizaciones de ubicación en tiempo real
+  void onUbicacionEnTiempoReal(Function(dynamic) callback) {
+    on('ubicacion_en_tiempo_real', callback);
+  }
+
+  /// 📥 Escuchar cuando un viaje fue tomado por otro conductor
+  void onViajeTomado(Function(dynamic) callback) {
+    on('viaje_tomado', callback);
+  }
+
+  /// 📥 Escuchar cuando un viaje fue rechazado
+  void onViajeRechazado(Function(dynamic) callback) {
+    on('viaje_rechazado', callback);
+  }
+
+  /// 📥 Escuchar cuando el conductor está disponible nuevamente
+  void onConductorDisponible(Function(dynamic) callback) {
+    on('conductor_disponible', callback);
   }
 }
