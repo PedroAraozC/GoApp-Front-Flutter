@@ -138,9 +138,9 @@ class _CarnetDigitalScreenState extends State<CarnetDigitalScreen> {
     }
 
     return {
-      'nombre': s(raw['nombre'], fallback: 'CONDUCTOR'),
-      'apellido': s(raw['apellido'], fallback: ''),
-      'foto_url': s(raw['foto_url'], fallback: ''),
+      'nombre': s(raw['nombre_usuario'], fallback: 'CONDUCTOR'),
+      'apellido': s(raw['apellido_usuario'], fallback: ''),
+      'foto_url': s(raw['foto_perfil'], fallback: ''),
       'patente': s(raw['patente'], fallback: '-'),
       'modelo_vehiculo': s(raw['modelo_vehiculo'], fallback: '-'),
       'color_vehiculo': s(raw['color_vehiculo'], fallback: '-'),

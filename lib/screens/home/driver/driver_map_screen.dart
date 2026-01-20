@@ -21,6 +21,7 @@ import '../../../services/taximetro_service.dart';
 import 'driver_en_camino_screen.dart';
 import './driver_taximetro_screen.dart';
 import 'driver_map_screen.dart';
+import 'package:taxi_tuc/screens/home/driver/driver_configuracion_screen.dart';
 
 class DriverMapScreen extends StatefulWidget {
   const DriverMapScreen({super.key});
@@ -733,6 +734,43 @@ class _DriverMapScreenState extends State<DriverMapScreen>
     return '\$${v.toStringAsFixed(2)}';
   }
 
+  Future<void> _onPanicPressed() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Botón antipánico'),
+        content: const Text(
+          '¿Querés enviar una alerta 911?\n'
+          'Esto notificará al sistema con tu ubicación actual.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Enviar'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    final idUsuario = await UserPreferences.getIdUsuario();
+
+    _socket.emit('panic_911', {
+      'id_usuario': idUsuario,
+      'lat': _driverLocation?.latitude,
+      'lng': _driverLocation?.longitude,
+      'ts': DateTime.now().toIso8601String(),
+    });
+
+    if (!mounted) return;
+    _showSnack('🚨 Alerta 911 enviada');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -820,20 +858,26 @@ class _DriverMapScreenState extends State<DriverMapScreen>
               title: const Text('Configuración'),
               onTap: () {
                 Navigator.pop(context);
-                // Navigator.push(context, MaterialPageRoute(builder: (_) => ConfiguracionScreen()));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const ConfiguracionScreen(),
+                  ),
+                );
               },
             ),
-
-            // Opción extra recomendada: Cerrar Sesión (o Desconectar)
             ListTile(
-              leading: const Icon(Icons.logout, color: Colors.red),
+              leading: const Icon(
+                Icons.logout,
+                color: ui.Color.fromARGB(221, 163, 1, 1),
+              ),
               title: const Text(
-                'Cerrar Sesión',
-                style: TextStyle(color: Colors.red),
+                'Cerrar sesión',
+                style: TextStyle(color: ui.Color.fromARGB(221, 163, 1, 1)),
               ),
               onTap: () {
                 Navigator.pop(context);
-                // Tu lógica de logout
+                _logout();
               },
             ),
           ],
@@ -861,6 +905,40 @@ class _DriverMapScreenState extends State<DriverMapScreen>
                   markers: _markers,
                   polylines: _polylines,
                   myLocationEnabled: true,
+                ),
+                Positioned(
+                  top: 500,
+                  right: 16,
+                  bottom: 16,
+                  child: GestureDetector(
+                    onTap: _onPanicPressed,
+                    child: Container(
+                      width: 70,
+                      height: 70,
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.black, width: 4),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black26,
+                            blurRadius: 8,
+                            offset: Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      alignment: Alignment.center,
+                      child: const Text(
+                        '911',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
 
                 // if (taximetro.viajeActivo)

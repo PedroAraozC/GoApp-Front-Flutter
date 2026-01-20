@@ -29,7 +29,6 @@ class UserPreferences {
     return jsonDecode(jsonString) as Map<String, dynamic>;
   }
 
-  
   /// ============================================================\
   /// 🔹 Devuelve solo el ID del usuario logueado\
   /// ============================================================\
@@ -42,7 +41,7 @@ class UserPreferences {
     }
     return null;
   }
-  
+
   // --- FIN DE LA NUEVA FUNCIÓN ---
 
   /// ============================================================
@@ -91,5 +90,62 @@ class UserPreferences {
     } catch (e) {
       print('⚠️ Error en fullLogout: $e');
     }
+  }
+
+  // Preferencias de UI / App
+  static const String _keyThemeMode = 'theme_mode'; // system|light|dark
+
+  // Preferencias de cobro
+  static const String _keyCashEnabled = 'cash_enabled'; // bool
+  static const String _keyPreferredPayment = 'preferred_payment'; // cash|debit
+
+  /// 🎨 TEMA (claro / oscuro / sistema)
+  static Future<void> setThemeMode(String mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyThemeMode, mode);
+  }
+
+  static Future<String> getThemeMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyThemeMode) ?? 'system';
+  }
+
+  /// 💳 MÉTODOS DE PAGO
+  /// - Débito siempre habilitado
+  /// - Efectivo opcional
+  /// - Método preferido: cash|debit
+  static Future<void> setCashEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyCashEnabled, enabled);
+
+    // Si deshabilita efectivo y estaba preferido, pasa a débito.
+    if (!enabled) {
+      final current = prefs.getString(_keyPreferredPayment) ?? 'debit';
+      if (current == 'cash') {
+        await prefs.setString(_keyPreferredPayment, 'debit');
+      }
+    }
+  }
+
+  static Future<bool> getCashEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_keyCashEnabled) ?? true;
+  }
+
+  static Future<void> setPreferredPayment(String method) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (method == 'cash') {
+      final cashEnabled = prefs.getBool(_keyCashEnabled) ?? true;
+      if (!cashEnabled) return; // no se puede elegir cash si está deshabilitado
+    }
+    await prefs.setString(_keyPreferredPayment, method);
+  }
+
+  static Future<String> getPreferredPayment() async {
+    final prefs = await SharedPreferences.getInstance();
+    final cashEnabled = prefs.getBool(_keyCashEnabled) ?? true;
+    final saved = prefs.getString(_keyPreferredPayment) ?? 'debit';
+    if (!cashEnabled && saved == 'cash') return 'debit';
+    return saved;
   }
 }
