@@ -51,8 +51,16 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/images/app_icon.png"
+  image_path: "assets/images/taxi-icon.png"
   min_sdk_android: 21 # o tu versión mínima
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/icon.png"
+  adaptive_icon_background: "#000000"
+  adaptive_icon_foreground: "assets/images/taxi-icon.png"
+
 
 flutter_native_splash:
   # Colores de fondo

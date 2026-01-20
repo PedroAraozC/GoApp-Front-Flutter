@@ -99,13 +99,13 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFFCC00),
+      backgroundColor: const Color.fromARGB(255, 0, 0, 0),
       body: Center(
         child: FadeTransition(
           opacity: _fade,
           child: ScaleTransition(
             scale: _scale,
-            child: Image.asset('assets/images/taxituc_splash.png', width: 180),
+            child: Image.asset('assets/images/taxituc_splash.png', width: 300),
           ),
         ),
       ),
