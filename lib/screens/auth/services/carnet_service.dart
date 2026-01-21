@@ -6,18 +6,14 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
 class CarnetService {
-  // Podés definir en tu .env algo como:
-  // API_URL=http://192.168.0.10:3000
-  //
-  // Si no usás dotenv, dejá la constante.
-  final _baseUrl = dotenv.env['API_URL'];
+  final String? _baseUrl = dotenv.env['API_URL'];
 
-  // Endpoint sugerido:
-  // GET /conductores/:idUsuario/carnet
-  //
-  // Si tu backend lo hace distinto, cambiá esta función.
   Future<Map<String, dynamic>> obtenerDatosCarnet(int idUsuario) async {
-    final uri = Uri.parse('$_baseUrl/conductores/$idUsuario/carnet');
+    if (_baseUrl == null || _baseUrl!.trim().isEmpty) {
+      throw Exception('API_URL no está configurado en .env');
+    }
+
+    final uri = Uri.parse('${_baseUrl!.trim()}/conductores/$idUsuario/carnet');
 
     try {
       final resp = await http
@@ -36,14 +32,11 @@ class CarnetService {
 
       final decoded = jsonDecode(resp.body);
 
-      // Permitimos que el backend responda:
-      // - { ...datos }
-      // - { ok: true, data: { ...datos } }
-      // - { data: { ...datos } }
+      // ✅ 1) Extraemos el "raw" real aunque venga {ok:true,data:{...}}
       Map<String, dynamic> raw;
       if (decoded is Map<String, dynamic>) {
-        if (decoded['data'] is Map<String, dynamic>) {
-          raw = Map<String, dynamic>.from(decoded['data']);
+        if (decoded['data'] is Map) {
+          raw = Map<String, dynamic>.from(decoded['data'] as Map);
         } else {
           raw = Map<String, dynamic>.from(decoded);
         }
@@ -51,7 +44,7 @@ class CarnetService {
         throw Exception('Respuesta inesperada (no es JSON objeto).');
       }
 
-      // Mapeo a las keys que espera CarnetDigitalScreen:
+      // ✅ 2) Devolvemos SIEMPRE el mapa plano normalizado
       return _mapToCarnetKeys(raw);
     } on SocketException {
       throw Exception('Sin conexión a internet / servidor no disponible.');
@@ -64,19 +57,12 @@ class CarnetService {
     }
   }
 
-  // ------------------------------
-  // Helpers
-  // ------------------------------
-
   String _safeBody(String body) {
     final t = body.trim();
     if (t.isEmpty) return '(sin cuerpo)';
     return t.length > 200 ? '${t.substring(0, 200)}...' : t;
   }
 
-  /// Convierte un JSON "cualquiera" a las claves estándar del carnet:
-  /// nombre, apellido, foto_url, patente, modelo_vehiculo, color_vehiculo,
-  /// rating, viajes_totales, fecha_ingreso, verificado
   Map<String, dynamic> _mapToCarnetKeys(Map<String, dynamic> raw) {
     dynamic pick(List<String> keys) {
       for (final k in keys) {
@@ -85,7 +71,31 @@ class CarnetService {
       return null;
     }
 
-    // Datos conductor
+    String s(dynamic v, {String fallback = ''}) {
+      final txt = (v ?? '').toString().trim();
+      return txt.isEmpty ? fallback : txt;
+    }
+
+    double d(dynamic v, {double fallback = 0}) {
+      if (v == null) return fallback;
+      if (v is num) return v.toDouble();
+      return double.tryParse(v.toString()) ?? fallback;
+    }
+
+    int i(dynamic v, {int fallback = 0}) {
+      if (v == null) return fallback;
+      if (v is num) return v.toInt();
+      return int.tryParse(v.toString()) ?? fallback;
+    }
+
+    bool b(dynamic v, {bool fallback = false}) {
+      if (v == null) return fallback;
+      if (v is bool) return v;
+      if (v is num) return v == 1;
+      final t = v.toString().toLowerCase();
+      return (t == '1' || t == 'true' || t == 'si' || t == 'sí');
+    }
+
     final nombre = pick(['nombre', 'nombres', 'name', 'nombre_usuario']);
     final apellido = pick([
       'apellido',
@@ -95,31 +105,29 @@ class CarnetService {
     ]);
     final fotoUrl = pick([
       'foto_url',
-      'foto',
-      'fotoPerfil',
       'foto_perfil',
+      'fotoPerfil',
+      'foto',
       'avatar',
       'image',
       'url_foto',
     ]);
 
-    // Datos vehículo
     final patente = pick(['patente', 'dominio', 'matricula', 'placa']);
     final modelo = pick([
       'modelo_vehiculo',
       'modelo',
-      'vehiculo_modelo',
       'auto_modelo',
-      'marca_modelo',
+      'vehiculo_modelo',
+      'marca_vehiculo',
     ]);
     final color = pick([
       'color_vehiculo',
       'color',
-      'vehiculo_color',
       'auto_color',
+      'vehiculo_color',
     ]);
 
-    // Stats
     final rating = pick(['rating', 'calificacion', 'score', 'promedio_rating']);
     final viajesTotales = pick([
       'viajes_totales',
@@ -127,15 +135,17 @@ class CarnetService {
       'viajes',
       'cant_viajes',
     ]);
+
+    // tu DB usa fecha_carga; backend puede enviar created_at también
     final fechaIngreso = pick([
       'fecha_ingreso',
+      'fecha_carga',
+      'created_at',
       'member_since',
       'fecha_alta',
-      'created_at',
       'fechaRegistro',
     ]);
 
-    // Verificación
     final verificado = pick([
       'verificado',
       'verified',
@@ -144,16 +154,16 @@ class CarnetService {
     ]);
 
     return {
-      'nombre': (nombre ?? '').toString(),
-      'apellido': (apellido ?? '').toString(),
-      'foto_url': (fotoUrl ?? '').toString(),
-      'patente': (patente ?? '').toString(),
-      'modelo_vehiculo': (modelo ?? '').toString(),
-      'color_vehiculo': (color ?? '').toString(),
-      'rating': rating ?? 0,
-      'viajes_totales': viajesTotales ?? 0,
-      'fecha_ingreso': (fechaIngreso ?? '').toString(),
-      'verificado': verificado ?? false,
+      'nombre': s(nombre, fallback: ''),
+      'apellido': s(apellido, fallback: ''),
+      'foto_url': s(fotoUrl, fallback: ''),
+      'patente': s(patente, fallback: ''),
+      'modelo_vehiculo': s(modelo, fallback: ''),
+      'color_vehiculo': s(color, fallback: ''),
+      'rating': d(rating, fallback: 0),
+      'viajes_totales': i(viajesTotales, fallback: 0),
+      'fecha_ingreso': s(fechaIngreso, fallback: ''),
+      'verificado': b(verificado, fallback: false),
     };
   }
 }

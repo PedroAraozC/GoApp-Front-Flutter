@@ -24,7 +24,6 @@ class _CarnetDigitalScreenState extends State<CarnetDigitalScreen> {
   }
 
   int? _leerIdUsuario(SharedPreferences prefs) {
-    // Probamos varias keys comunes (por si en tu login guardaste otro nombre)
     const keys = [
       'id_usuario',
       'idUsuario',
@@ -44,10 +43,18 @@ class _CarnetDigitalScreenState extends State<CarnetDigitalScreen> {
       }
     }
 
-    // Debug útil: ver qué keys hay guardadas
-    // (esto te sirve para encontrar la key real)
     // ignore: avoid_print
     print('🔎 SharedPreferences keys: ${prefs.getKeys()}');
+    return null;
+  }
+
+  Future<int?> _obtenerIdUsuarioConFallback() async {
+    final id1 = await UserPreferences.getIdUsuario();
+    if (id1 != null) return id1;
+
+    final prefs = await SharedPreferences.getInstance();
+    final id2 = _leerIdUsuario(prefs);
+    if (id2 != null) return id2;
 
     return null;
   }
@@ -60,46 +67,40 @@ class _CarnetDigitalScreenState extends State<CarnetDigitalScreen> {
     });
 
     try {
-      final idUsuario = await UserPreferences.getIdUsuario();
+      final idUsuario = await _obtenerIdUsuarioConFallback();
 
       if (idUsuario == null) {
-        // Debug para ver qué se está guardando realmente
         final user = await UserPreferences.getUser();
+        // ignore: avoid_print
         print('🔎 user_data guardado: $user');
 
+        if (!mounted) return;
         setState(() {
           _isLoading = false;
           _errorMessage =
-              'No se encontró sesión de conductor (user_data sin id_usuario).';
+              'No se encontró sesión de conductor (sin id_usuario).';
         });
         return;
       }
 
-      Map<String, dynamic>? datos;
-      try {
-        datos = await _carnetService.obtenerDatosCarnet(idUsuario);
-      } catch (_) {
-        datos = null; // fallback
-      }
+      // ignore: avoid_print
+      print('🪪 idUsuario: $idUsuario');
 
-      datos ??= {
-        'nombre': 'Juan',
-        'apellido': 'Pérez',
-        'foto_url': 'https://i.pravatar.cc/300',
-        'patente': 'AA 123 BB',
-        'modelo_vehiculo': 'Fiat Cronos Drive 1.3',
-        'color_vehiculo': 'Blanco',
-        'rating': 4.8,
-        'viajes_totales': 1240,
-        'fecha_ingreso': '12/03/2023',
-        'verificado': true,
-      };
+      // ✅ Puede venir plano o envuelto (ok/data). Lo arreglamos acá.
+      final resp = await _carnetService.obtenerDatosCarnet(idUsuario);
+      // ignore: avoid_print
+      print('📦 datos carnet (service): $resp');
 
-      final normalizado = _normalizarCarnet(datos);
+      final Map<String, dynamic> datos = (resp?['data'] is Map)
+          ? Map<String, dynamic>.from(resp?['data'] as Map)
+          : Map<String, dynamic>.from(resp!);
+
+      // ignore: avoid_print
+      print('✅ datos carnet (usado por UI): $datos');
 
       if (!mounted) return;
       setState(() {
-        _carnetData = normalizado;
+        _carnetData = datos;
         _isLoading = false;
       });
     } catch (e) {
@@ -109,46 +110,6 @@ class _CarnetDigitalScreenState extends State<CarnetDigitalScreen> {
         _errorMessage = 'Error al cargar carnet: $e';
       });
     }
-  }
-
-  Map<String, dynamic> _normalizarCarnet(Map<String, dynamic> raw) {
-    String s(dynamic v, {String fallback = '-'}) {
-      final txt = (v ?? '').toString().trim();
-      return txt.isEmpty ? fallback : txt;
-    }
-
-    double d(dynamic v, {double fallback = 0}) {
-      if (v == null) return fallback;
-      if (v is num) return v.toDouble();
-      return double.tryParse(v.toString()) ?? fallback;
-    }
-
-    int i(dynamic v, {int fallback = 0}) {
-      if (v == null) return fallback;
-      if (v is num) return v.toInt();
-      return int.tryParse(v.toString()) ?? fallback;
-    }
-
-    bool b(dynamic v, {bool fallback = false}) {
-      if (v == null) return fallback;
-      if (v is bool) return v;
-      if (v is num) return v == 1;
-      final t = v.toString().toLowerCase();
-      return (t == '1' || t == 'true' || t == 'si' || t == 'sí');
-    }
-
-    return {
-      'nombre': s(raw['nombre_usuario'], fallback: 'CONDUCTOR'),
-      'apellido': s(raw['apellido_usuario'], fallback: ''),
-      'foto_url': s(raw['foto_perfil'], fallback: ''),
-      'patente': s(raw['patente'], fallback: '-'),
-      'modelo_vehiculo': s(raw['modelo_vehiculo'], fallback: '-'),
-      'color_vehiculo': s(raw['color_vehiculo'], fallback: '-'),
-      'rating': d(raw['rating'], fallback: 0),
-      'viajes_totales': i(raw['viajes_totales'], fallback: 0),
-      'fecha_ingreso': s(raw['fecha_ingreso'], fallback: '-'),
-      'verificado': b(raw['verificado'], fallback: false),
-    };
   }
 
   @override
@@ -195,7 +156,7 @@ class _CarnetDigitalScreenState extends State<CarnetDigitalScreen> {
                       minimumSize: const Size(200, 45),
                     ),
                     onPressed: () {
-                      // TODO: Lógica para compartir
+                      // TODO: compartir
                     },
                   ),
                 ],
@@ -235,12 +196,34 @@ class _CarnetDigitalScreenState extends State<CarnetDigitalScreen> {
   }
 
   Widget _buildCarnetCard() {
-    final data = _carnetData!;
-    final fullName = ('${data['nombre']} ${data['apellido']}')
-        .trim()
-        .toUpperCase();
-    final fotoUrl = (data['foto_url'] ?? '').toString().trim();
+    final data = _carnetData ?? {};
+
+    String safeStr(dynamic v, {String fallback = '-'}) {
+      final t = (v ?? '').toString().trim();
+      return t.isEmpty ? fallback : t;
+    }
+
+    final nombre = safeStr(data['nombre'], fallback: 'CONDUCTOR');
+    final apellido = safeStr(data['apellido'], fallback: '');
+    final fullName = ('$nombre $apellido').trim().toUpperCase();
+
+    final fotoUrl = safeStr(data['foto_url'], fallback: '');
     final tieneFoto = fotoUrl.isNotEmpty;
+
+    final ratingRaw = data['rating'];
+    final ratingNum = ratingRaw is num
+        ? ratingRaw.toDouble()
+        : double.tryParse((ratingRaw ?? '0').toString()) ?? 0.0;
+    final ratingText = ratingNum <= 0 ? '—' : ratingNum.toStringAsFixed(1);
+
+    final viajesRaw = data['viajes_totales'];
+    final viajes = viajesRaw is num
+        ? viajesRaw.toInt()
+        : int.tryParse((viajesRaw ?? '0').toString()) ?? 0;
+
+    final fecha = safeStr(data['fecha_ingreso'], fallback: '-');
+
+    final verificado = data['verificado'] == true;
 
     return Container(
       width: double.infinity,
@@ -295,7 +278,7 @@ class _CarnetDigitalScreenState extends State<CarnetDigitalScreen> {
                         ),
                       ],
                     ),
-                    if (data['verificado'] == true)
+                    if (verificado)
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
@@ -376,14 +359,14 @@ class _CarnetDigitalScreenState extends State<CarnetDigitalScreen> {
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                '${data['rating']}',
+                                ratingText,
                                 style: const TextStyle(
                                   color: Colors.amber,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
                               Text(
-                                ' (${data['viajes_totales']} viajes)',
+                                ' ($viajes viajes)',
                                 style: TextStyle(
                                   color: Colors.grey[400],
                                   fontSize: 12,
@@ -393,7 +376,7 @@ class _CarnetDigitalScreenState extends State<CarnetDigitalScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Miembro desde: ${data['fecha_ingreso']}',
+                            'Miembro desde: $fecha',
                             style: TextStyle(
                               color: Colors.grey[500],
                               fontSize: 10,
@@ -416,15 +399,19 @@ class _CarnetDigitalScreenState extends State<CarnetDigitalScreen> {
                     Expanded(
                       child: _buildInfoColumn(
                         'VEHÍCULO',
-                        data['modelo_vehiculo'],
+                        safeStr(data['modelo_vehiculo'], fallback: '-'),
                       ),
                     ),
                     const SizedBox(width: 12),
-                    _buildInfoColumn('PATENTE', data['patente'], compact: true),
+                    _buildInfoColumn(
+                      'PATENTE',
+                      safeStr(data['patente'], fallback: '-'),
+                      compact: true,
+                    ),
                     const SizedBox(width: 12),
                     _buildInfoColumn(
                       'COLOR',
-                      data['color_vehiculo'],
+                      safeStr(data['color_vehiculo'], fallback: '-'),
                       compact: true,
                     ),
                   ],
@@ -432,7 +419,7 @@ class _CarnetDigitalScreenState extends State<CarnetDigitalScreen> {
 
                 const SizedBox(height: 24),
 
-                // QR
+                // QR placeholder
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
@@ -458,6 +445,9 @@ class _CarnetDigitalScreenState extends State<CarnetDigitalScreen> {
   }
 
   Widget _buildInfoColumn(String label, String value, {bool compact = false}) {
+    final v = value.trim();
+    final safeValue = v.isEmpty ? '-' : v;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -471,7 +461,7 @@ class _CarnetDigitalScreenState extends State<CarnetDigitalScreen> {
         ),
         const SizedBox(height: 4),
         Text(
-          value,
+          safeValue,
           maxLines: compact ? 1 : 2,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
