@@ -885,7 +885,7 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       ),
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: const Text('TucuTaxi'),
+        title: const Text('A.CO.T.T'),
         centerTitle: true,
         titleTextStyle: const TextStyle(color: Colors.yellow, fontSize: 25),
         backgroundColor: Colors.black87,
