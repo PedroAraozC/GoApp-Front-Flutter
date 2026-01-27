@@ -1,4 +1,4 @@
-// lib/screens/home/driver/driver_home_screen.dart
+// lib/screens/home/driver/driver_map_screen.dart
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' as ui;
@@ -10,18 +10,23 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
-import 'package:taxi_tuc/main.dart';
+
+import 'package:intl/intl.dart';
+
 import 'package:taxi_tuc/screens/carnet_conductor/carnet_digital_screen.dart';
 import 'package:taxi_tuc/screens/home/driver/driver_perfil_screen.dart';
+import 'package:taxi_tuc/screens/home/driver/driver_configuracion_screen.dart';
+import 'package:taxi_tuc/screens/home/driver/ingresos_screen.dart';
+import 'package:taxi_tuc/screens/home/driver/estadisticas_screen.dart';
 
 import '../../../services/socket_service.dart';
 import '../../../services/api_service.dart';
 import '../../../services/user_preferences.dart';
 import '../../../services/taximetro_service.dart';
+import '../../../services/earnings_service.dart';
+
 import 'driver_en_camino_screen.dart';
-import './driver_taximetro_screen.dart';
-import 'driver_map_screen.dart';
-import 'package:taxi_tuc/screens/home/driver/driver_configuracion_screen.dart';
+import 'dart:math' as math;
 
 class DriverMapScreen extends StatefulWidget {
   const DriverMapScreen({super.key});
@@ -36,6 +41,16 @@ class _DriverMapScreenState extends State<DriverMapScreen>
   final ApiService _api = ApiService();
   final taximetro = TaximetroService.instance;
 
+  final GlobalKey _bottomButtonsKey = GlobalKey();
+  final GlobalKey _incomingCardKey = GlobalKey();
+
+  double _panicBottom = 16.0; // se recalcula según tamaños reales
+  double _bottomButtonsH = 0.0;
+  double _incomingCardH = 0.0;
+
+  final _earningsService = EarningsService.instance;
+  final _money = NumberFormat.currency(locale: 'es_AR', symbol: '\$');
+
   GoogleMapController? _mapCtrl;
   LatLng? _driverLocation;
   final Set<Marker> _markers = {};
@@ -44,14 +59,18 @@ class _DriverMapScreenState extends State<DriverMapScreen>
   BitmapDescriptor? _iconPassenger;
 
   IncomingRide? _incomingRide;
-  double _todayTotal = 0.0;
+
   bool _listening = false;
   bool _accepted = false;
   bool _loading = false;
-  bool _isOnline = false; // conectado / desconectado para recibir viajes
+  bool _isOnline = false;
 
   late AnimationController _islandPulse;
   Timer? _taximetroTimer;
+
+  // ✅ Recaudación de hoy (desde EarningsService)
+  double _recaudacionHoy = 0.0;
+  Timer? _earningsTimer;
 
   @override
   void initState() {
@@ -64,6 +83,13 @@ class _DriverMapScreenState extends State<DriverMapScreen>
 
     _initDriverHome();
 
+    // ✅ actualiza la recaudación hoy automáticamente
+    _loadRecaudacionHoy();
+    _earningsTimer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) => _loadRecaudacionHoy(),
+    );
+
     _taximetroTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted && taximetro.viajeActivo) setState(() {});
     });
@@ -75,18 +101,53 @@ class _DriverMapScreenState extends State<DriverMapScreen>
 
     await _initIcons();
     await _initLocation();
-    await _loadTodayTotal();
+
+    // si ya tenemos ubicación, refrescamos recaudación
+    await _loadRecaudacionHoy();
   }
 
   @override
   void dispose() {
     _taximetroTimer?.cancel();
+    _earningsTimer?.cancel();
+
     _mapCtrl?.dispose();
     _islandPulse.dispose();
+
     _socket.off('viaje_creado');
     _socket.off('viaje_finalizado');
     _socket.off('viaje_cancelado_busqueda');
+    _socket.off('viaje_tomado');
+
     super.dispose();
+  }
+
+  Future<void> _loadRecaudacionHoy() async {
+    final idUsuario = await UserPreferences.getIdUsuario();
+    if (idUsuario == null || !mounted) return;
+
+    final totalHoy = await _earningsService.getTotalHoy(idUsuario: idUsuario);
+
+    if (!mounted) return;
+    setState(() {
+      _recaudacionHoy = totalHoy;
+    });
+  }
+
+  Future<void> _openIngresos() async {
+    final idUsuario = await UserPreferences.getIdUsuario();
+    if (!mounted || idUsuario == null) {
+      _showSnack('No se encontró el ID del usuario');
+      return;
+    }
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => IngresosScreen(idUsuario: idUsuario)),
+    );
+
+    // ✅ al volver, refrescar por si hubo nuevos ingresos
+    await _loadRecaudacionHoy();
   }
 
   Future<bool> _checkRoleAccess() async {
@@ -155,12 +216,14 @@ class _DriverMapScreenState extends State<DriverMapScreen>
         _showSnack('Permiso de ubicación denegado permanentemente.');
         return;
       }
+
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
+
       _driverLocation = LatLng(pos.latitude, pos.longitude);
       _addDriverMarker();
-      setState(() {});
+      if (mounted) setState(() {});
     } catch (e) {
       debugPrint('Error init location driver: $e');
     }
@@ -168,12 +231,14 @@ class _DriverMapScreenState extends State<DriverMapScreen>
 
   void _addDriverMarker() {
     if (_driverLocation == null || _iconDriver == null) return;
+
     final m = Marker(
       markerId: const MarkerId('driver'),
       position: _driverLocation!,
       icon: _iconDriver!,
       infoWindow: const InfoWindow(title: 'Tu ubicación'),
     );
+
     setState(() {
       _markers.removeWhere((m) => m.markerId.value == 'driver');
       _markers.add(m);
@@ -186,15 +251,9 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       try {
         debugPrint('🚕 [Driver] Evento viaje_creado recibido: $data');
 
-        if (data == null) {
-          debugPrint('⚠️ [Driver] viaje_creado recibió data null');
-          return;
-        }
+        if (data == null) return;
 
         final ride = IncomingRide.fromSocket(data);
-        debugPrint(
-          '✅ [Driver] Viaje parseado: ID=${ride.idViajes}, Origen=${ride.direccionDesde}',
-        );
 
         if (!mounted) return;
 
@@ -207,36 +266,21 @@ class _DriverMapScreenState extends State<DriverMapScreen>
         await _fitMapToDriverAndPassenger();
 
         _showSnack('Nuevo viaje disponible 🚕');
-        debugPrint('✅ [Driver] Tarjeta de viaje mostrada al conductor');
       } catch (e) {
         debugPrint('❌ [Driver] Error procesando viaje_creado: $e');
-        debugPrint('❌ [Driver] Stack trace: ${StackTrace.current}');
       }
     });
 
-    // viaje finalizado → actualizar recaudación
-    _socket.on('viaje_finalizado', (data) async {
-      try {
-        debugPrint('socket viaje_finalizado: $data');
-        final amount = (data?['precio_final'] is num)
-            ? (data['precio_final'] as num).toDouble()
-            : (data?['valor'] is num)
-            ? (data['valor'] as num).toDouble()
-            : 0.0;
-        await _addToTodayTotal(amount);
-      } catch (e) {
-        debugPrint('Error viaje_finalizado socket: $e');
-      }
+    // viaje finalizado → solo refrescamos recaudación
+    _socket.on('viaje_finalizado', (_) async {
+      await _loadRecaudacionHoy();
     });
 
     // viaje cancelado mientras estaba "buscando" → limpiar tarjeta
     _socket.on('viaje_cancelado_busqueda', (data) {
       try {
-        debugPrint('socket viaje_cancelado_busqueda: $data');
         final idCancelado =
-            data?['id_viajes'] ??
-            data?['id_viaje'] ??
-            data?['id']; // por las dudas
+            data?['id_viajes'] ?? data?['id_viaje'] ?? data?['id'];
         if (idCancelado == null || _incomingRide == null) return;
 
         final idInt = idCancelado is num
@@ -264,7 +308,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
     // viaje tomado por otro conductor → limpiar tarjeta
     _socket.onViajeTomado((data) {
       try {
-        debugPrint('socket viaje_tomado: $data');
         final idTomado = data?['id_viajes'] ?? data?['id_viaje'] ?? data?['id'];
         if (idTomado == null || _incomingRide == null) return;
 
@@ -305,6 +348,7 @@ class _DriverMapScreenState extends State<DriverMapScreen>
         snippet: ride.direccionDesde,
       ),
     );
+
     setState(() {
       _markers.removeWhere((m) => m.markerId.value.startsWith('passenger_'));
       _markers.add(mk);
@@ -316,6 +360,7 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       return;
     }
     final p = LatLng(_incomingRide!.latDesde, _incomingRide!.lonDesde);
+
     final sw = LatLng(
       _driverLocation!.latitude < p.latitude
           ? _driverLocation!.latitude
@@ -332,29 +377,9 @@ class _DriverMapScreenState extends State<DriverMapScreen>
           ? _driverLocation!.longitude
           : p.longitude,
     );
+
     final bounds = LatLngBounds(southwest: sw, northeast: ne);
     await _mapCtrl!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 80));
-  }
-
-  Future<void> _loadTodayTotal() async {
-    try {
-      final resp = await _api.getTodayEarnings();
-      setState(() {
-        _todayTotal = resp ?? 0.0;
-      });
-    } catch (e) {
-      debugPrint('Error cargando recaudación: $e');
-      setState(() => _todayTotal = 0.0);
-    }
-  }
-
-  Future<void> _addToTodayTotal(double amount) async {
-    setState(() => _todayTotal += amount);
-    try {
-      await _api.addEarning(amount);
-    } catch (e) {
-      debugPrint('Error guardando recaudación en backend: $e');
-    }
   }
 
   // Conectarse (ONLINE)
@@ -365,75 +390,37 @@ class _DriverMapScreenState extends State<DriverMapScreen>
 
       if (idUsuario == null) {
         _showSnack('No se encontró información del usuario.');
-        debugPrint('❌ [Driver] id_usuario es null en _goOnline');
         return;
       }
 
-      debugPrint('🔌 [Driver] Conectando conductor ${idUsuario}...');
-
-      // 1) Conectar socket (con manejo de errores mejorado)
+      // 1) Conectar socket
       try {
         await _socket.connect();
-      } catch (e) {
-        debugPrint('⚠️ [Driver] Error en connect(), pero continuando: $e');
-        // Continuar aunque haya error, el socket intentará reconectar
-      }
+      } catch (_) {}
 
-      // Esperar un momento para que la conexión se establezca
-      await Future.delayed(const Duration(milliseconds: 1000));
+      await Future.delayed(const Duration(milliseconds: 800));
 
-      // Verificar conexión después de esperar
-      if (!_socket.isConnected) {
-        debugPrint(
-          '⚠️ [Driver] Socket no conectado después de 1 segundo, pero continuando...',
-        );
-        _showSnack('Conectando al servidor... (puede tardar unos segundos)');
-        // Continuar de todas formas, el socket intentará reconectar
-      } else {
-        debugPrint('✅ [Driver] Socket conectado exitosamente');
-      }
-
-      // 2) Registrar usuario en socket (esto lo une al room "conductores")
-      // Intentar registrar aunque el socket no esté completamente conectado
+      // 2) Registrar usuario en socket
       try {
         await _socket.registrarUsuario(idUsuario: idUsuario, tipo: 'conductor');
-        debugPrint('✅ [Driver] Conductor ${idUsuario} registrado en socket');
-      } catch (e) {
-        debugPrint(
-          '⚠️ [Driver] Error al registrar usuario, pero continuando: $e',
-        );
-        // El socket intentará reconectar y registrar automáticamente
-      }
+      } catch (_) {}
 
       // 3) Actualizar estado en BD
-      final ok = await _api.cambiarEstadoConductor(
+      await _api.cambiarEstadoConductor(
         idConductor: idUsuario,
         conectado: true,
       );
-      if (!ok) {
-        _showSnack('No se pudo actualizar el estado en el servidor.');
-        debugPrint('⚠️ [Driver] No se pudo actualizar estado del conductor');
-      } else {
-        debugPrint('✅ [Driver] Estado del conductor actualizado a conectado');
-      }
 
-      // 4) Inicializar listeners si no están activos
+      // 4) Listeners
       if (!_listening) {
         await _initSocketListeners();
-        debugPrint('✅ [Driver] Listeners de socket inicializados');
       }
 
       if (!mounted) return;
-      setState(() {
-        _isOnline = true;
-      });
+      setState(() => _isOnline = true);
 
       _showSnack('Estás conectado y disponible para recibir viajes.');
-      debugPrint(
-        '✅ [Driver] Conductor ${idUsuario} ONLINE y listo para recibir viajes',
-      );
     } catch (e) {
-      debugPrint('❌ [Driver] Error al ponerse online: $e');
       _showSnack('Error al conectarse: $e');
     }
   }
@@ -471,7 +458,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
 
       _showSnack('Te desconectaste. Ya no recibirás nuevos viajes.');
     } catch (e) {
-      debugPrint('Error al ponerse offline: $e');
       _showSnack('Error al desconectarse: $e');
     }
   }
@@ -499,7 +485,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
     if (confirm != true) return;
 
     try {
-      // notificar desconexión por socket antes de borrar prefs
       final user = await UserPreferences.getUser();
       final idUsuario = user?['id_usuario'];
       if (idUsuario != null) {
@@ -512,8 +497,7 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       await UserPreferences.fullLogout();
       if (!mounted) return;
       Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
-    } catch (e) {
-      debugPrint('Error al cerrar sesión: $e');
+    } catch (_) {
       if (!mounted) return;
       _showSnack('Error al cerrar sesión');
     }
@@ -533,12 +517,9 @@ class _DriverMapScreenState extends State<DriverMapScreen>
         return;
       }
 
-      // El nuevo acceptRide ya usa id_conductor internamente
       final res = await _api.acceptRide(_incomingRide!.idViajes, driverId);
       if (res == true) {
-        setState(() {
-          _accepted = true;
-        });
+        setState(() => _accepted = true);
 
         _showSnack('Viaje aceptado. En camino al pasajero...');
 
@@ -551,7 +532,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
           ),
         );
 
-        // Si en la otra pantalla iniciaron el viaje, limpiamos la tarjeta
         if (started == true && mounted) {
           setState(() {
             _incomingRide = null;
@@ -563,10 +543,9 @@ class _DriverMapScreenState extends State<DriverMapScreen>
         _showSnack('Error al aceptar viaje');
       }
     } catch (e) {
-      debugPrint('Error acceptRide: $e');
       _showSnack('Error al aceptar viaje: $e');
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -584,8 +563,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       }
 
       final idViaje = _incomingRide!.idViajes;
-
-      // Usar el nuevo método rechazarViaje
       final ok = await _api.rechazarViaje(idViaje, driverId);
 
       if (ok) {
@@ -602,20 +579,18 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       } else {
         _showSnack('Error al rechazar el viaje.');
       }
-    } catch (e) {
-      debugPrint('Error al rechazar viaje: $e');
+    } catch (_) {
       _showSnack('Error al rechazar el viaje.');
     }
   }
 
-  // --- Helpers polyline (lo podés dejar o borrar si no usás) ---
-
+  // --- Helpers polyline ---
   Future<void> _drawRouteToPassenger() async {
     if (_driverLocation == null || _incomingRide == null) return;
 
     final apiKey =
         dotenv.env['GOOGLE_MAPS_API_KEY'] ?? dotenv.env['GOOGLE_API_KEY'];
-    if (apiKey == null) {
+    if (apiKey == null || apiKey.trim().isEmpty) {
       debugPrint('❌ Google API KEY no encontrada en .env');
       return;
     }
@@ -632,10 +607,7 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       final response = await http.get(url);
       final data = jsonDecode(response.body);
 
-      if (data['status'] != 'OK') {
-        debugPrint('❌ Error Directions API: ${data['status']}');
-        return;
-      }
+      if (data['status'] != 'OK') return;
 
       final route = data['routes'][0]['overview_polyline']['points'];
       final polylinePoints = _decodePolyline(route);
@@ -653,9 +625,7 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       });
 
       await _fitPolyline(polylinePoints);
-    } catch (e) {
-      debugPrint('❌ Error solicitando ruta: $e');
-    }
+    } catch (_) {}
   }
 
   List<LatLng> _decodePolyline(String polyline) {
@@ -719,6 +689,37 @@ class _DriverMapScreenState extends State<DriverMapScreen>
     );
   }
 
+  void _recalcPanicBottom() {
+    if (!mounted) return;
+
+    final safeBottom = MediaQuery.of(context).padding.bottom;
+
+    final btnSize = _bottomButtonsKey.currentContext?.size;
+    final cardSize = _incomingCardKey.currentContext?.size;
+
+    final double btnH = btnSize?.height ?? 0.0;
+    final double cardH = _incomingRide != null
+        ? (cardSize?.height ?? 0.0)
+        : 0.0;
+
+    const double gap = 12.0;
+
+    final double desired =
+        safeBottom + 16.0 + btnH + gap + (cardH > 0 ? (cardH + gap) : 0.0);
+
+    final double newBottom = math.max(safeBottom + 16.0, desired).toDouble();
+
+    if ((newBottom - _panicBottom).abs() > 0.5 ||
+        (btnH - _bottomButtonsH).abs() > 0.5 ||
+        (cardH - _incomingCardH).abs() > 0.5) {
+      setState(() {
+        _panicBottom = newBottom;
+        _bottomButtonsH = btnH;
+        _incomingCardH = cardH;
+      });
+    }
+  }
+
   void _showSnack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -730,9 +731,7 @@ class _DriverMapScreenState extends State<DriverMapScreen>
     );
   }
 
-  String _formatCurrency(double v) {
-    return '\$${v.toStringAsFixed(2)}';
-  }
+  String _formatCurrency(double v) => '\$${v.toStringAsFixed(0)}';
 
   Future<void> _onPanicPressed() async {
     final ok = await showDialog<bool>(
@@ -773,12 +772,15 @@ class _DriverMapScreenState extends State<DriverMapScreen>
 
   @override
   Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _recalcPanicBottom();
+    });
     return Scaffold(
       drawer: Drawer(
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
-            // --- TU HEADER ORIGINAL ---
             const DrawerHeader(
               decoration: BoxDecoration(color: Colors.black87),
               child: Column(
@@ -795,37 +797,40 @@ class _DriverMapScreenState extends State<DriverMapScreen>
               ),
             ),
 
-            // --- SECCIÓN OPERATIVA ---
             ListTile(
               leading: const Icon(Icons.history, color: Colors.black87),
               title: const Text('Historial de viajes'),
               onTap: () {
                 Navigator.pop(context);
-                // Navigator.push(context, MaterialPageRoute(builder: (_) => HistorialScreen()));
               },
             ),
             ListTile(
-              leading: const Icon(
-                Icons.payments,
-                color: Colors.black87,
-              ), // O attach_money
+              leading: const Icon(Icons.payments, color: Colors.black87),
               title: const Text('Ingresos'),
-              onTap: () {
+              onTap: () async {
                 Navigator.pop(context);
-                // Navigator.push(context, MaterialPageRoute(builder: (_) => IngresosScreen()));
+                await _openIngresos();
               },
             ),
             ListTile(
               leading: const Icon(Icons.bar_chart, color: Colors.black87),
               title: const Text('Estadísticas'),
-              onTap: () {
+              onTap: () async {
                 Navigator.pop(context);
-                // Navigator.push(context, MaterialPageRoute(builder: (_) => EstadisticasScreen()));
+                final idUsuario = await UserPreferences.getIdUsuario();
+                if (!mounted || idUsuario == null) return;
+
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => EstadisticasScreen(idUsuario: idUsuario),
+                  ),
+                );
               },
             ),
 
-            const Divider(), // Separador visual
-            // --- SECCIÓN PERSONAL ---
+            const Divider(),
+
             ListTile(
               leading: const Icon(Icons.person, color: Colors.black87),
               title: const Text('Mi perfil'),
@@ -833,7 +838,9 @@ class _DriverMapScreenState extends State<DriverMapScreen>
                 Navigator.pop(context);
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => DriverProfileScreen()),
+                  MaterialPageRoute(
+                    builder: (_) => const DriverProfileScreen(),
+                  ),
                 );
               },
             ),
@@ -851,8 +858,8 @@ class _DriverMapScreenState extends State<DriverMapScreen>
               },
             ),
 
-            const Divider(), // Separador visual
-            // --- CONFIGURACIÓN ---
+            const Divider(),
+
             ListTile(
               leading: const Icon(Icons.settings, color: Colors.black87),
               title: const Text('Configuración'),
@@ -890,7 +897,8 @@ class _DriverMapScreenState extends State<DriverMapScreen>
         titleTextStyle: const TextStyle(color: Colors.yellow, fontSize: 25),
         backgroundColor: Colors.black87,
         elevation: 1,
-        iconTheme: const IconThemeData(color: Colors.black87),
+        // ✅ iconos visibles
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: _driverLocation == null
           ? const Center(child: CircularProgressIndicator())
@@ -906,10 +914,11 @@ class _DriverMapScreenState extends State<DriverMapScreen>
                   polylines: _polylines,
                   myLocationEnabled: true,
                 ),
+
+                // ✅ Botón antipánico
                 Positioned(
-                  top: 500,
                   right: 16,
-                  bottom: 16,
+                  bottom: _panicBottom,
                   child: GestureDetector(
                     onTap: _onPanicPressed,
                     child: Container(
@@ -941,57 +950,7 @@ class _DriverMapScreenState extends State<DriverMapScreen>
                   ),
                 ),
 
-                // if (taximetro.viajeActivo)
-                //   Positioned(
-                //     bottom: 100,
-                //     right: 16,
-                //     child: GestureDetector(
-                //       onTap: () async {
-                //         await Navigator.of(context).push(
-                //           MaterialPageRoute(
-                //             builder: (_) => const TaximetroScreen(),
-                //           ),
-                //         );
-                //         setState(() {});
-                //       },
-                //       child: AnimatedContainer(
-                //         duration: const Duration(milliseconds: 300),
-                //         padding: const EdgeInsets.symmetric(
-                //           vertical: 10,
-                //           horizontal: 16,
-                //         ),
-                //         decoration: BoxDecoration(
-                //           color: Colors.black87,
-                //           borderRadius: BorderRadius.circular(30),
-                //           boxShadow: const [
-                //             BoxShadow(
-                //               color: Colors.black26,
-                //               offset: Offset(0, 3),
-                //               blurRadius: 6,
-                //             ),
-                //           ],
-                //         ),
-                //         child: Row(
-                //           mainAxisSize: MainAxisSize.min,
-                //           children: [
-                //             const Icon(
-                //               Icons.local_taxi,
-                //               color: Colors.greenAccent,
-                //             ),
-                //             const SizedBox(width: 8),
-                //             Text(
-                //               '${taximetro.total.toStringAsFixed(0)}',
-                //               style: const TextStyle(
-                //                 color: Colors.white,
-                //                 fontSize: 18,
-                //                 fontWeight: FontWeight.bold,
-                //               ),
-                //             ),
-                //           ],
-                //         ),
-                //       ),
-                //     ),
-                //   ),
+                // ✅ Isla superior (estado + recaudación hoy clickable)
                 Positioned(
                   top: 16,
                   left: 16,
@@ -1016,29 +975,63 @@ class _DriverMapScreenState extends State<DriverMapScreen>
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(
-                                Icons.attach_money,
-                                color: Colors.green,
+                              Icon(
+                                _isOnline
+                                    ? Icons.wifi_rounded
+                                    : Icons.wifi_off_rounded,
+                                color: _isOnline
+                                    ? Colors.green
+                                    : Colors.redAccent,
                               ),
                               const SizedBox(width: 8),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Recaudación hoy',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.black54,
+                              Text(
+                                _isOnline ? 'ONLINE' : 'OFFLINE',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+
+                              // 👇 Tu bloque de "Recaudación hoy" pero clickable
+                              GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: _openIngresos,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.attach_money,
+                                      color: Colors.green,
                                     ),
-                                  ),
-                                  Text(
-                                    _formatCurrency(_todayTotal),
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
+                                    const SizedBox(width: 6),
+                                    Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'Recaudación hoy',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.black54,
+                                          ),
+                                        ),
+                                        Text(
+                                          _money.format(_recaudacionHoy),
+                                          style: const TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(width: 6),
+                                    const Icon(
+                                      Icons.chevron_right,
+                                      size: 18,
+                                      color: Colors.black38,
+                                    ),
+                                  ],
+                                ),
                               ),
                             ],
                           ),
@@ -1048,78 +1041,88 @@ class _DriverMapScreenState extends State<DriverMapScreen>
                   ),
                 ),
 
-                // Botón conectar / desconectar
+                // ✅ Botones inferiores
                 Positioned(
                   left: 16,
                   right: 16,
                   bottom: _incomingRide != null ? 100 : 24,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _isOnline ? _goOffline : _goOnline,
-                          icon: Icon(
-                            _isOnline
-                                ? Icons.wifi_off_rounded
-                                : Icons.wifi_rounded,
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              vertical: 14,
-                              horizontal: 16,
+                  child: Container(
+                    key: _bottomButtonsKey,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: _isOnline ? _goOffline : _goOnline,
+                            icon: Icon(
+                              _isOnline
+                                  ? Icons.wifi_off_rounded
+                                  : Icons.wifi_rounded,
                             ),
-                            backgroundColor: _isOnline
-                                ? Colors.redAccent
-                                : Colors.green,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(30),
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 14,
+                                horizontal: 16,
+                              ),
+                              backgroundColor: _isOnline
+                                  ? Colors.redAccent
+                                  : Colors.green,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(30),
+                              ),
                             ),
-                          ),
-                          label: Text(
-                            _isOnline
-                                ? 'Desconectarse (no recibir viajes)'
-                                : 'Conectarse (recibir viajes)',
-                            style: const TextStyle(fontSize: 16),
+                            label: Text(
+                              _isOnline
+                                  ? 'Desconectarse (no recibir viajes)'
+                                  : 'Conectarse (recibir viajes)',
+                              style: const TextStyle(fontSize: 16),
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () async {
-                            if (!mounted) return;
-                            await Navigator.of(context).pushNamed("/taximetro");
-                          },
-                          icon: const Icon(Icons.attach_money),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              vertical: 14,
-                              horizontal: 16,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () async {
+                              if (!mounted) return;
+                              await Navigator.of(
+                                context,
+                              ).pushNamed("/taximetro");
+                              // por si cerraste viaje rápido y guardó ingresos
+                              await _loadRecaudacionHoy();
+                            },
+                            icon: const Icon(Icons.attach_money),
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 14,
+                                horizontal: 16,
+                              ),
+                              backgroundColor: Colors.blue,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(30),
+                              ),
                             ),
-                            backgroundColor: Colors.blue,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(30),
+                            label: const Text(
+                              'Viaje Rápido',
+                              style: TextStyle(fontSize: 16),
                             ),
-                          ),
-                          label: const Text(
-                            'Viaje Rápido',
-                            style: TextStyle(fontSize: 16),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
 
-                // Panel inferior: tarjeta del viaje entrante
+                // ✅ Tarjeta del viaje entrante
                 if (_incomingRide != null)
                   Positioned(
                     left: 12,
                     right: 12,
                     bottom: 18,
-                    child: _buildIncomingRideCard(),
+                    child: Container(
+                      key: _incomingCardKey,
+                      child: _buildIncomingRideCard(),
+                    ),
                   ),
               ],
             ),
@@ -1129,7 +1132,10 @@ class _DriverMapScreenState extends State<DriverMapScreen>
   Widget _buildIncomingRideCard() {
     final r = _incomingRide!;
     return GestureDetector(
-      onTap: () {},
+      onTap: () async {
+        // opcional: dibujar ruta cuando aparece card
+        await _drawRouteToPassenger();
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         padding: const EdgeInsets.all(14),
@@ -1141,7 +1147,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Header
             Row(
               children: [
                 CircleAvatar(
@@ -1164,7 +1169,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
             ),
             const SizedBox(height: 8),
 
-            // Direcciones
             Row(
               children: [
                 Column(
@@ -1203,7 +1207,11 @@ class _DriverMapScreenState extends State<DriverMapScreen>
                     IconButton(
                       onPressed: _accepted ? null : _acceptRide,
                       icon: _loading
-                          ? const CircularProgressIndicator()
+                          ? const SizedBox(
+                              width: 28,
+                              height: 28,
+                              child: CircularProgressIndicator(strokeWidth: 3),
+                            )
                           : const Icon(
                               Icons.check_circle,
                               size: 36,
@@ -1224,7 +1232,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
             ),
             const SizedBox(height: 8),
 
-            // Info extra
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -1291,50 +1298,43 @@ class IncomingRide {
   }
 
   factory IncomingRide.fromSocket(dynamic json) {
-    try {
-      final parsed = json is String ? jsonDecode(json) : json;
-      debugPrint('📦 [IncomingRide] Parsing: $parsed');
+    final parsed = json is String ? jsonDecode(json) : json;
 
-      return IncomingRide(
-        idViajes: (parsed['id_viajes']) is num
-            ? (parsed['id_viajes'] as num).toInt()
-            : int.parse(parsed['id_viajes'].toString()),
-        idPasajero: (parsed['id_pasajero']) is num
-            ? (parsed['id_pasajero'] as num).toInt()
-            : int.parse(parsed['id_pasajero'].toString()),
-        idConductor: parsed['id_conductor'] is num
-            ? (parsed['id_conductor'] as num).toInt()
-            : null,
-        direccionDesde:
-            parsed['direccion_desde'] ?? parsed['direccionDesde'] ?? '',
-        latDesde: _parseDouble(parsed['lat_desde'] ?? parsed['latDesde'] ?? 0),
-        lonDesde: _parseDouble(parsed['lon_desde'] ?? parsed['lonDesde'] ?? 0),
-        direccionHasta:
-            parsed['direccion_hasta'] ?? parsed['direccionHasta'] ?? '',
-        latHasta: _parseDouble(
-          parsed['lat_hasta'] ?? parsed['latHasta'] ?? parsed['lat_desde'] ?? 0,
-        ),
-        lonHasta: _parseDouble(
-          parsed['lon_hasta'] ?? parsed['lonHasta'] ?? parsed['lon_desde'] ?? 0,
-        ),
-        horaInicio: parsed['hora_inicio'] != null
-            ? DateTime.parse(parsed['hora_inicio'].toString())
-            : null,
-        horaFin: parsed['hora_fin'] != null
-            ? DateTime.parse(parsed['hora_fin'].toString())
-            : null,
-        valor: _parseDouble(parsed['valor'] ?? 0),
-        idEstado: (parsed['id_estado'] ?? parsed['estado'] ?? 1) is num
-            ? (parsed['id_estado'] ?? parsed['estado'] ?? 1 as num).toInt()
-            : int.tryParse(
-                    (parsed['id_estado'] ?? parsed['estado'] ?? 1).toString(),
-                  ) ??
-                  1,
-      );
-    } catch (e) {
-      debugPrint('❌ [IncomingRide] Error parsing: $e');
-      debugPrint('❌ [IncomingRide] JSON recibido: $json');
-      rethrow;
-    }
+    return IncomingRide(
+      idViajes: (parsed['id_viajes']) is num
+          ? (parsed['id_viajes'] as num).toInt()
+          : int.parse(parsed['id_viajes'].toString()),
+      idPasajero: (parsed['id_pasajero']) is num
+          ? (parsed['id_pasajero'] as num).toInt()
+          : int.parse(parsed['id_pasajero'].toString()),
+      idConductor: parsed['id_conductor'] is num
+          ? (parsed['id_conductor'] as num).toInt()
+          : null,
+      direccionDesde:
+          parsed['direccion_desde'] ?? parsed['direccionDesde'] ?? '',
+      latDesde: _parseDouble(parsed['lat_desde'] ?? parsed['latDesde'] ?? 0),
+      lonDesde: _parseDouble(parsed['lon_desde'] ?? parsed['lonDesde'] ?? 0),
+      direccionHasta:
+          parsed['direccion_hasta'] ?? parsed['direccionHasta'] ?? '',
+      latHasta: _parseDouble(
+        parsed['lat_hasta'] ?? parsed['latHasta'] ?? parsed['lat_desde'] ?? 0,
+      ),
+      lonHasta: _parseDouble(
+        parsed['lon_hasta'] ?? parsed['lonHasta'] ?? parsed['lon_desde'] ?? 0,
+      ),
+      horaInicio: parsed['hora_inicio'] != null
+          ? DateTime.parse(parsed['hora_inicio'].toString())
+          : null,
+      horaFin: parsed['hora_fin'] != null
+          ? DateTime.parse(parsed['hora_fin'].toString())
+          : null,
+      valor: _parseDouble(parsed['valor'] ?? 0),
+      idEstado: (parsed['id_estado'] ?? parsed['estado'] ?? 1) is num
+          ? (parsed['id_estado'] ?? parsed['estado'] ?? 1 as num).toInt()
+          : int.tryParse(
+                  (parsed['id_estado'] ?? parsed['estado'] ?? 1).toString(),
+                ) ??
+                1,
+    );
   }
 }

@@ -6,6 +6,8 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
+import '../../../services/user_preferences.dart';
+import '../../../services/earnings_service.dart';
 
 import '../../../services/api_service.dart';
 import '../../../services/socket_service.dart';
@@ -279,7 +281,7 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
   // =============== ENVIAR UBICACIÓN ===============
   void _enviarUbicacion(double lat, double lng) {
     if (widget.ride.idConductor == null) return;
-    
+
     // Enviar por Socket.IO
     _socket.enviarUbicacion(
       idViaje: widget.ride.idViajes,
@@ -305,7 +307,7 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
       _msg('Error: No se encontró el ID del conductor');
       return;
     }
-    
+
     setState(() => _finishingTrip = true);
     try {
       // Podrías calcular distancia/duración reales y pasarlas acá
@@ -325,6 +327,18 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
       _msg('Viaje finalizado. ¡Buen trabajo! 🏁');
 
       if (!mounted) return;
+
+      final idUsuario = await UserPreferences.getIdUsuario();
+      if (idUsuario != null) {
+        await EarningsService.instance.addEarning(
+          idUsuario: idUsuario,
+          uniqueId: 'app_${widget.ride.idViajes}', // ✅ id único por viaje
+          idViaje: widget.ride.idViajes,
+          monto: widget.ride.valor,
+          fecha: DateTime.now(),
+          tipo: EarningType.viajeApp,
+        );
+      }
 
       // Volvemos a la pantalla anterior (DriverEnCaminoScreen)
       // devolviendo true para que esa pantalla a su vez avise al Home.

@@ -6,6 +6,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../../../services/taximetro_service.dart';
+import '../../../services/user_preferences.dart';
+import '../../../services/earnings_service.dart';
 
 class TaximetroScreen extends StatefulWidget {
   const TaximetroScreen({super.key});
@@ -146,6 +148,23 @@ class _TaximetroScreenState extends State<TaximetroScreen> {
                 onPressed: () async {
                   await HapticFeedback.mediumImpact();
                   SystemSound.play(SystemSoundType.alert);
+
+                  // ✅ Guardar ingreso de viaje rápido
+                  final idUsuario = await UserPreferences.getIdUsuario();
+                  if (idUsuario != null) {
+                    final monto = service.total; // total final del taxímetro
+                    final uniqueId =
+                        'rapido_${DateTime.now().millisecondsSinceEpoch}'; // ✅ único
+                    await EarningsService.instance.addEarning(
+                      idUsuario: idUsuario,
+                      uniqueId: uniqueId,
+                      idViaje: null, // no hay id de viaje en rápido (opcional)
+                      monto: monto,
+                      fecha: DateTime.now(),
+                      tipo: EarningType.viajeRapido,
+                    );
+                  }
+
                   if (!mounted) return;
                   Navigator.pop(context);
                   setState(() {

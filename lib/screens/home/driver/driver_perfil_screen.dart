@@ -261,8 +261,6 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                         "Género",
                         _generoTexto(_getInt(user, ["id_genero"])),
                       ),
-                      _item("ID Usuario", _get(user, ["id_usuario"])),
-                      _item("Rol", _get(user, ["id_rol"])),
                     ],
                   ),
                 ),
@@ -465,6 +463,10 @@ class _DriverEditProfileScreenState extends State<DriverEditProfileScreen> {
                   Text(
                     "Apellido: ${widget.apellido.isEmpty ? "—" : widget.apellido}",
                   ),
+                  const SizedBox(height: 6),
+                  Text("DNI: ${widget.dni.isEmpty ? "—" : widget.dni}"),
+                  const SizedBox(height: 6),
+                  Text("Email: ${widget.email.isEmpty ? "—" : widget.email}"),
                   const SizedBox(height: 4),
                   const Divider(),
                   const SizedBox(height: 4),
@@ -478,15 +480,6 @@ class _DriverEditProfileScreenState extends State<DriverEditProfileScreen> {
                     key: _formKey,
                     child: Column(
                       children: [
-                        TextFormField(
-                          controller: _emailCtrl,
-                          decoration: const InputDecoration(
-                            labelText: "Email",
-                            prefixIcon: Icon(Icons.email),
-                          ),
-                          keyboardType: TextInputType.emailAddress,
-                          validator: _validateEmail,
-                        ),
                         const SizedBox(height: 12),
                         TextFormField(
                           controller: _telCtrl,
@@ -496,16 +489,6 @@ class _DriverEditProfileScreenState extends State<DriverEditProfileScreen> {
                           ),
                           keyboardType: TextInputType.phone,
                           validator: _validateTel,
-                        ),
-                        const SizedBox(height: 12),
-                        TextFormField(
-                          controller: _dniCtrl,
-                          decoration: const InputDecoration(
-                            labelText: "DNI (opcional)",
-                            prefixIcon: Icon(Icons.badge),
-                          ),
-                          keyboardType: TextInputType.number,
-                          validator: _validateDni,
                         ),
                         const SizedBox(height: 12),
                         TextFormField(
