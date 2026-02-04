@@ -238,12 +238,34 @@ class ApiService {
   }) async {
     try {
       final url = Uri.parse('$baseUrl/viajes/$idViaje/llegarEncuentro');
+      debugPrint('🚦 PUT $url');
+      debugPrint('📤 body: {"id_conductor": $idConductor}');
+
       final resp = await http.put(
         url,
-        body: json.encode({'id_conductor': idConductor}),
         headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'id_conductor': idConductor}),
       );
-      return resp.statusCode == 200;
+
+      debugPrint('📥 llegarEncuentro status=${resp.statusCode}');
+      debugPrint('📥 llegarEncuentro body=${resp.body}');
+
+      // Caso ideal: 200 OK
+      if (resp.statusCode == 200) {
+        // Si tu backend responde { ok: true/false }, lo respetamos:
+        try {
+          final decoded = jsonDecode(resp.body);
+          if (decoded is Map && decoded.containsKey('ok')) {
+            return decoded['ok'] == true;
+          }
+        } catch (_) {
+          // si no es JSON, igual lo consideramos ok porque status 200
+        }
+        return true;
+      }
+
+      // 409/400/404 etc.
+      return false;
     } catch (e) {
       debugPrint('❌ Error en llegarEncuentro(): $e');
       return false;

@@ -40,14 +40,24 @@ class _HomeScreenState extends State<HomeScreen> {
       debugPrint('🔌 Conectando socket desde HomeScreen...');
 
       Future.delayed(const Duration(seconds: 1), () async {
-        // Podrías usar también UserPreferences.getUser()
         final prefs = await SharedPreferences.getInstance();
-        final idUsuario =
+
+        final dynamic rawId =
             prefs.getInt('id_usuario') ?? widget.user['id_usuario'];
+        final int? idUsuario = (rawId is int) ? rawId : int.tryParse('$rawId');
+
+        debugPrint('👤 [Home] idUsuario raw=$rawId -> int=$idUsuario');
+
         if (idUsuario != null) {
-          _socket.emitirConexionUsuario(idUsuario, 'pasajero');
-          debugPrint('✅ Usuario $idUsuario registrado en socket.');
-          _mostrarSnack('Conectado al servidor en tiempo real.');
+          try {
+            await _socket.emitirConexionUsuario(idUsuario, 'pasajero');
+            debugPrint('✅ [Home] Usuario $idUsuario registrado en socket.');
+            _mostrarSnack('Conectado al servidor en tiempo real.');
+          } catch (e) {
+            debugPrint('❌ [Home] Error registrando usuario en socket: $e');
+          }
+        } else {
+          debugPrint('⚠️ [Home] No hay id_usuario válido para registrar.');
         }
       });
 

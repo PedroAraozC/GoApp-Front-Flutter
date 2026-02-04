@@ -1,17 +1,21 @@
+// lib/screens/home/driver/driver_viaje_en_curso_screen.dart
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
+
 import '../../../services/user_preferences.dart';
 import '../../../services/earnings_service.dart';
 
 import '../../../services/api_service.dart';
 import '../../../services/socket_service.dart';
-import 'driver_map_screen.dart'; // Para usar IncomingRide
+import 'driver_map_screen.dart'; // IncomingRide
 
 class DriverViajeEnCursoScreen extends StatefulWidget {
   final IncomingRide ride;
@@ -29,7 +33,10 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
 
   GoogleMapController? _mapCtrl;
   LatLng? _driverPos;
-  late LatLng _destPos; // destino del viaje
+  late LatLng _destPos;
+
+  int? _driverId;
+  bool _socketReady = false;
 
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
@@ -40,25 +47,79 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
   String _durationText = '--';
   bool _finishingTrip = false;
 
+  // ✅ PINS UNIFICADOS + SOMBRA
+  BitmapDescriptor? _iconDriver;
+  BitmapDescriptor? _iconTarget; // destino con mismo estilo que pasajero
+  BitmapDescriptor? _iconShadow;
+
   @override
   void initState() {
     super.initState();
     _destPos = LatLng(widget.ride.latHasta, widget.ride.lonHasta);
-    _initLocationAndTracking();
-    _inicializarSocket();
+    _init();
+  }
+
+  Future<void> _init() async {
+    await _initIcons();
+    await _resolveDriverId();
+    await _inicializarSocket();
+    await _initLocationAndTracking();
+  }
+
+  Future<void> _initIcons() async {
+    _iconDriver = await _createBitmapDescriptorFromAsset(
+      'assets/markers/taxi_pin_online.png',
+      80,
+    );
+    _iconTarget = await _createBitmapDescriptorFromAsset(
+      'assets/markers/taxi_pin_passenger.png',
+      76,
+    );
+    _iconShadow = await _createBitmapDescriptorFromAsset(
+      'assets/markers/taxi_pin_shadow.png',
+      60,
+    );
+  }
+
+  Future<BitmapDescriptor> _createBitmapDescriptorFromAsset(
+    String path,
+    int size,
+  ) async {
+    final data = await rootBundle.load(path);
+    final codec = await ui.instantiateImageCodec(
+      data.buffer.asUint8List(),
+      targetWidth: size,
+    );
+    final frame = await codec.getNextFrame();
+    final bytes = await frame.image.toByteData(format: ui.ImageByteFormat.png);
+    return BitmapDescriptor.fromBytes(bytes!.buffer.asUint8List());
+  }
+
+  Future<void> _resolveDriverId() async {
+    final fromRide = widget.ride.idConductor;
+    final fromPrefs = await UserPreferences.getIdUsuario();
+    _driverId = fromRide ?? fromPrefs;
+
+    debugPrint(
+      '🧩 [DriverViajeEnCurso] idConductor ride=$fromRide prefs=$fromPrefs -> usando=$_driverId',
+    );
   }
 
   Future<void> _inicializarSocket() async {
-    // Unirse al room del viaje para enviar ubicaciones
-    if (widget.ride.idConductor == null) {
-      debugPrint('⚠️ idConductor es null, no se puede unir al viaje');
+    if (_driverId == null) {
+      debugPrint(
+        '⚠️ No hay idConductor (ride/prefs). No se puede unir al viaje',
+      );
       return;
     }
+
     await _socket.unirseAViaje(
       idViaje: widget.ride.idViajes,
-      userId: widget.ride.idConductor!,
+      userId: _driverId!,
       tipo: 'conductor',
     );
+
+    if (mounted) setState(() => _socketReady = true);
   }
 
   @override
@@ -89,7 +150,7 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
         ).listen((p) {
           _driverPos = LatLng(p.latitude, p.longitude);
           _setMarkers();
-          _buildRoute(); // actualiza ruta / tiempo / distancia
+          _buildRoute();
           _enviarUbicacion(p.latitude, p.longitude);
         });
 
@@ -117,28 +178,69 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
   void _setMarkers() {
     if (_driverPos == null) return;
 
-    final driverMarker = Marker(
-      markerId: const MarkerId('driver'),
-      position: _driverPos!,
-      infoWindow: const InfoWindow(title: 'Tu ubicación'),
-      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+    final next = <Marker>{};
+
+    // ✅ Sombra + pin conductor
+    if (_iconShadow != null) {
+      next.add(
+        Marker(
+          markerId: const MarkerId('driver_shadow'),
+          position: _driverPos!,
+          icon: _iconShadow!,
+          anchor: const Offset(0.5, 0.5),
+          zIndex: 0,
+          flat: true,
+        ),
+      );
+    }
+
+    next.add(
+      Marker(
+        markerId: const MarkerId('driver_pin'),
+        position: _driverPos!,
+        infoWindow: const InfoWindow(title: 'Tu ubicación'),
+        icon:
+            _iconDriver ??
+            BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
+        anchor: const Offset(0.5, 1.0),
+        zIndex: 1,
+      ),
     );
 
-    final destMarker = Marker(
-      markerId: const MarkerId('dest'),
-      position: _destPos,
-      infoWindow: InfoWindow(
-        title: 'Destino',
-        snippet: widget.ride.direccionHasta,
+    // ✅ Sombra + pin destino (mismo estilo)
+    if (_iconShadow != null) {
+      next.add(
+        Marker(
+          markerId: const MarkerId('dest_shadow'),
+          position: _destPos,
+          icon: _iconShadow!,
+          anchor: const Offset(0.5, 0.5),
+          zIndex: 0,
+          flat: true,
+        ),
+      );
+    }
+
+    next.add(
+      Marker(
+        markerId: const MarkerId('dest_pin'),
+        position: _destPos,
+        infoWindow: InfoWindow(
+          title: 'Destino',
+          snippet: widget.ride.direccionHasta,
+        ),
+        icon:
+            _iconTarget ??
+            BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+        anchor: const Offset(0.5, 1.0),
+        zIndex: 1,
       ),
-      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
     );
 
     setState(() {
       _markers
         ..clear()
-        ..add(driverMarker)
-        ..add(destMarker);
+        ..addAll(next);
     });
   }
 
@@ -280,43 +382,37 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
 
   // =============== ENVIAR UBICACIÓN ===============
   void _enviarUbicacion(double lat, double lng) {
-    if (widget.ride.idConductor == null) return;
+    if (_driverId == null || !_socketReady) return;
 
-    // Enviar por Socket.IO
     _socket.enviarUbicacion(
       idViaje: widget.ride.idViajes,
       lat: lat,
       lng: lng,
-      idUsuario: widget.ride.idConductor!,
+      idUsuario: _driverId!,
       tipo: 'conductor',
     );
 
-    // También actualizar por REST API (opcional)
     _api.actualizarUbicacion(
       idViaje: widget.ride.idViajes,
       lat: lat,
       lng: lng,
-      idUsuario: widget.ride.idConductor!,
+      idUsuario: _driverId!,
       tipo: 'conductor',
     );
   }
 
   // =============== FINALIZAR VIAJE ===============
   Future<void> _onFinalizarViaje() async {
-    if (widget.ride.idConductor == null) {
+    if (_driverId == null) {
       _msg('Error: No se encontró el ID del conductor');
       return;
     }
 
     setState(() => _finishingTrip = true);
     try {
-      // Podrías calcular distancia/duración reales y pasarlas acá
       final ok = await _api.finalizarViaje(
         idViaje: widget.ride.idViajes,
-        idConductor: widget.ride.idConductor!,
-        // distanciaKm: ...,
-        // duracionMin: ...,
-        // precioFinal: ...,
+        idConductor: _driverId!,
       );
 
       if (!ok) {
@@ -332,7 +428,7 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
       if (idUsuario != null) {
         await EarningsService.instance.addEarning(
           idUsuario: idUsuario,
-          uniqueId: 'app_${widget.ride.idViajes}', // ✅ id único por viaje
+          uniqueId: 'app_${widget.ride.idViajes}',
           idViaje: widget.ride.idViajes,
           monto: widget.ride.valor,
           fecha: DateTime.now(),
@@ -340,8 +436,6 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
         );
       }
 
-      // Volvemos a la pantalla anterior (DriverEnCaminoScreen)
-      // devolviendo true para que esa pantalla a su vez avise al Home.
       Navigator.pop(context, true);
     } catch (e) {
       debugPrint('Error al finalizar viaje: $e');
@@ -380,7 +474,6 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
                   polylines: _polylines,
                 ),
 
-                // Panel superior con info de tiempo/distancia
                 Positioned(
                   top: 16,
                   left: 16,
@@ -428,7 +521,6 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
                   ),
                 ),
 
-                // Botón inferior: Finalizar viaje
                 Positioned(
                   left: 16,
                   right: 16,

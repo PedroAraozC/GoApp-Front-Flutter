@@ -35,11 +35,10 @@ class UserPreferences {
   static Future<int?> getIdUsuario() async {
     final user = await getUser();
     if (user == null) return null;
-    // Asumimos que el ID se guarda como 'id_usuario' (tipo num)\
-    if (user['id_usuario'] is num) {
-      return (user['id_usuario'] as num).toInt();
-    }
-    return null;
+
+    final v = user['id_usuario'];
+    if (v is num) return v.toInt();
+    return int.tryParse('${v ?? ''}');
   }
 
   // --- FIN DE LA NUEVA FUNCIÓN ---

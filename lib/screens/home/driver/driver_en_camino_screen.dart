@@ -1,20 +1,24 @@
 // lib/screens/home/driver/driver_en_camino_screen.dart
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
+
 import 'package:taxi_tuc/screens/home/driver/driver_viaje_en_curso_screen.dart';
 import 'package:taxi_tuc/services/socket_service.dart';
+import 'package:taxi_tuc/services/user_preferences.dart';
 
 import '../../../services/api_service.dart';
-import 'driver_map_screen.dart'; // Para usar IncomingRide
+import 'driver_map_screen.dart'; // Para IncomingRide
 
 class DriverEnCaminoScreen extends StatefulWidget {
-  final IncomingRide ride; // viaje aceptado
+  final IncomingRide ride;
 
   const DriverEnCaminoScreen({super.key, required this.ride});
 
@@ -29,41 +33,136 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
   LatLng? _driverPos;
   late LatLng _passengerPos;
 
-  final Set<Marker> _markers = {};
-  final Set<Polyline> _polylines = {};
-
-  StreamSubscription<Position>? _positionSub;
   final SocketService _socket = SocketService.instance;
 
+  int? _driverId;
+  bool _socketReady = false;
+
+  StreamSubscription<Position>? _positionSub;
+
+  Set<Marker> _markers = {};
+  Set<Polyline> _polylines = {};
+
+  bool _loadingMap = true;
+  bool _llegueAlEncuentro = false;
+  bool _llegandoEncuentro = false;
+  bool _comenzandoViaje = false;
+
+  // UI
   String _distanceText = '--';
   String _durationText = '--';
-  bool _llegandoEncuentro = false;
-  bool _startingTrip = false;
-  bool _llegueAlEncuentro = false;
+
+  // ✅ PINS UNIFICADOS + SOMBRA
+  BitmapDescriptor? _iconDriver;
+  BitmapDescriptor? _iconPassenger;
+  BitmapDescriptor? _iconShadow;
 
   @override
   void initState() {
     super.initState();
     _passengerPos = LatLng(widget.ride.latDesde, widget.ride.lonDesde);
-    _initLocationAndTracking();
-    _inicializarSocket();
+    _init();
+  }
+
+  Future<void> _init() async {
+    await _initIcons(); // ✅ primero cargar assets
+    await _resolveDriverId();
+    await _inicializarSocket();
+    _listenPassengerLocation();
+    await _initLocationAndTracking();
+  }
+
+  Future<void> _initIcons() async {
+    // Conductor online (pantalla de viaje => estás activo)
+    _iconDriver = await _createBitmapDescriptorFromAsset(
+      'assets/markers/taxi_pin_online.png',
+      80,
+    );
+    // Pasajero
+    _iconPassenger = await _createBitmapDescriptorFromAsset(
+      'assets/markers/taxi_pin_passenger.png',
+      76,
+    );
+    // Sombra
+    _iconShadow = await _createBitmapDescriptorFromAsset(
+      'assets/markers/taxi_pin_shadow.png',
+      60,
+    );
+  }
+
+  Future<BitmapDescriptor> _createBitmapDescriptorFromAsset(
+    String path,
+    int size,
+  ) async {
+    final data = await rootBundle.load(path);
+    final codec = await ui.instantiateImageCodec(
+      data.buffer.asUint8List(),
+      targetWidth: size,
+    );
+    final frame = await codec.getNextFrame();
+    final bytes = await frame.image.toByteData(format: ui.ImageByteFormat.png);
+    return BitmapDescriptor.fromBytes(bytes!.buffer.asUint8List());
+  }
+
+  Future<void> _resolveDriverId() async {
+    final fromRide = widget.ride.idConductor;
+    final fromPrefs = await UserPreferences.getIdUsuario();
+
+    _driverId = fromRide ?? fromPrefs;
+
+    debugPrint(
+      '🧩 [DriverEnCamino] idConductor ride=$fromRide prefs=$fromPrefs -> usando=$_driverId',
+    );
+  }
+
+  void _listenPassengerLocation() {
+    _socket.onUbicacionEnTiempoReal((data) async {
+      try {
+        if (!mounted) return;
+
+        final idViaje = int.tryParse('${data['id_viaje']}') ?? -1;
+        if (idViaje != widget.ride.idViajes) return;
+
+        if (data['tipo'] != 'pasajero') return;
+
+        final lat = double.tryParse('${data['lat']}');
+        final lng = double.tryParse('${data['lng']}');
+        if (lat == null || lng == null) return;
+
+        setState(() {
+          _passengerPos = LatLng(lat, lng);
+        });
+
+        _setMarkers();
+        await _buildRoute();
+      } catch (e) {
+        debugPrint('❌ Error ubicacion pasajero (driver): $e');
+      }
+    });
   }
 
   Future<void> _inicializarSocket() async {
-    // Unirse al room del viaje para enviar ubicaciones
-    if (widget.ride.idConductor == null) {
-      debugPrint('⚠️ idConductor es null, no se puede unir al viaje');
+    if (_driverId == null) {
+      debugPrint(
+        '⚠️ No hay idConductor (ride/prefs). No se puede unir al viaje.',
+      );
       return;
     }
+
+    await _socket.emitirConexionUsuario(_driverId!, 'conductor');
+
     await _socket.unirseAViaje(
       idViaje: widget.ride.idViajes,
-      userId: widget.ride.idConductor!,
+      userId: _driverId!,
       tipo: 'conductor',
     );
+
+    if (mounted) setState(() => _socketReady = true);
   }
 
   @override
   void dispose() {
+    _socket.off('ubicacion_en_tiempo_real');
     _positionSub?.cancel();
     _mapCtrl?.dispose();
     super.dispose();
@@ -73,237 +172,224 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
     final hasPerm = await _checkLocationPermissions();
     if (!hasPerm) return;
 
-    final pos = await Geolocator.getCurrentPosition(
+    final current = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
     );
-    _driverPos = LatLng(pos.latitude, pos.longitude);
+
+    _driverPos = LatLng(current.latitude, current.longitude);
 
     _setMarkers();
-    _moveCameraInitial();
+    await _buildRoute();
 
+    if (mounted) setState(() => _loadingMap = false);
+
+    _positionSub?.cancel();
     _positionSub =
         Geolocator.getPositionStream(
           locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.best,
-            distanceFilter: 5, // metros
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 5,
           ),
-        ).listen((p) {
-          _driverPos = LatLng(p.latitude, p.longitude);
+        ).listen((pos) async {
+          if (!mounted) return;
+
+          _driverPos = LatLng(pos.latitude, pos.longitude);
+
           _setMarkers();
-          _buildRoute();
-          _enviarUbicacionAlPasajero(p.latitude, p.longitude);
+          await _buildRoute();
+
+          _enviarUbicacionAlPasajero(pos.latitude, pos.longitude);
         });
-    await _buildRoute();
   }
 
   Future<bool> _checkLocationPermissions() async {
     final enabled = await Geolocator.isLocationServiceEnabled();
     if (!enabled) {
-      _msg('Activá los servicios de ubicación.');
+      _msg('Activá el GPS para continuar');
       return false;
     }
-    var p = await Geolocator.checkPermission();
-    if (p == LocationPermission.denied) {
-      p = await Geolocator.requestPermission();
+
+    var perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied) {
+      perm = await Geolocator.requestPermission();
     }
-    if (p == LocationPermission.deniedForever ||
-        p == LocationPermission.denied) {
-      _msg('No tenés permisos de ubicación.');
+    if (perm == LocationPermission.denied ||
+        perm == LocationPermission.deniedForever) {
+      _msg('Permisos de ubicación no otorgados');
       return false;
     }
     return true;
   }
 
   void _setMarkers() {
-    if (_driverPos == null) return;
+    final markers = <Marker>{};
 
-    final driverMarker = Marker(
-      markerId: const MarkerId('driver'),
-      position: _driverPos!,
-      infoWindow: const InfoWindow(title: 'Tu ubicación'),
-      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-    );
+    // ✅ Pasajero: sombra + pin
+    if (_iconShadow != null) {
+      markers.add(
+        Marker(
+          markerId: const MarkerId('passenger_shadow'),
+          position: _passengerPos,
+          icon: _iconShadow!,
+          anchor: const Offset(0.5, 0.5),
+          zIndex: 0,
+          flat: true,
+        ),
+      );
+    }
 
-    final passengerMarker = Marker(
-      markerId: const MarkerId('passenger'),
-      position: _passengerPos,
-      infoWindow: InfoWindow(
-        title: 'Pasajero',
-        snippet: widget.ride.direccionDesde,
+    markers.add(
+      Marker(
+        markerId: const MarkerId('pasajero'),
+        position: _passengerPos,
+        infoWindow: const InfoWindow(title: 'Pasajero'),
+        icon:
+            _iconPassenger ??
+            BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+        anchor: const Offset(0.5, 1.0),
+        zIndex: 1,
       ),
-      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
     );
 
-    setState(() {
-      _markers
-        ..clear()
-        ..add(driverMarker)
-        ..add(passengerMarker);
-    });
+    // ✅ Conductor: sombra + pin
+    if (_driverPos != null) {
+      if (_iconShadow != null) {
+        markers.add(
+          Marker(
+            markerId: const MarkerId('driver_shadow'),
+            position: _driverPos!,
+            icon: _iconShadow!,
+            anchor: const Offset(0.5, 0.5),
+            zIndex: 0,
+            flat: true,
+          ),
+        );
+      }
+
+      markers.add(
+        Marker(
+          markerId: const MarkerId('conductor'),
+          position: _driverPos!,
+          infoWindow: const InfoWindow(title: 'Vos'),
+          icon:
+              _iconDriver ??
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
+          anchor: const Offset(0.5, 1.0),
+          zIndex: 1,
+        ),
+      );
+    }
+
+    setState(() => _markers = markers);
   }
 
-  Future<void> _moveCameraInitial() async {
-    if (_mapCtrl == null || _driverPos == null) return;
-    final bounds = LatLngBounds(
-      southwest: LatLng(
-        _driverPos!.latitude < _passengerPos.latitude
-            ? _driverPos!.latitude
-            : _passengerPos.latitude,
-        _driverPos!.longitude < _passengerPos.longitude
-            ? _driverPos!.longitude
-            : _passengerPos.longitude,
-      ),
-      northeast: LatLng(
-        _driverPos!.latitude > _passengerPos.latitude
-            ? _driverPos!.latitude
-            : _passengerPos.latitude,
-        _driverPos!.longitude > _passengerPos.longitude
-            ? _driverPos!.longitude
-            : _passengerPos.longitude,
-      ),
-    );
-
-    await _mapCtrl!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 80));
-  }
-
-  // ================= DIRECTIONS API =================
   Future<void> _buildRoute() async {
     if (_driverPos == null) return;
 
-    final apiKey =
-        dotenv.env['GOOGLE_MAPS_API_KEY'] ?? dotenv.env['GOOGLE_API_KEY'];
-    if (apiKey == null) {
-      debugPrint('❌ GOOGLE_API_KEY no configurada en .env');
-      return;
-    }
-
-    final origin = '${_driverPos!.latitude},${_driverPos!.longitude}';
-    final destination = '${_passengerPos.latitude},${_passengerPos.longitude}';
-
-    final url = Uri.parse(
-      'https://maps.googleapis.com/maps/api/directions/json'
-      '?origin=$origin&destination=$destination&mode=driving&key=$apiKey',
-    );
-
     try {
+      final apiKey =
+          dotenv.env['GOOGLE_MAPS_API_KEY'] ?? dotenv.env['GOOGLE_API_KEY'];
+      if (apiKey == null || apiKey.isEmpty) return;
+
+      final origin = '${_driverPos!.latitude},${_driverPos!.longitude}';
+      final dest = '${_passengerPos.latitude},${_passengerPos.longitude}';
+
+      final url = Uri.parse(
+        'https://maps.googleapis.com/maps/api/directions/json'
+        '?origin=$origin&destination=$dest&key=$apiKey',
+      );
+
       final resp = await http.get(url);
-      final data = jsonDecode(resp.body);
+      if (resp.statusCode != 200) return;
 
-      if (data['status'] != 'OK') {
-        debugPrint('❌ Directions status: ${data['status']}');
-        return;
-      }
+      final jsonData = json.decode(resp.body);
+      final routes = jsonData['routes'] as List?;
+      if (routes == null || routes.isEmpty) return;
 
-      final route = data['routes'][0];
-      final leg = route['legs'][0];
-
-      final polyline = route['overview_polyline']['points'];
-      final points = _decodePolyline(polyline);
+      final leg = routes[0]['legs'][0];
+      final distance = leg['distance']?['text']?.toString() ?? '--';
+      final duration = leg['duration']?['text']?.toString() ?? '--';
 
       setState(() {
-        _polylines
-          ..clear()
-          ..add(
-            Polyline(
-              polylineId: const PolylineId('driver_to_passenger'),
-              points: points,
-              width: 6,
-              color: Colors.blue,
-            ),
-          );
-        _distanceText = leg['distance']['text'] ?? '--';
-        _durationText = leg['duration']['text'] ?? '--';
+        _distanceText = distance;
+        _durationText = duration;
       });
 
-      await _fitPolyline(points);
+      final points = routes[0]['overview_polyline']?['points'];
+      if (points == null) return;
+
+      final decoded = _decodePolyline(points.toString());
+
+      setState(() {
+        _polylines = {
+          Polyline(
+            polylineId: const PolylineId('route'),
+            points: decoded,
+            width: 5,
+            color: Colors.blue,
+          ),
+        };
+      });
     } catch (e) {
-      debugPrint('❌ Error Directions: $e');
+      debugPrint('❌ Error _buildRoute(): $e');
     }
   }
 
-  List<LatLng> _decodePolyline(String polyline) {
-    List<LatLng> points = [];
-    int index = 0, len = polyline.length;
+  List<LatLng> _decodePolyline(String encoded) {
+    final List<LatLng> poly = [];
+    int index = 0, len = encoded.length;
     int lat = 0, lng = 0;
 
     while (index < len) {
       int b, shift = 0, result = 0;
       do {
-        b = polyline.codeUnitAt(index++) - 63;
-        result |= (b & 0x1F) << shift;
+        b = encoded.codeUnitAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
         shift += 5;
       } while (b >= 0x20);
-      int dlat = (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+      final dlat = ((result & 1) != 0) ? ~(result >> 1) : (result >> 1);
       lat += dlat;
 
       shift = 0;
       result = 0;
       do {
-        b = polyline.codeUnitAt(index++) - 63;
-        result |= (b & 0x1F) << shift;
+        b = encoded.codeUnitAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
         shift += 5;
       } while (b >= 0x20);
-      int dlng = (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+      final dlng = ((result & 1) != 0) ? ~(result >> 1) : (result >> 1);
       lng += dlng;
 
-      points.add(LatLng(lat / 1E5, lng / 1E5));
+      poly.add(LatLng(lat / 1E5, lng / 1E5));
     }
-
-    return points;
-  }
-
-  Future<void> _fitPolyline(List<LatLng> points) async {
-    if (_mapCtrl == null || points.isEmpty) return;
-    double minLat = points.first.latitude;
-    double maxLat = points.first.latitude;
-    double minLng = points.first.longitude;
-    double maxLng = points.first.longitude;
-
-    for (var p in points) {
-      if (p.latitude < minLat) minLat = p.latitude;
-      if (p.latitude > maxLat) maxLat = p.latitude;
-      if (p.longitude < minLng) minLng = p.longitude;
-      if (p.longitude > maxLng) maxLng = p.longitude;
-    }
-
-    await _mapCtrl!.animateCamera(
-      CameraUpdate.newLatLngBounds(
-        LatLngBounds(
-          southwest: LatLng(minLat, minLng),
-          northeast: LatLng(maxLat, maxLng),
-        ),
-        80,
-      ),
-    );
+    return poly;
   }
 
   // ================= LLEGAR AL ENCUENTRO =================
   Future<void> _onLlegarEncuentro() async {
-    if (widget.ride.idConductor == null) {
+    if (_driverId == null) {
       _msg('Error: No se encontró el ID del conductor');
       return;
     }
-    
+
     setState(() => _llegandoEncuentro = true);
     try {
       final ok = await _api.llegarEncuentro(
         idViaje: widget.ride.idViajes,
-        idConductor: widget.ride.idConductor!,
+        idConductor: _driverId!,
       );
-      
+
       if (!ok) {
-        _msg('No se pudo registrar la llegada al encuentro.');
+        _msg('No se pudo marcar llegada');
         return;
       }
 
-      _msg('✅ Llegada al encuentro registrada. Esperando pasajero...');
-      
-      if (mounted) {
-        setState(() => _llegueAlEncuentro = true);
-      }
+      setState(() => _llegueAlEncuentro = true);
+
+      _msg('Llegada registrada. Esperando pasajero...');
     } catch (e) {
-      debugPrint('Error llegar encuentro: $e');
-      _msg('Error al registrar llegada: $e');
+      debugPrint('❌ Error llegar encuentro: $e');
+      _msg('Error al marcar llegada');
     } finally {
       if (mounted) setState(() => _llegandoEncuentro = false);
     }
@@ -311,34 +397,23 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
 
   // ================= COMENZAR VIAJE =================
   Future<void> _onComenzarViaje() async {
-    if (widget.ride.idConductor == null) {
+    if (_driverId == null) {
       _msg('Error: No se encontró el ID del conductor');
       return;
     }
-    
-    if (!_llegueAlEncuentro) {
-      _msg('Primero debes registrar que llegaste al encuentro');
-      return;
-    }
 
-    setState(() => _startingTrip = true);
+    setState(() => _comenzandoViaje = true);
     try {
-      final ok = await _api.comenzarViaje(
-        widget.ride.idViajes,
-        widget.ride.idConductor!,
-      );
-      
+      final ok = await _api.comenzarViaje(widget.ride.idViajes, _driverId!);
+
       if (!ok) {
-        _msg('No se pudo marcar el viaje como "en curso".');
+        _msg('No se pudo comenzar el viaje');
         return;
       }
 
-      _msg('Viaje iniciado. Ahora vas con el pasajero. 🚕');
-
       if (!mounted) return;
 
-      // 👉 Navegamos a la pantalla de viaje en curso
-      final result = await Navigator.push<bool>(
+      final finished = await Navigator.pushReplacement<bool, bool>(
         context,
         MaterialPageRoute(
           builder: (_) => DriverViajeEnCursoScreen(ride: widget.ride),
@@ -347,15 +422,38 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
 
       if (!mounted) return;
 
-      // Si desde la pantalla de viaje en curso devolvemos true,
-      // volvemos al Home avisando que se inició el viaje y se completó el flujo.
-      Navigator.pop(context, result == true);
+      if (finished == true) {
+        Navigator.pop(context, true);
+      }
     } catch (e) {
-      debugPrint('Error comenzar viaje: $e');
-      _msg('Error al iniciar viaje: $e');
+      debugPrint('❌ Error comenzar viaje: $e');
+      _msg('Error al comenzar viaje');
     } finally {
-      if (mounted) setState(() => _startingTrip = false);
+      if (mounted) setState(() => _comenzandoViaje = false);
     }
+  }
+
+  // ================= SOCKET + REST: ENVIAR UBICACIÓN =================
+  void _enviarUbicacionAlPasajero(double lat, double lng) {
+    if (_driverId == null || !_socketReady) return;
+
+    _socket.enviarUbicacion(
+      idViaje: widget.ride.idViajes,
+      lat: lat,
+      lng: lng,
+      idUsuario: _driverId!,
+      tipo: 'conductor',
+    );
+
+    _api.actualizarUbicacion(
+      idViaje: widget.ride.idViajes,
+      lat: lat,
+      lng: lng,
+      idUsuario: _driverId!,
+      tipo: 'conductor',
+    );
+
+    debugPrint("📤 Enviada ubicación del chofer → $lat, $lng");
   }
 
   void _msg(String t) {
@@ -365,156 +463,114 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
     return Scaffold(
       appBar: AppBar(title: const Text('En camino al pasajero')),
-      body: _driverPos == null
-          ? const Center(child: CircularProgressIndicator())
-          : Stack(
-              children: [
-                GoogleMap(
-                  initialCameraPosition: CameraPosition(
-                    target: _driverPos!,
-                    zoom: 14,
-                  ),
-                  onMapCreated: (ctrl) {
-                    _mapCtrl = ctrl;
-                    _moveCameraInitial();
-                  },
-                  myLocationEnabled: true,
-                  markers: _markers,
-                  polylines: _polylines,
-                ),
-
-                // Panel superior con info de tiempo/distancia
-                Positioned(
-                  top: 16,
-                  left: 16,
-                  right: 16,
-                  child: Card(
-                    color: cs.surface,
-                    elevation: 4,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: _loadingMap
+                ? const Center(child: CircularProgressIndicator())
+                : GoogleMap(
+                    initialCameraPosition: CameraPosition(
+                      target: _driverPos ?? _passengerPos,
+                      zoom: 15,
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 10,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Hacia el pasajero',
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
+                    markers: _markers,
+                    polylines: _polylines,
+                    myLocationEnabled: true,
+                    myLocationButtonEnabled: true,
+                    onMapCreated: (c) => _mapCtrl = c,
+                  ),
+          ),
+
+          // Tarjeta info
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 16,
+            child: Card(
+              elevation: 6,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.place_outlined),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
                             widget.ride.direccionDesde,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              const Icon(Icons.access_time, size: 18),
-                              const SizedBox(width: 4),
-                              Text(_durationText),
-                              const SizedBox(width: 16),
-                              const Icon(Icons.route, size: 18),
-                              const SizedBox(width: 4),
-                              Text(_distanceText),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-
-                // Botones inferiores
-                Positioned(
-                  left: 16,
-                  right: 16,
-                  bottom: 24,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Botón: Llegar al encuentro
-                      if (!_llegueAlEncuentro)
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            onPressed: _llegandoEncuentro ? null : _onLlegarEncuentro,
-                            icon: _llegandoEncuentro
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.location_on),
-                            label: const Text('Llegué al punto de encuentro'),
-                            style: FilledButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              backgroundColor: Colors.orange,
-                            ),
-                          ),
-                        ),
-                      
-                      // Botón: Comenzar viaje (solo cuando ya llegó)
-                      if (_llegueAlEncuentro) ...[
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            onPressed: _startingTrip ? null : _onComenzarViaje,
-                            icon: _startingTrip
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.play_arrow),
-                            label: const Text('Comenzar viaje'),
-                            style: FilledButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              backgroundColor: Colors.green,
-                            ),
-                          ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(Icons.route_outlined),
+                        const SizedBox(width: 8),
+                        Text('Distancia: $_distanceText'),
+                        const SizedBox(width: 14),
+                        Text('Tiempo: $_durationText'),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    if (_llegueAlEncuentro) ...[
+                      ElevatedButton(
+                        onPressed: _comenzandoViaje ? null : _onComenzarViaje,
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(48),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: _comenzandoViaje
+                            ? const SizedBox(
+                                height: 18,
+                                width: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text('Iniciar viaje'),
+                      ),
+                    ] else ...[
+                      ElevatedButton(
+                        onPressed: _llegandoEncuentro
+                            ? null
+                            : _onLlegarEncuentro,
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(48),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: _llegandoEncuentro
+                            ? const SizedBox(
+                                height: 18,
+                                width: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text('Llegué al punto de encuentro'),
+                      ),
                     ],
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
+          ),
+        ],
+      ),
     );
-  }
-
-  void _enviarUbicacionAlPasajero(double lat, double lng) {
-    if (widget.ride.idConductor == null) return;
-    
-    // Usar el nuevo sistema de ubicación
-    _socket.enviarUbicacion(
-      idViaje: widget.ride.idViajes,
-      lat: lat,
-      lng: lng,
-      idUsuario: widget.ride.idConductor!,
-      tipo: 'conductor',
-    );
-
-    // También actualizar por REST API (opcional, para persistencia)
-    _api.actualizarUbicacion(
-      idViaje: widget.ride.idViajes,
-      lat: lat,
-      lng: lng,
-      idUsuario: widget.ride.idConductor!,
-      tipo: 'conductor',
-    );
-
-    debugPrint("📤 Enviada ubicación del chofer → $lat, $lng");
   }
 }

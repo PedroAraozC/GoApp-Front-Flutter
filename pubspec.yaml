@@ -39,6 +39,8 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
+    - assets/sounds/
+    - assets/markers/
     - .env
     - assets/images/pin_origen.png
     - assets/images/pin_destino.png
