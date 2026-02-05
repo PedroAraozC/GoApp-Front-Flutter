@@ -172,7 +172,9 @@ class EarningsService {
   Future<double> getTotalHoy({required int idUsuario}) async {
     final hours = await sumByHourToday(idUsuario: idUsuario);
     double t = 0;
-    for (final v in hours) t += v;
+    for (final v in hours) {
+      t += v;
+    }
     return t;
   }
 

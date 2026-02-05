@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../main.dart'; // navigatorKey y routeObserver global
 import '../../../services/taximetro_service.dart';
-import '../driver/driver_taximetro_screen.dart';
 
 class TaximetroOverlay extends StatefulWidget {
   const TaximetroOverlay({super.key});

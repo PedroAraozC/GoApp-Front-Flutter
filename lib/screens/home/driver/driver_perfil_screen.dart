@@ -506,7 +506,7 @@ class _DriverEditProfileScreenState extends State<DriverEditProfileScreen> {
 
                         // Género: lo dejamos como ID numérico por simplicidad
                         DropdownButtonFormField<int?>(
-                          value: _idGenero,
+                          initialValue: _idGenero,
                           decoration: const InputDecoration(
                             labelText: "Género",
                             prefixIcon: Icon(Icons.wc),

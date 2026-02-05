@@ -19,7 +19,11 @@ import '../../screens/home/buscando_viaje_screen.dart';
 final apiKey = dotenv.env['GOOGLE_API_KEY'];
 
 class IniciarViajeScreen extends StatefulWidget {
-  const IniciarViajeScreen({super.key});
+  const IniciarViajeScreen({super.key, required this.tarifaVigente});
+
+  /// Debe venir como:
+  /// { id_tarifa, base, por_km, por_min, minimo, ... }
+  final Map<String, dynamic> tarifaVigente;
 
   @override
   State<IniciarViajeScreen> createState() => _IniciarViajeScreenState();
@@ -54,17 +58,39 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen>
   int _distanceMeters = 0;
   int _durationSeconds = 0;
 
-  // Tarifa (ajustá si cambia la tabla de precios)
-  final double _baseFare = 900;
-  final double _perKm = 900;
-  final double _perMin = 90;
-
   late AnimationController _pulseController;
   bool _buscando = false;
 
   double get _km => _distanceMeters / 1000;
   double get _mins => _durationSeconds / 60;
-  double get _fare => _baseFare + (_km * _perKm) + (_mins * _perMin);
+
+  // ===========================
+  // ✅ TARIFA DESDE BASE DE DATOS (sin hardcode)
+  // ===========================
+  double _numToDouble(dynamic v, {double fallback = 0}) {
+    if (v == null) return fallback;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString()) ?? fallback;
+  }
+
+  double get _baseFare => _numToDouble(widget.tarifaVigente['base']);
+  double get _perKm => _numToDouble(widget.tarifaVigente['por_km']);
+  double get _perMin => _numToDouble(widget.tarifaVigente['por_min']);
+
+  double? get _minimo {
+    final v = widget.tarifaVigente['minimo'];
+    if (v == null) return null;
+    // si viene como "" o null, lo ignoramos
+    final s = v.toString().trim().toLowerCase();
+    if (s.isEmpty || s == 'null') return null;
+    return _numToDouble(v);
+  }
+
+  double get _fare {
+    final calculado = _baseFare + (_km * _perKm) + (_mins * _perMin);
+    if (_minimo != null && calculado < _minimo!) return _minimo!;
+    return calculado;
+  }
 
   @override
   void initState() {

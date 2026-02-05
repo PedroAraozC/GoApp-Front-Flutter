@@ -12,10 +12,42 @@ import 'package:http/http.dart' as http;
 
 import '../../../services/user_preferences.dart';
 import '../../../services/earnings_service.dart';
-
 import '../../../services/api_service.dart';
 import '../../../services/socket_service.dart';
 import 'driver_map_screen.dart'; // IncomingRide
+
+class TarifaVigente {
+  final int idTarifa;
+  final double base;
+  final double porKm;
+  final double porMin;
+  final double minimo;
+
+  TarifaVigente({
+    required this.idTarifa,
+    required this.base,
+    required this.porKm,
+    required this.porMin,
+    required this.minimo,
+  });
+
+  static double _d(dynamic v) {
+    if (v is num) return v.toDouble();
+    return double.tryParse('${v ?? ''}') ?? 0.0;
+  }
+
+  factory TarifaVigente.fromJson(Map<String, dynamic> j) {
+    return TarifaVigente(
+      idTarifa: (j['id_tarifa'] is num)
+          ? (j['id_tarifa'] as num).toInt()
+          : int.tryParse('${j['id_tarifa']}') ?? 0,
+      base: _d(j['base']),
+      porKm: _d(j['por_km']),
+      porMin: _d(j['por_min']),
+      minimo: _d(j['minimo']),
+    );
+  }
+}
 
 class DriverViajeEnCursoScreen extends StatefulWidget {
   final IncomingRide ride;
@@ -47,10 +79,28 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
   String _durationText = '--';
   bool _finishingTrip = false;
 
-  // ✅ PINS UNIFICADOS + SOMBRA
   BitmapDescriptor? _iconDriver;
-  BitmapDescriptor? _iconTarget; // destino con mismo estilo que pasajero
+  BitmapDescriptor? _iconTarget;
   BitmapDescriptor? _iconShadow;
+
+  TarifaVigente? _tarifa;
+  bool _loadingTarifa = true;
+
+  DateTime? _startTime;
+  Position? _lastPos;
+  double _meters = 0.0;
+  int _seconds = 0;
+  Timer? _tick;
+
+  double get _km => _meters / 1000.0;
+  double get _mins => _seconds / 60.0;
+
+  double get _precioActual {
+    final t = _tarifa;
+    if (t == null) return widget.ride.valor; // fallback
+    final raw = t.base + (_km * t.porKm) + (_mins * t.porMin);
+    return raw < t.minimo ? t.minimo : raw;
+  }
 
   @override
   void initState() {
@@ -63,7 +113,20 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
     await _initIcons();
     await _resolveDriverId();
     await _inicializarSocket();
+    await _loadTarifaVigente();
     await _initLocationAndTracking();
+  }
+
+  Future<void> _loadTarifaVigente() async {
+    setState(() => _loadingTarifa = true);
+    try {
+      final raw = await _api.getTarifaVigente();
+      if (raw != null) {
+        _tarifa = TarifaVigente.fromJson(raw);
+      }
+    } finally {
+      if (mounted) setState(() => _loadingTarifa = false);
+    }
   }
 
   Future<void> _initIcons() async {
@@ -101,17 +164,12 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
     _driverId = fromRide ?? fromPrefs;
 
     debugPrint(
-      '🧩 [DriverViajeEnCurso] idConductor ride=$fromRide prefs=$fromPrefs -> usando=$_driverId',
+      '🧩 [DriverViajeEnCurso] driverId=$_driverId (ride=$fromRide prefs=$fromPrefs)',
     );
   }
 
   Future<void> _inicializarSocket() async {
-    if (_driverId == null) {
-      debugPrint(
-        '⚠️ No hay idConductor (ride/prefs). No se puede unir al viaje',
-      );
-      return;
-    }
+    if (_driverId == null) return;
 
     await _socket.unirseAViaje(
       idViaje: widget.ride.idViajes,
@@ -124,6 +182,7 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
 
   @override
   void dispose() {
+    _tick?.cancel();
     _positionSub?.cancel();
     _mapCtrl?.dispose();
     super.dispose();
@@ -138,6 +197,15 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
     );
     _driverPos = LatLng(pos.latitude, pos.longitude);
 
+    _startTime ??= DateTime.now();
+    _lastPos = pos;
+
+    _tick?.cancel();
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _seconds += 1);
+    });
+
     _setMarkers();
     await _moveCameraInitial();
 
@@ -148,10 +216,26 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
             distanceFilter: 5,
           ),
         ).listen((p) {
+          if (!mounted) return;
+
+          if (_lastPos != null) {
+            final d = Geolocator.distanceBetween(
+              _lastPos!.latitude,
+              _lastPos!.longitude,
+              p.latitude,
+              p.longitude,
+            );
+            if (d.isFinite && d > 0) _meters += d;
+          }
+          _lastPos = p;
+
           _driverPos = LatLng(p.latitude, p.longitude);
+
           _setMarkers();
           _buildRoute();
           _enviarUbicacion(p.latitude, p.longitude);
+
+          setState(() {}); // refresca precio
         });
 
     await _buildRoute();
@@ -164,9 +248,8 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
       return false;
     }
     var p = await Geolocator.checkPermission();
-    if (p == LocationPermission.denied) {
+    if (p == LocationPermission.denied)
       p = await Geolocator.requestPermission();
-    }
     if (p == LocationPermission.deniedForever ||
         p == LocationPermission.denied) {
       _msg('No tenés permisos de ubicación.');
@@ -180,7 +263,6 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
 
     final next = <Marker>{};
 
-    // ✅ Sombra + pin conductor
     if (_iconShadow != null) {
       next.add(
         Marker(
@@ -207,7 +289,6 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
       ),
     );
 
-    // ✅ Sombra + pin destino (mismo estilo)
     if (_iconShadow != null) {
       next.add(
         Marker(
@@ -269,16 +350,12 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
     await _mapCtrl!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 80));
   }
 
-  // =============== DIRECTIONS API ===============
   Future<void> _buildRoute() async {
     if (_driverPos == null) return;
 
     final apiKey =
         dotenv.env['GOOGLE_MAPS_API_KEY'] ?? dotenv.env['GOOGLE_API_KEY'];
-    if (apiKey == null) {
-      debugPrint('❌ GOOGLE_API_KEY no configurada en .env');
-      return;
-    }
+    if (apiKey == null) return;
 
     final origin = '${_driverPos!.latitude},${_driverPos!.longitude}';
     final destination = '${_destPos.latitude},${_destPos.longitude}';
@@ -291,11 +368,7 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
     try {
       final resp = await http.get(url);
       final data = jsonDecode(resp.body);
-
-      if (data['status'] != 'OK') {
-        debugPrint('❌ Directions status: ${data['status']}');
-        return;
-      }
+      if (data['status'] != 'OK') return;
 
       final route = data['routes'][0];
       final leg = route['legs'][0];
@@ -317,11 +390,7 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
         _distanceText = leg['distance']['text'] ?? '--';
         _durationText = leg['duration']['text'] ?? '--';
       });
-
-      await _fitPolyline(points);
-    } catch (e) {
-      debugPrint('❌ Error Directions: $e');
-    }
+    } catch (_) {}
   }
 
   List<LatLng> _decodePolyline(String polyline) {
@@ -351,36 +420,9 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
 
       points.add(LatLng(lat / 1E5, lng / 1E5));
     }
-
     return points;
   }
 
-  Future<void> _fitPolyline(List<LatLng> points) async {
-    if (_mapCtrl == null || points.isEmpty) return;
-    double minLat = points.first.latitude;
-    double maxLat = points.first.latitude;
-    double minLng = points.first.longitude;
-    double maxLng = points.first.longitude;
-
-    for (var p in points) {
-      if (p.latitude < minLat) minLat = p.latitude;
-      if (p.latitude > maxLat) maxLat = p.latitude;
-      if (p.longitude < minLng) minLng = p.longitude;
-      if (p.longitude > maxLng) maxLng = p.longitude;
-    }
-
-    await _mapCtrl!.animateCamera(
-      CameraUpdate.newLatLngBounds(
-        LatLngBounds(
-          southwest: LatLng(minLat, minLng),
-          northeast: LatLng(maxLat, maxLng),
-        ),
-        80,
-      ),
-    );
-  }
-
-  // =============== ENVIAR UBICACIÓN ===============
   void _enviarUbicacion(double lat, double lng) {
     if (_driverId == null || !_socketReady) return;
 
@@ -401,18 +443,24 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
     );
   }
 
-  // =============== FINALIZAR VIAJE ===============
   Future<void> _onFinalizarViaje() async {
     if (_driverId == null) {
       _msg('Error: No se encontró el ID del conductor');
       return;
     }
 
+    final precioFinal = _precioActual;
+    final distanciaKm = _km;
+    final duracionMin = _mins;
+
     setState(() => _finishingTrip = true);
     try {
       final ok = await _api.finalizarViaje(
         idViaje: widget.ride.idViajes,
         idConductor: _driverId!,
+        precioFinal: precioFinal,
+        distanciaKm: distanciaKm,
+        duracionMin: duracionMin,
       );
 
       if (!ok) {
@@ -420,9 +468,7 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
         return;
       }
 
-      _msg('Viaje finalizado. ¡Buen trabajo! 🏁');
-
-      if (!mounted) return;
+      _msg('Viaje finalizado. Total: \$${precioFinal.toStringAsFixed(0)} 🏁');
 
       final idUsuario = await UserPreferences.getIdUsuario();
       if (idUsuario != null) {
@@ -430,15 +476,15 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
           idUsuario: idUsuario,
           uniqueId: 'app_${widget.ride.idViajes}',
           idViaje: widget.ride.idViajes,
-          monto: widget.ride.valor,
+          monto: precioFinal,
           fecha: DateTime.now(),
           tipo: EarningType.viajeApp,
         );
       }
 
+      if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
-      debugPrint('Error al finalizar viaje: $e');
       _msg('Error al finalizar viaje: $e');
     } finally {
       if (mounted) setState(() => _finishingTrip = false);
@@ -514,6 +560,34 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
                               const SizedBox(width: 4),
                               Text(_distanceText),
                             ],
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              const Icon(Icons.attach_money, size: 18),
+                              const SizedBox(width: 6),
+                              Text(
+                                _loadingTarifa
+                                    ? 'Tarifa: cargando...'
+                                    : (_tarifa == null
+                                          ? 'Tarifa: no disponible (fallback)'
+                                          : 'Tarifa #${_tarifa!.idTarifa}'),
+                                style: const TextStyle(color: Colors.black54),
+                              ),
+                              const Spacer(),
+                              Text(
+                                '\$${_precioActual.toStringAsFixed(0)}',
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Tiempo: ${_mins.toStringAsFixed(1)} min • Distancia: ${_km.toStringAsFixed(2)} km',
+                            style: const TextStyle(color: Colors.black54),
                           ),
                         ],
                       ),

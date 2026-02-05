@@ -107,6 +107,15 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
               precioEstimado: precioEstimado,
               latOrigen: double.parse(data['lat_desde'].toString()),
               lngOrigen: double.parse(data['lon_desde'].toString()),
+              latDestino: double.parse(
+                (data['lat_hasta'] ?? data['lat_destino']).toString(),
+              ),
+              lngDestino: double.parse(
+                (data['lon_hasta'] ??
+                        data['lng_destino'] ??
+                        data['lon_destino'])
+                    .toString(),
+              ),
             ),
           ),
         );

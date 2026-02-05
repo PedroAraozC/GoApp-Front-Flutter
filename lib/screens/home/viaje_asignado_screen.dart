@@ -5,7 +5,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
-
+import 'pasajero_viaje_en_curso_screen.dart';
 import '../../services/socket_service.dart';
 import '../../services/api_service.dart';
 import '../../services/user_preferences.dart';
@@ -15,6 +15,9 @@ class ViajeAsignadoScreen extends StatefulWidget {
   final String direccionOrigen;
   final String direccionDestino;
   final double? precioEstimado;
+
+  final double latDestino;
+  final double lngDestino;
 
   final double latOrigen;
   final double lngOrigen;
@@ -26,6 +29,8 @@ class ViajeAsignadoScreen extends StatefulWidget {
     required this.direccionDestino,
     required this.latOrigen,
     required this.lngOrigen,
+    required this.latDestino,
+    required this.lngDestino,
     this.precioEstimado,
   });
 
@@ -187,15 +192,34 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
     // ▶️ VIAJE EN CURSO
     _socket.onViajeEnCurso((data) {
       debugPrint("▶️ Viaje en curso → $data");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('▶️ El viaje comenzó'),
-            backgroundColor: Colors.blue,
-            duration: Duration(seconds: 3),
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('▶️ El viaje comenzó'),
+          backgroundColor: Colors.blue,
+          duration: Duration(seconds: 3),
+        ),
+      );
+
+      // ⚠️ Necesitamos lat/lng destino para trackear al destino.
+      // Si todavía NO los tenés en ViajeAsignadoScreen, pasalos por constructor (recomendado).
+      // Acá asumo que agregás latDestino/lngDestino al widget.
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PasajeroViajeEnCursoScreen(
+            idViaje: widget.idViaje,
+            latDestino: widget.latDestino,
+            lngDestino: widget.lngDestino,
+            direccionOrigen: widget.direccionOrigen,
+            direccionDestino: widget.direccionDestino,
+            latConductorInicial: _posConductor?.latitude,
+            lngConductorInicial: _posConductor?.longitude,
           ),
-        );
-      }
+        ),
+      );
     });
 
     // ✅ VIAJE FINALIZADO

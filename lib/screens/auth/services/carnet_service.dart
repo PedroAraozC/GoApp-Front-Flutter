@@ -9,11 +9,11 @@ class CarnetService {
   final String? _baseUrl = dotenv.env['API_URL'];
 
   Future<Map<String, dynamic>> obtenerDatosCarnet(int idUsuario) async {
-    if (_baseUrl == null || _baseUrl!.trim().isEmpty) {
+    if (_baseUrl == null || _baseUrl.trim().isEmpty) {
       throw Exception('API_URL no está configurado en .env');
     }
 
-    final uri = Uri.parse('${_baseUrl!.trim()}/conductores/$idUsuario/carnet');
+    final uri = Uri.parse('${_baseUrl.trim()}/conductores/$idUsuario/carnet');
 
     try {
       final resp = await http

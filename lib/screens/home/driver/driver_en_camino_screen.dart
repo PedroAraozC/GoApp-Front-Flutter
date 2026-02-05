@@ -15,7 +15,7 @@ import 'package:taxi_tuc/services/socket_service.dart';
 import 'package:taxi_tuc/services/user_preferences.dart';
 
 import '../../../services/api_service.dart';
-import 'driver_map_screen.dart'; // Para IncomingRide
+import 'driver_map_screen.dart'; // IncomingRide
 
 class DriverEnCaminoScreen extends StatefulWidget {
   final IncomingRide ride;
@@ -48,14 +48,14 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
   bool _llegandoEncuentro = false;
   bool _comenzandoViaje = false;
 
-  // UI
   String _distanceText = '--';
   String _durationText = '--';
 
-  // ✅ PINS UNIFICADOS + SOMBRA
   BitmapDescriptor? _iconDriver;
   BitmapDescriptor? _iconPassenger;
   BitmapDescriptor? _iconShadow;
+
+  bool _estadoEnCaminoMarcado = false;
 
   @override
   void initState() {
@@ -65,25 +65,43 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
   }
 
   Future<void> _init() async {
-    await _initIcons(); // ✅ primero cargar assets
+    await _initIcons();
     await _resolveDriverId();
     await _inicializarSocket();
     _listenPassengerLocation();
+
+    // ✅ Estado 6: "EN CAMINO AL ENCUENTRO"
+    await _marcarEnCaminoEncuentro();
+
     await _initLocationAndTracking();
   }
 
+  Future<void> _marcarEnCaminoEncuentro() async {
+    if (_estadoEnCaminoMarcado) return;
+    if (_driverId == null) return;
+
+    final ok = await _api.marcarEnCaminoEncuentro(
+      idViaje: widget.ride.idViajes,
+      idConductor: _driverId!,
+    );
+
+    if (ok) {
+      _estadoEnCaminoMarcado = true;
+      debugPrint('✅ Viaje ${widget.ride.idViajes} -> estado EN CAMINO (6)');
+    } else {
+      debugPrint('⚠️ No se pudo marcar estado EN CAMINO (6)');
+    }
+  }
+
   Future<void> _initIcons() async {
-    // Conductor online (pantalla de viaje => estás activo)
     _iconDriver = await _createBitmapDescriptorFromAsset(
       'assets/markers/taxi_pin_online.png',
       80,
     );
-    // Pasajero
     _iconPassenger = await _createBitmapDescriptorFromAsset(
       'assets/markers/taxi_pin_passenger.png',
       76,
     );
-    // Sombra
     _iconShadow = await _createBitmapDescriptorFromAsset(
       'assets/markers/taxi_pin_shadow.png',
       60,
@@ -107,11 +125,10 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
   Future<void> _resolveDriverId() async {
     final fromRide = widget.ride.idConductor;
     final fromPrefs = await UserPreferences.getIdUsuario();
-
     _driverId = fromRide ?? fromPrefs;
 
     debugPrint(
-      '🧩 [DriverEnCamino] idConductor ride=$fromRide prefs=$fromPrefs -> usando=$_driverId',
+      '🧩 [DriverEnCamino] driverId=$_driverId (ride=$fromRide prefs=$fromPrefs)',
     );
   }
 
@@ -122,16 +139,13 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
 
         final idViaje = int.tryParse('${data['id_viaje']}') ?? -1;
         if (idViaje != widget.ride.idViajes) return;
-
         if (data['tipo'] != 'pasajero') return;
 
         final lat = double.tryParse('${data['lat']}');
         final lng = double.tryParse('${data['lng']}');
         if (lat == null || lng == null) return;
 
-        setState(() {
-          _passengerPos = LatLng(lat, lng);
-        });
+        setState(() => _passengerPos = LatLng(lat, lng));
 
         _setMarkers();
         await _buildRoute();
@@ -142,15 +156,9 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
   }
 
   Future<void> _inicializarSocket() async {
-    if (_driverId == null) {
-      debugPrint(
-        '⚠️ No hay idConductor (ride/prefs). No se puede unir al viaje.',
-      );
-      return;
-    }
+    if (_driverId == null) return;
 
     await _socket.emitirConexionUsuario(_driverId!, 'conductor');
-
     await _socket.unirseAViaje(
       idViaje: widget.ride.idViajes,
       userId: _driverId!,
@@ -210,9 +218,8 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
     }
 
     var perm = await Geolocator.checkPermission();
-    if (perm == LocationPermission.denied) {
+    if (perm == LocationPermission.denied)
       perm = await Geolocator.requestPermission();
-    }
     if (perm == LocationPermission.denied ||
         perm == LocationPermission.deniedForever) {
       _msg('Permisos de ubicación no otorgados');
@@ -224,7 +231,6 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
   void _setMarkers() {
     final markers = <Marker>{};
 
-    // ✅ Pasajero: sombra + pin
     if (_iconShadow != null) {
       markers.add(
         Marker(
@@ -251,7 +257,6 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
       ),
     );
 
-    // ✅ Conductor: sombra + pin
     if (_driverPos != null) {
       if (_iconShadow != null) {
         markers.add(
@@ -307,19 +312,15 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
       if (routes == null || routes.isEmpty) return;
 
       final leg = routes[0]['legs'][0];
-      final distance = leg['distance']?['text']?.toString() ?? '--';
-      final duration = leg['duration']?['text']?.toString() ?? '--';
-
       setState(() {
-        _distanceText = distance;
-        _durationText = duration;
+        _distanceText = leg['distance']?['text']?.toString() ?? '--';
+        _durationText = leg['duration']?['text']?.toString() ?? '--';
       });
 
       final points = routes[0]['overview_polyline']?['points'];
       if (points == null) return;
 
       final decoded = _decodePolyline(points.toString());
-
       setState(() {
         _polylines = {
           Polyline(
@@ -365,7 +366,6 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
     return poly;
   }
 
-  // ================= LLEGAR AL ENCUENTRO =================
   Future<void> _onLlegarEncuentro() async {
     if (_driverId == null) {
       _msg('Error: No se encontró el ID del conductor');
@@ -385,7 +385,6 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
       }
 
       setState(() => _llegueAlEncuentro = true);
-
       _msg('Llegada registrada. Esperando pasajero...');
     } catch (e) {
       debugPrint('❌ Error llegar encuentro: $e');
@@ -395,7 +394,6 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
     }
   }
 
-  // ================= COMENZAR VIAJE =================
   Future<void> _onComenzarViaje() async {
     if (_driverId == null) {
       _msg('Error: No se encontró el ID del conductor');
@@ -405,7 +403,6 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
     setState(() => _comenzandoViaje = true);
     try {
       final ok = await _api.comenzarViaje(widget.ride.idViajes, _driverId!);
-
       if (!ok) {
         _msg('No se pudo comenzar el viaje');
         return;
@@ -421,10 +418,7 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
       );
 
       if (!mounted) return;
-
-      if (finished == true) {
-        Navigator.pop(context, true);
-      }
+      if (finished == true) Navigator.pop(context, true);
     } catch (e) {
       debugPrint('❌ Error comenzar viaje: $e');
       _msg('Error al comenzar viaje');
@@ -433,7 +427,6 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
     }
   }
 
-  // ================= SOCKET + REST: ENVIAR UBICACIÓN =================
   void _enviarUbicacionAlPasajero(double lat, double lng) {
     if (_driverId == null || !_socketReady) return;
 
@@ -452,8 +445,6 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
       idUsuario: _driverId!,
       tipo: 'conductor',
     );
-
-    debugPrint("📤 Enviada ubicación del chofer → $lat, $lng");
   }
 
   void _msg(String t) {
@@ -482,8 +473,6 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
                     onMapCreated: (c) => _mapCtrl = c,
                   ),
           ),
-
-          // Tarjeta info
           Positioned(
             left: 16,
             right: 16,
@@ -522,8 +511,7 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
                       ],
                     ),
                     const SizedBox(height: 12),
-
-                    if (_llegueAlEncuentro) ...[
+                    if (_llegueAlEncuentro)
                       ElevatedButton(
                         onPressed: _comenzandoViaje ? null : _onComenzarViaje,
                         style: ElevatedButton.styleFrom(
@@ -541,8 +529,8 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
                                 ),
                               )
                             : const Text('Iniciar viaje'),
-                      ),
-                    ] else ...[
+                      )
+                    else
                       ElevatedButton(
                         onPressed: _llegandoEncuentro
                             ? null
@@ -563,7 +551,6 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
                               )
                             : const Text('Llegué al punto de encuentro'),
                       ),
-                    ],
                   ],
                 ),
               ),

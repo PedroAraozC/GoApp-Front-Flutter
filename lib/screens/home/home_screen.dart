@@ -15,7 +15,6 @@ import '../../services/user_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 final apiKey = dotenv.env['GOOGLE_API_KEY'];
-final _BASE_URL = dotenv.env['API_URL'];
 
 class HomeScreen extends StatefulWidget {
   final Map<String, dynamic> user;
@@ -32,6 +31,26 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _connectSocket();
+  }
+
+  final ApiService _api = ApiService();
+  Map<String, dynamic>? _tarifaVigente;
+
+  bool _loadingTarifa = false;
+
+  Future<Map<String, dynamic>?> _getTarifaVigente() async {
+    if (_tarifaVigente != null) return _tarifaVigente;
+
+    setState(() => _loadingTarifa = true);
+    final t = await _api.obtenerTarifaVigente();
+    if (!mounted) return null;
+
+    setState(() {
+      _tarifaVigente = t;
+      _loadingTarifa = false;
+    });
+
+    return t;
   }
 
   void _connectSocket() async {
@@ -198,7 +217,12 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
     }
+    final tarifa = await api.obtenerTarifaVigente();
 
+    if (tarifa == null) {
+      _mostrarSnack('No hay tarifa vigente. Contactá soporte.');
+      return;
+    }
     // 3) Si aun así no tenemos id → solo podemos trabajar con lo local
     if (id == null) {
       debugPrint('⚠️ [Home] No hay id_usuario. Uso solo datos locales.');
@@ -213,7 +237,9 @@ class _HomeScreenState extends State<HomeScreen> {
         if (!mounted) return;
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const IniciarViajeScreen()),
+          MaterialPageRoute(
+            builder: (_) => IniciarViajeScreen(tarifaVigente: tarifa),
+          ),
         );
         return;
       }
@@ -258,19 +284,26 @@ class _HomeScreenState extends State<HomeScreen> {
         if (!mounted) return;
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const IniciarViajeScreen()),
+          MaterialPageRoute(
+            builder: (_) => IniciarViajeScreen(tarifaVigente: tarifa),
+          ),
         );
       }
       // Si canceló, simplemente no hacemos nada más
       return;
     }
 
-    // 6) Perfil ya está completo → vamos directo a iniciar viaje
-    debugPrint('✅ [Home] Perfil completo. Navegando a IniciarViajeScreen...');
-    if (!mounted) return;
+    // 6) Perfil ya está completo → traigo tarifa vigente y voy a iniciar viaje
+    debugPrint('✅ [Home] Perfil completo. Obteniendo tarifa vigente...');
+
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const IniciarViajeScreen()),
+      MaterialPageRoute(
+        builder: (_) => IniciarViajeScreen(
+          // 👇 si tu pantalla aún no recibe esto, te indico abajo cómo
+          tarifaVigente: tarifa,
+        ),
+      ),
     );
   }
 

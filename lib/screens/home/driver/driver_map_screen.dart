@@ -44,7 +44,7 @@ class _DriverMapScreenState extends State<DriverMapScreen>
   final GlobalKey _bottomButtonsKey = GlobalKey();
   final GlobalKey _incomingCardKey = GlobalKey();
 
-  double _panicBottom = 16.0; // se recalcula según tamaños reales
+  double _panicBottom = 16.0;
   double _bottomButtonsH = 0.0;
   double _incomingCardH = 0.0;
 
@@ -57,9 +57,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
 
-  // ==========================
-  // ✅ Pins unificados + sombra
-  // ==========================
   BitmapDescriptor? _iconDriverOnline;
   BitmapDescriptor? _iconDriverOffline;
   BitmapDescriptor? _iconDriverOnlineBig;
@@ -68,10 +65,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
   BitmapDescriptor? _iconPassenger;
   BitmapDescriptor? _iconShadow;
 
-  // ==========================
-  // ✅ Bounce suave al recibir viaje
-  // (usa icono "big" por frames)
-  // ==========================
   late final AnimationController _bounceCtrl;
   bool _useBigIcon = false;
 
@@ -86,7 +79,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
   late AnimationController _islandPulse;
   Timer? _taximetroTimer;
 
-  // ✅ Recaudación de hoy (desde EarningsService)
   double _recaudacionHoy = 0.0;
   Timer? _earningsTimer;
 
@@ -106,7 +98,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       duration: const Duration(milliseconds: 700),
     );
     _bounceCtrl.addListener(() {
-      // curva tipo "salto" (sin actualizar 60fps al pedo)
       final scale = 1.0 + 0.12 * math.sin(_bounceCtrl.value * math.pi);
       final shouldBig = scale > 1.06;
       if (shouldBig != _useBigIcon) {
@@ -125,7 +116,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
 
     _initDriverHome();
 
-    // ✅ actualiza la recaudación hoy automáticamente
     _loadRecaudacionHoy();
     _earningsTimer = Timer.periodic(
       const Duration(seconds: 5),
@@ -150,6 +140,7 @@ class _DriverMapScreenState extends State<DriverMapScreen>
     _socket.off('viaje_finalizado');
     _socket.off('viaje_cancelado_busqueda');
     _socket.off('viaje_tomado');
+    _socket.off('viaje_ya_tomado');
 
     super.dispose();
   }
@@ -164,10 +155,8 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       _markers.removeWhere((m) => m.markerId.value.startsWith('passenger_'));
     });
 
-    // dejar markers del driver (sombra + pin)
     _updateDriverMarkers();
 
-    // opcional: re-centrar mapa
     if (_mapCtrl != null && _driverLocation != null) {
       _mapCtrl!.animateCamera(CameraUpdate.newLatLngZoom(_driverLocation!, 14));
     }
@@ -190,7 +179,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
     await _initIcons();
     await _initLocation();
 
-    // si ya tenemos ubicación, refrescamos recaudación
     await _loadRecaudacionHoy();
   }
 
@@ -218,7 +206,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       MaterialPageRoute(builder: (_) => IngresosScreen(idUsuario: idUsuario)),
     );
 
-    // ✅ al volver, refrescar por si hubo nuevos ingresos
     await _loadRecaudacionHoy();
   }
 
@@ -254,11 +241,7 @@ class _DriverMapScreenState extends State<DriverMapScreen>
     return (logicalPx * dpr).round();
   }
 
-  // ==========================
-  // ✅ ICONOS (pins + sombra)
-  // ==========================
   Future<void> _initIcons() async {
-    // Conductor online/offline
     _iconDriverOnline = await _createBitmapDescriptorFromAsset(
       'assets/markers/taxi_pin_online.png',
       _px(context, 80),
@@ -268,7 +251,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       _px(context, 80),
     );
 
-    // versión "big" para bounce (solo un poquito más grande)
     _iconDriverOnlineBig = await _createBitmapDescriptorFromAsset(
       'assets/markers/taxi_pin_online.png',
       _px(context, 92),
@@ -278,13 +260,11 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       _px(context, 92),
     );
 
-    // Pasajero unificado (mismo estilo)
     _iconPassenger = await _createBitmapDescriptorFromAsset(
       'assets/markers/taxi_pin_passenger.png',
       _px(context, 76),
     );
 
-    // sombra fake (más chica)
     _iconShadow = await _createBitmapDescriptorFromAsset(
       'assets/markers/taxi_pin_shadow.png',
       _px(context, 60),
@@ -305,9 +285,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
     return BitmapDescriptor.fromBytes(bytes!.buffer.asUint8List());
   }
 
-  // ==========================
-  // ✅ LOCATION
-  // ==========================
   Future<void> _initLocation() async {
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
@@ -329,7 +306,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
 
       _driverLocation = LatLng(pos.latitude, pos.longitude);
 
-      // ✅ actualiza markers (sombra + pin)
       _updateDriverMarkers();
 
       if (mounted) setState(() {});
@@ -338,9 +314,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
     }
   }
 
-  // ==========================
-  // ✅ MARKERS helpers
-  // ==========================
   BitmapDescriptor? _currentDriverIcon() {
     final online = _isOnline;
     if (_useBigIcon) {
@@ -354,7 +327,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       markerId: const MarkerId('driver_shadow'),
       position: pos,
       icon: _iconShadow!,
-      // para la sombra conviene centro
       anchor: const Offset(0.5, 0.5),
       zIndex: 0,
       flat: true,
@@ -366,7 +338,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       markerId: const MarkerId('driver_pin'),
       position: pos,
       icon: _currentDriverIcon()!,
-      // ✅ pin: punta al GPS
       anchor: const Offset(0.5, 1.0),
       zIndex: 1,
       infoWindow: const InfoWindow(title: 'Tu ubicación'),
@@ -389,23 +360,17 @@ class _DriverMapScreenState extends State<DriverMapScreen>
             m.markerId.value == 'driver',
       );
 
-      // sombra fake + pin
       _markers.add(_buildShadowMarker(pos));
       _markers.add(_buildDriverMarker(pos));
     });
   }
 
   void _triggerBounce() {
-    // bounce suave cuando entra un viaje
     if (_bounceCtrl.isAnimating) return;
     _bounceCtrl.forward(from: 0);
   }
 
-  // ==========================
-  // ✅ SOCKET listeners
-  // ==========================
   Future<void> _initSocketListeners() async {
-    // viaje creado por pasajero → aparece tarjeta al chofer
     _socket.on('viaje_creado', (data) async {
       try {
         debugPrint('🚕 [Driver] Evento viaje_creado recibido: $data');
@@ -421,7 +386,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
           _accepted = false;
         });
 
-        // ✅ bounce suave (pro)
         _triggerBounce();
 
         await _addPassengerMarker(ride);
@@ -433,7 +397,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       }
     });
 
-    // viaje finalizado → refrescamos recaudación y limpiamos si coincide
     _socket.on('viaje_finalizado', (data) async {
       try {
         final id = int.tryParse(
@@ -448,7 +411,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       await _loadRecaudacionHoy();
     });
 
-    // viaje cancelado mientras estaba "buscando" → limpiar tarjeta
     _socket.on('viaje_cancelado_busqueda', (data) {
       try {
         final idCancelado =
@@ -477,21 +439,17 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       }
     });
 
-    // viaje tomado por otro conductor → limpiar tarjeta
     _socket.on('viaje_tomado', (data) {
       final idViaje = int.tryParse('${data['id_viajes']}') ?? -1;
       final ganador = int.tryParse('${data['id_conductor_ganador']}');
 
-      // Si no es el viaje que estoy viendo, ignoro
       if (_incomingRide == null || idViaje != _incomingRide!.idViajes) return;
 
-      // 👇 SI YO SOY EL GANADOR, NO CIERRO
       if (ganador != null && ganador == _myDriverId) {
         debugPrint('🏆 Soy el conductor ganador, ignoro viaje_tomado');
         return;
       }
 
-      // Si NO soy el ganador → cierro
       setState(() {
         _incomingRide = null;
       });
@@ -517,7 +475,7 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       icon:
           _iconPassenger ??
           BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-      anchor: const Offset(0.5, 1.0), // pin: punta al GPS
+      anchor: const Offset(0.5, 1.0),
       infoWindow: InfoWindow(
         title: 'Origen pasajero',
         snippet: ride.direccionDesde,
@@ -558,7 +516,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
     await _mapCtrl!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 80));
   }
 
-  // Conectarse (ONLINE)
   Future<void> _goOnline() async {
     try {
       final user = await UserPreferences.getUser();
@@ -569,25 +526,21 @@ class _DriverMapScreenState extends State<DriverMapScreen>
         return;
       }
 
-      // 1) Conectar socket
       try {
         await _socket.connect();
       } catch (_) {}
 
       await Future.delayed(const Duration(milliseconds: 800));
 
-      // 2) Registrar usuario en socket
       try {
         await _socket.registrarUsuario(idUsuario: idUsuario, tipo: 'conductor');
       } catch (_) {}
 
-      // 3) Actualizar estado en BD
       await _api.cambiarEstadoConductor(
         idConductor: idUsuario,
         conectado: true,
       );
 
-      // 4) Listeners
       if (!_listening) {
         await _initSocketListeners();
       }
@@ -595,7 +548,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       if (!mounted) return;
       setState(() => _isOnline = true);
 
-      // ✅ refrescar icono driver (online)
       _updateDriverMarkers();
 
       _showSnack('Estás conectado y disponible para recibir viajes.');
@@ -604,7 +556,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
     }
   }
 
-  // Desconectarse (OFFLINE)
   Future<void> _goOffline() async {
     try {
       final user = await UserPreferences.getUser();
@@ -626,6 +577,7 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       _socket.off('viaje_finalizado');
       _socket.off('viaje_cancelado_busqueda');
       _socket.off('viaje_tomado');
+      _socket.off('viaje_ya_tomado');
 
       if (!mounted) return;
       setState(() {
@@ -635,7 +587,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
         _polylines.clear();
       });
 
-      // ✅ refrescar icono driver (offline)
       _updateDriverMarkers();
 
       _showSnack('Te desconectaste. Ya no recibirás nuevos viajes.');
@@ -644,7 +595,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
     }
   }
 
-  // CERRAR SESIÓN
   Future<void> _logout() async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -685,7 +635,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
     }
   }
 
-  // Aceptar viaje → navegar a pantalla "en camino"
   Future<void> _acceptRide() async {
     if (_incomingRide == null) return;
     setState(() => _loading = true);
@@ -703,7 +652,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
         return;
       }
 
-      // snapshot del viaje actual
       final rideToSend = _incomingRide!;
       final idViaje = rideToSend.idViajes;
 
@@ -714,7 +662,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
         return;
       }
 
-      // ✅ limpiamos el modal ANTES de navegar
       if (mounted) _resetIncomingRideUI();
 
       _showSnack('Viaje aceptado. En camino al pasajero...');
@@ -728,12 +675,10 @@ class _DriverMapScreenState extends State<DriverMapScreen>
         ),
       );
 
-      // ✅ vuelvas con true / null / false → dejá el home limpio igual
       if (!mounted) return;
 
       _resetIncomingRideUI();
 
-      // si el flujo terminó bien, avisamos
       if (result == true) {
         await _loadRecaudacionHoy();
         _showSnack('✅ Listo para recibir nuevos viajes');
@@ -745,7 +690,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
     }
   }
 
-  // Rechazar viaje
   Future<void> _rejectRide() async {
     if (_incomingRide == null) return;
 
@@ -779,7 +723,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
     }
   }
 
-  // --- Helpers polyline ---
   Future<void> _drawRouteToPassenger() async {
     if (_driverLocation == null || _incomingRide == null) return;
 
@@ -1102,8 +1045,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
                   polylines: _polylines,
                   myLocationEnabled: true,
                 ),
-
-                // ✅ Botón antipánico
                 Positioned(
                   right: 16,
                   bottom: _panicBottom,
@@ -1137,8 +1078,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
                     ),
                   ),
                 ),
-
-                // ✅ Isla superior (estado + recaudación hoy clickable)
                 Positioned(
                   top: 16,
                   left: 16,
@@ -1179,7 +1118,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
                                 ),
                               ),
                               const SizedBox(width: 14),
-
                               GestureDetector(
                                 behavior: HitTestBehavior.opaque,
                                 onTap: _openIngresos,
@@ -1227,8 +1165,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
                     ),
                   ),
                 ),
-
-                // ✅ Botones inferiores
                 Positioned(
                   left: 16,
                   right: 16,
@@ -1298,8 +1234,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
                     ),
                   ),
                 ),
-
-                // ✅ Tarjeta del viaje entrante
                 if (_incomingRide != null)
                   Positioned(
                     left: 12,
@@ -1442,7 +1376,6 @@ class _DriverMapScreenState extends State<DriverMapScreen>
   }
 }
 
-// Modelo ligero del JSON
 class IncomingRide {
   final int idViajes;
   final int idPasajero;
@@ -1491,7 +1424,6 @@ class IncomingRide {
   factory IncomingRide.fromSocket(dynamic json) {
     final parsed = (json is String) ? jsonDecode(json) : json;
 
-    // IDs (acepta varias claves posibles)
     final int idViaje = _parseInt(
       parsed['id_viajes'] ?? parsed['id_viaje'] ?? parsed['id'],
       fallback: -1,
@@ -1502,7 +1434,6 @@ class IncomingRide {
       fallback: -1,
     );
 
-    // Coordenadas (acepta varias claves posibles)
     final double latDesde = _parseDouble(
       parsed['lat_desde'] ??
           parsed['latDesde'] ??
