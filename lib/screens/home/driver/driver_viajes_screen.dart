@@ -1,23 +1,24 @@
-// lib/screens/perfil/viajes_screen.dart
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../../services/api_service.dart';
-import '../../services/user_preferences.dart';
+import '../../../services/api_service.dart';
+import '../../../services/user_preferences.dart';
 
-class ViajesScreen extends StatefulWidget {
-  const ViajesScreen({super.key});
+class DriverViajesScreen extends StatefulWidget {
+  const DriverViajesScreen({super.key});
 
   @override
-  State<ViajesScreen> createState() => _ViajesScreenState();
+  State<DriverViajesScreen> createState() => _DriverViajesScreenState();
 }
 
-class _ViajesScreenState extends State<ViajesScreen> {
+class _DriverViajesScreenState extends State<DriverViajesScreen> {
   final ApiService _api = ApiService();
 
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _viajes = [];
+
+  final _money = NumberFormat.currency(locale: 'es_AR', symbol: '\$');
 
   @override
   void initState() {
@@ -38,12 +39,12 @@ class _ViajesScreenState extends State<ViajesScreen> {
       if (idUsuario == null) {
         setState(() {
           _loading = false;
-          _error = 'No se encontró el usuario logueado.';
+          _error = 'No se encontró el conductor logueado.';
         });
         return;
       }
 
-      final list = await _api.obtenerHistorialViajesUsuario(idUsuario);
+      final list = await _api.obtenerHistorialViajesConductor(idUsuario);
 
       setState(() {
         _viajes = list;
@@ -58,7 +59,6 @@ class _ViajesScreenState extends State<ViajesScreen> {
     }
   }
 
-  // ---------- Helpers ----------
   String _clean(dynamic v) {
     if (v == null) return '';
     final s = v.toString().trim();
@@ -72,24 +72,14 @@ class _ViajesScreenState extends State<ViajesScreen> {
     return double.tryParse(v.toString());
   }
 
-  int? _toInt(dynamic v) {
-    if (v == null) return null;
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return int.tryParse(v.toString());
-  }
-
   DateTime? _parseDate(dynamic v) {
     if (v == null) return null;
-    if (v is DateTime) return v;
     final s = v.toString().trim();
     if (s.isEmpty) return null;
 
-    // Intenta ISO (2026-02-13T21:00:00.000Z)
     final iso = DateTime.tryParse(s);
     if (iso != null) return iso.toLocal();
 
-    // Intenta formatos comunes
     for (final f in ['yyyy-MM-dd HH:mm:ss', 'yyyy-MM-dd']) {
       try {
         return DateFormat(f).parse(s, true).toLocal();
@@ -100,43 +90,29 @@ class _ViajesScreenState extends State<ViajesScreen> {
 
   Color _statusColor(ColorScheme cs, String estado) {
     final e = estado.toLowerCase();
-    if (e.contains('final') || e.contains('complet')) return Colors.green;
+    if (e.contains('final')) return Colors.green;
     if (e.contains('cancel')) return Colors.red;
     if (e.contains('en curso') ||
-        e.contains('iniciado') ||
-        e.contains('activo')) {
+        e.contains('esperando') ||
+        e.contains('en camino')) {
       return Colors.orange;
     }
-    if (e.contains('asign') || e.contains('acept')) return Colors.blue;
+    if (e.contains('asign') || e.contains('buscando')) return Colors.blue;
     return cs.primary;
   }
 
-  String _statusLabel(String estado) {
-    final e = estado.trim();
-    if (e.isEmpty) return 'Desconocido';
-    return e[0].toUpperCase() + e.substring(1);
-  }
-
-  String _money(dynamic v) {
-    final d = _toDouble(v);
-    if (d == null) return '-';
-    // ARS, sin símbolo raro (podés cambiarlo)
-    return NumberFormat.currency(locale: 'es_AR', symbol: '\$').format(d);
-  }
-
-  ImageProvider? _driverPhotoProvider(Map<String, dynamic> v) {
-    final url = _clean(v['foto_conductor'] ?? v['foto_perfil_conductor']);
+  ImageProvider? _passengerPhoto(Map<String, dynamic> v) {
+    final url = _clean(v['pasajero_foto']);
     if (url.isEmpty) return null;
     return NetworkImage(url);
   }
 
-  // ---------- UI ----------
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Mis viajes')),
+      appBar: AppBar(title: const Text('Historial de viajes')),
       body: SafeArea(
         child: _loading
             ? const Center(child: CircularProgressIndicator())
@@ -153,52 +129,26 @@ class _ViajesScreenState extends State<ViajesScreen> {
                   itemBuilder: (_, i) {
                     final v = _viajes[i];
 
-                    final estado = _clean(v['estado'] ?? v['estado_viaje']);
+                    final estado = _clean(v['estado'] ?? v['id_estado']);
                     final color = _statusColor(cs, estado);
 
-                    final fecha = _parseDate(
-                      v['fecha'] ??
-                          v['created_at'] ??
-                          v['fecha_viaje'] ??
-                          v['inicio'],
-                    );
+                    final fecha = _parseDate(v['hora_inicio']);
                     final fechaTxt = (fecha != null)
                         ? DateFormat('dd/MM/yyyy HH:mm').format(fecha)
                         : '';
 
-                    final origen = _clean(
-                      v['direccion_origen'] ?? v['origen'] ?? v['origen_texto'],
-                    );
-                    final destino = _clean(
-                      v['direccion_destino'] ??
-                          v['destino'] ??
-                          v['destino_texto'],
-                    );
+                    final origen = _clean(v['direccion_origen']);
+                    final destino = _clean(v['direccion_destino']);
 
-                    final nombreConductor = _clean(
-                      v['conductor_nombre'] ??
-                          v['nombre_conductor'] ??
-                          v['nombre'],
-                    );
-                    final apellidoConductor = _clean(
-                      v['conductor_apellido'] ??
-                          v['apellido_conductor'] ??
-                          v['apellido'],
-                    );
-                    final conductor = ('$nombreConductor $apellidoConductor')
-                        .trim();
+                    final nombre = _clean(v['pasajero_nombre']);
+                    final apellido = _clean(v['pasajero_apellido']);
+                    final pasajero = ('$nombre $apellido').trim();
 
-                    final patente = _clean(
-                      v['patente'] ?? v['patente_vehiculo'],
-                    );
-                    final modelo = _clean(v['modelo_vehiculo'] ?? v['modelo']);
-                    final colorVeh = _clean(v['color_vehiculo'] ?? v['color']);
-
+                    final tel = _clean(v['pasajero_telefono']);
                     final precio = v['precio_final'] ?? v['precio_estimado'];
-
-                    final rating = _toDouble(
-                      v['rating_conductor'] ?? v['rating'],
-                    );
+                    final monto = (precio == null)
+                        ? '-'
+                        : _money.format(_toDouble(precio) ?? 0);
 
                     return Card(
                       elevation: 1,
@@ -218,8 +168,8 @@ class _ViajesScreenState extends State<ViajesScreen> {
                                   CircleAvatar(
                                     radius: 22,
                                     backgroundColor: cs.surfaceContainerHighest,
-                                    backgroundImage: _driverPhotoProvider(v),
-                                    child: _driverPhotoProvider(v) == null
+                                    backgroundImage: _passengerPhoto(v),
+                                    child: _passengerPhoto(v) == null
                                         ? Icon(
                                             Icons.person,
                                             color: cs.onSurfaceVariant,
@@ -233,25 +183,19 @@ class _ViajesScreenState extends State<ViajesScreen> {
                                           CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          conductor.isEmpty
-                                              ? 'Conductor'
-                                              : conductor,
+                                          pasajero.isEmpty
+                                              ? 'Pasajero'
+                                              : pasajero,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: const TextStyle(
                                             fontSize: 16,
-                                            fontWeight: FontWeight.w700,
+                                            fontWeight: FontWeight.w800,
                                           ),
                                         ),
                                         const SizedBox(height: 2),
                                         Text(
-                                          [
-                                            if (patente.isNotEmpty) patente,
-                                            if (modelo.isNotEmpty) modelo,
-                                            if (colorVeh.isNotEmpty) colorVeh,
-                                          ].join(' • '),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
+                                          tel.isEmpty ? '—' : tel,
                                           style: TextStyle(
                                             fontSize: 12.5,
                                             color: cs.onSurfaceVariant,
@@ -274,9 +218,9 @@ class _ViajesScreenState extends State<ViajesScreen> {
                                       ),
                                     ),
                                     child: Text(
-                                      _statusLabel(estado),
+                                      estado.isEmpty ? 'Desconocido' : estado,
                                       style: TextStyle(
-                                        fontWeight: FontWeight.w700,
+                                        fontWeight: FontWeight.w800,
                                         fontSize: 12,
                                         color: color,
                                       ),
@@ -284,9 +228,7 @@ class _ViajesScreenState extends State<ViajesScreen> {
                                   ),
                                 ],
                               ),
-
                               const SizedBox(height: 12),
-
                               if (origen.isNotEmpty) ...[
                                 Row(
                                   children: [
@@ -301,7 +243,6 @@ class _ViajesScreenState extends State<ViajesScreen> {
                                         origen,
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(fontSize: 13.5),
                                       ),
                                     ),
                                   ],
@@ -322,14 +263,12 @@ class _ViajesScreenState extends State<ViajesScreen> {
                                         destino,
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(fontSize: 13.5),
                                       ),
                                     ),
                                   ],
                                 ),
                                 const SizedBox(height: 10),
                               ],
-
                               Row(
                                 children: [
                                   Expanded(
@@ -340,26 +279,11 @@ class _ViajesScreenState extends State<ViajesScreen> {
                                       ),
                                     ),
                                   ),
-                                  if (rating != null) ...[
-                                    Icon(
-                                      Icons.star,
-                                      size: 18,
-                                      color: cs.primary,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      rating.toStringAsFixed(1),
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                  ],
                                   Text(
-                                    _money(precio),
+                                    monto,
                                     style: const TextStyle(
                                       fontSize: 16,
-                                      fontWeight: FontWeight.w800,
+                                      fontWeight: FontWeight.w900,
                                     ),
                                   ),
                                   const SizedBox(width: 4),
@@ -383,12 +307,10 @@ class _ViajesScreenState extends State<ViajesScreen> {
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (_) => _DetalleViajeSheet(viaje: v),
+      builder: (_) => _DetalleViajeConductorSheet(viaje: v),
     );
   }
 }
-
-// ---------------- UI states ----------------
 
 class _EmptyState extends StatelessWidget {
   const _EmptyState({required this.onRefresh});
@@ -407,11 +329,11 @@ class _EmptyState extends StatelessWidget {
             const SizedBox(height: 12),
             const Text(
               'Todavía no tenés viajes',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 6),
             Text(
-              'Cuando realices un viaje, te va a aparecer acá.',
+              'Cuando realices viajes, van a aparecer acá.',
               textAlign: TextAlign.center,
               style: TextStyle(color: cs.onSurfaceVariant),
             ),
@@ -446,7 +368,7 @@ class _ErrorState extends StatelessWidget {
             const SizedBox(height: 12),
             const Text(
               'No se pudo cargar',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 6),
             Text(
@@ -467,8 +389,8 @@ class _ErrorState extends StatelessWidget {
   }
 }
 
-class _DetalleViajeSheet extends StatelessWidget {
-  const _DetalleViajeSheet({required this.viaje});
+class _DetalleViajeConductorSheet extends StatelessWidget {
+  const _DetalleViajeConductorSheet({required this.viaje});
   final Map<String, dynamic> viaje;
 
   String _c(dynamic v) =>
@@ -480,29 +402,17 @@ class _DetalleViajeSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
-    final idViaje = _c(viaje['id_viaje'] ?? viaje['id'] ?? viaje['viaje_id']);
-    final estado = _c(viaje['estado'] ?? viaje['estado_viaje']);
-    final origen = _c(
-      viaje['direccion_origen'] ?? viaje['origen'] ?? viaje['origen_texto'],
-    );
-    final destino = _c(
-      viaje['direccion_destino'] ?? viaje['destino'] ?? viaje['destino_texto'],
-    );
+    final idViaje = _c(viaje['id_viajes']);
+    final estado = _c(viaje['estado']);
 
-    final conductorNombre = _c(
-      viaje['conductor_nombre'] ?? viaje['nombre_conductor'] ?? viaje['nombre'],
-    );
-    final conductorApellido = _c(
-      viaje['conductor_apellido'] ??
-          viaje['apellido_conductor'] ??
-          viaje['apellido'],
-    );
-    final conductor = ('$conductorNombre $conductorApellido').trim();
+    final origen = _c(viaje['direccion_origen']);
+    final destino = _c(viaje['direccion_destino']);
 
-    final patente = _c(viaje['patente'] ?? viaje['patente_vehiculo']);
-    final modelo = _c(viaje['modelo_vehiculo'] ?? viaje['modelo']);
-    final colorVeh = _c(viaje['color_vehiculo'] ?? viaje['color']);
-    final tel = _c(viaje['telefono_conductor'] ?? viaje['telefono']);
+    final pasajero =
+        ('${_c(viaje['pasajero_nombre'])} ${_c(viaje['pasajero_apellido'])}')
+            .trim();
+    final tel = _c(viaje['pasajero_telefono']);
+    final email = _c(viaje['pasajero_email']);
 
     return SafeArea(
       child: Padding(
@@ -528,20 +438,11 @@ class _DetalleViajeSheet extends StatelessWidget {
               _kv('Estado', estado.isEmpty ? '—' : estado, cs),
               const Divider(height: 22),
 
-              _kv('Conductor', conductor.isEmpty ? '—' : conductor, cs),
-              _kv(
-                'Vehículo',
-                [
-                  patente,
-                  modelo,
-                  colorVeh,
-                ].where((e) => e.isNotEmpty).join(' • ').ifEmpty('—'),
-                cs,
-              ),
+              _kv('Pasajero', pasajero.isEmpty ? '—' : pasajero, cs),
               if (tel.isNotEmpty) _kv('Teléfono', tel, cs),
+              if (email.isNotEmpty) _kv('Email', email, cs),
 
               const Divider(height: 22),
-
               _kv('Origen', origen.isEmpty ? '—' : origen, cs),
               _kv('Destino', destino.isEmpty ? '—' : destino, cs),
 
@@ -583,8 +484,4 @@ class _DetalleViajeSheet extends StatelessWidget {
       ),
     );
   }
-}
-
-extension _StrX on String {
-  String ifEmpty(String other) => trim().isEmpty ? other : this;
 }

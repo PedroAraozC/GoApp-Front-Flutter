@@ -117,36 +117,54 @@ class _PerfilScreenState extends State<PerfilScreen> {
     }
   }
 
-  Future<void> _logout() async {
-    try {
-      final storedUser = await UserPreferences.getUser();
-      final idUsuario = _parseId(storedUser?['id_usuario']);
+  void _showSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
 
+  Future<void> _logout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cerrar sesión'),
+        content: const Text('¿Seguro que querés cerrar sesión?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Cerrar sesión'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final user = await UserPreferences.getUser();
+      final idUsuario = user?['id_usuario'];
       if (idUsuario != null) {
         await _socket.disconnectAndNotify(
           idUsuario: idUsuario,
-          tipo: 'pasajero',
+          tipo: 'conductor',
         );
-        debugPrint('📤 usuario_desconectado enviado para $idUsuario');
-      } else {
-        _socket.disconnect();
       }
 
       await UserPreferences.fullLogout();
-
       if (!mounted) return;
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const AuthScreen()),
-        (_) => false,
-      );
-    } catch (e) {
-      debugPrint('❌ Error al cerrar sesión: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error al cerrar sesión: $e')));
-      }
+      Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
+    } catch (_) {
+      if (!mounted) return;
+      _showSnack('Error al cerrar sesión');
     }
   }
 

@@ -465,11 +465,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-          IconButton(
-            tooltip: 'Cerrar sesión',
-            icon: const Icon(Icons.logout),
-            onPressed: () => _logout(context),
-          ),
         ],
       ),
       body: SafeArea(

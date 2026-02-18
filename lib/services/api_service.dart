@@ -484,4 +484,64 @@ class ApiService {
       return null;
     }
   }
+
+  // ==============================
+  // 🔹 Historial de viajes del usuario
+  // ==============================
+  Future<List<Map<String, dynamic>>> obtenerHistorialViajesUsuario(
+    int idUsuario,
+  ) async {
+    try {
+      final url = Uri.parse('$_baseUrl/viajes/historial/$idUsuario');
+      final resp = await http.get(url);
+
+      if (resp.statusCode != 200) {
+        debugPrint('⚠️ Historial status=${resp.statusCode} body=${resp.body}');
+        return [];
+      }
+
+      final decoded = jsonDecode(resp.body);
+
+      final data = (decoded is Map<String, dynamic>)
+          ? (decoded['data'] ?? [])
+          : decoded;
+
+      if (data is List) {
+        return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+      return [];
+    } catch (e) {
+      debugPrint('❌ obtenerHistorialViajesUsuario(): $e');
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> obtenerHistorialViajesConductor(
+    int idUsuario,
+  ) async {
+    try {
+      final url = Uri.parse('$_baseUrl/viajes/historialConductor/$idUsuario');
+      final resp = await http.get(url);
+
+      if (resp.statusCode != 200) {
+        debugPrint(
+          '⚠️ Historial conductor status=${resp.statusCode} body=${resp.body}',
+        );
+        return [];
+      }
+
+      final decoded = jsonDecode(resp.body);
+      final data = (decoded is Map<String, dynamic>)
+          ? (decoded['data'] ?? [])
+          : decoded;
+
+      if (data is List) {
+        return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+      return [];
+    } catch (e) {
+      debugPrint('❌ obtenerHistorialViajesConductor(): $e');
+      return [];
+    }
+  }
 }

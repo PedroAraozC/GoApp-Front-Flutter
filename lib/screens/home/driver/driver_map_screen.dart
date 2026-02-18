@@ -25,6 +25,7 @@ import '../../../services/api_service.dart';
 import '../../../services/user_preferences.dart';
 import '../../../services/taximetro_service.dart';
 import '../../../services/earnings_service.dart';
+import 'driver_viajes_screen.dart';
 
 import 'driver_en_camino_screen.dart';
 
@@ -938,7 +939,10 @@ class _DriverMapScreenState extends State<DriverMapScreen>
             ListTile(
               leading: const Icon(Icons.history, color: Colors.black87),
               title: const Text('Historial de viajes'),
-              onTap: () => Navigator.pop(context),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const DriverViajesScreen()),
+              ),
             ),
             ListTile(
               leading: const Icon(Icons.payments, color: Colors.black87),
