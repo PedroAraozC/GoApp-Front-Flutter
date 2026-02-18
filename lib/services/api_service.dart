@@ -108,12 +108,18 @@ class ApiService {
     double? destinoLng,
     String? direccionOrigen,
     String? direccionDestino,
-    double? precioEstimado,
+
+    // ✅ precio fijo
+    String modoCobro = 'PACTADO', // 'PACTADO' | 'TAXIMETRO'
+    double? precioPactado,
   }) async {
     try {
       final url = Uri.parse('$_baseUrl/viajes/iniciarViaje');
       debugPrint('🌐 POST $_baseUrl/viajes/iniciarViaje');
 
+      // ✅ Compat total con backend viejo y nuevo:
+      // - backend viejo espera precio_estimado
+      // - backend nuevo usa modo_cobro + precio_pactado
       final body = jsonEncode({
         'id_usuario': idUsuario,
         'origen_lat': origenLat,
@@ -122,7 +128,13 @@ class ApiService {
         'destino_lng': destinoLng,
         'direccion_origen': direccionOrigen,
         'direccion_destino': direccionDestino,
-        'precio_estimado': precioEstimado,
+
+        // ✅ clave histórica
+        'precio_estimado': precioPactado,
+
+        // ✅ claves nuevas
+        'modo_cobro': modoCobro,
+        'precio_pactado': precioPactado,
       });
 
       final response = await http.post(

@@ -431,7 +431,8 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen>
         destinoLng: destino.longitude,
         direccionOrigen: _origenCtrl.text.trim(),
         direccionDestino: _destinoCtrl.text.trim(),
-        precioEstimado: double.parse(_fare.toStringAsFixed(2)),
+        modoCobro: 'PACTADO',
+        precioPactado: double.parse(_fare.toStringAsFixed(2)),
       );
 
       if (result == null) {

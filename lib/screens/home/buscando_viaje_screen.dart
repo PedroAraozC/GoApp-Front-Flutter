@@ -32,6 +32,22 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
     _inicializarSocketListeners();
   }
 
+  double? _parseMoney(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString().trim());
+  }
+
+  double? _readDouble(dynamic data, List<String> keys) {
+    for (final k in keys) {
+      final v = (data is Map) ? data[k] : null;
+      if (v == null) continue;
+      final d = (v is num) ? v.toDouble() : double.tryParse(v.toString());
+      if (d != null) return d;
+    }
+    return null;
+  }
+
   Future<void> _inicializarSocketListeners() async {
     final prefs = await SharedPreferences.getInstance();
     final idUsuario = prefs.getInt('id_usuario');
@@ -91,10 +107,40 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
             (data['direccion_hasta'] ?? data['direccionHasta'] ?? '')
                 .toString();
 
-        final dynamic rawValor = data['valor'];
-        final double? precioEstimado = rawValor is num
-            ? rawValor.toDouble()
-            : double.tryParse(rawValor?.toString() ?? '');
+        // ✅ Precio FIJO: preferimos precio_pactado / precio_final
+        // (compat: precio_estimado / valor)
+        final double precioMostrado =
+            (_parseMoney(data['precio_pactado']) ??
+            _parseMoney(data['precio_final']) ??
+            _parseMoney(data['precio_estimado']) ??
+            _parseMoney(data['valor']) ??
+            0.0);
+
+        // Coordenadas robustas (acepta keys nuevas y compat)
+        final latOrigen = _readDouble(data, [
+          'lat_desde',
+          'latDesde',
+          'origen_lat',
+        ]);
+        final lngOrigen = _readDouble(data, [
+          'lon_desde',
+          'lonDesde',
+          'origen_lng',
+          'lng_desde',
+        ]);
+        final latDestino = _readDouble(data, [
+          'lat_hasta',
+          'latHasta',
+          'lat_destino',
+          'destino_lat',
+        ]);
+        final lngDestino = _readDouble(data, [
+          'lon_hasta',
+          'lonHasta',
+          'lng_destino',
+          'lon_destino',
+          'destino_lng',
+        ]);
 
         // 3) Navegar a la pantalla de viaje asignado
         Navigator.pushReplacement(
@@ -104,18 +150,11 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
               idViaje: widget.idViaje,
               direccionOrigen: direccionOrigen,
               direccionDestino: direccionDestino,
-              precioEstimado: precioEstimado,
-              latOrigen: double.parse(data['lat_desde'].toString()),
-              lngOrigen: double.parse(data['lon_desde'].toString()),
-              latDestino: double.parse(
-                (data['lat_hasta'] ?? data['lat_destino']).toString(),
-              ),
-              lngDestino: double.parse(
-                (data['lon_hasta'] ??
-                        data['lng_destino'] ??
-                        data['lon_destino'])
-                    .toString(),
-              ),
+              precioFinal: precioMostrado,
+              latOrigen: latOrigen ?? 0.0,
+              lngOrigen: lngOrigen ?? 0.0,
+              latDestino: latDestino ?? 0.0,
+              lngDestino: lngDestino ?? 0.0,
             ),
           ),
         );
@@ -141,19 +180,14 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
         });
       }
       _mostrarSnack('El viaje ha finalizado. ¡Gracias por usar GoApp!');
-      // En este flujo normalmente ya estarías en otra pantalla.
     });
 
-    // ❌ Evento: viaje cancelado (desde servidor / conductor / usuario)
+    // ❌ Evento: viaje cancelado
     _socket.on('viaje_cancelado', (data) {
       debugPrint('❌ Evento: viaje_cancelado -> $data');
 
       try {
-        // Filtrar por ID de viaje: solo reaccionamos si es ESTE viaje
-        final rawId =
-            data?['id_viajes'] ??
-            data?['id_viaje'] ??
-            data?['id']; // por las dudas
+        final rawId = data?['id_viajes'] ?? data?['id_viaje'] ?? data?['id'];
         if (rawId == null) return;
 
         final idSocket = rawId is num
@@ -175,20 +209,18 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
         }
         _mostrarSnack('Tu viaje fue cancelado.');
 
-        // 👉 Ir directamente al Home después de 2 segundos
         Future.delayed(const Duration(seconds: 2), () {
           if (!mounted) return;
-          Navigator.of(context).pushNamedAndRemoveUntil(
-            '/home', // 👈 ajustá el nombre de la ruta de tu home si es distinto
-            (route) => false,
-          );
+          Navigator.of(
+            context,
+          ).pushNamedAndRemoveUntil('/home', (route) => false);
         });
       } catch (e) {
         debugPrint('❌ Error procesando viaje_cancelado: $e');
       }
     });
 
-    // 🔄 Evento: viaje vuelve a buscar conductor (cancelado por conductor)
+    // 🔄 Evento: viaje vuelve a buscar conductor
     _socket.on('viaje_buscando_conductor', (data) {
       debugPrint('🔄 Evento: viaje_buscando_conductor -> $data');
 
@@ -216,16 +248,14 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
   }
 
   Future<void> _cancelarViaje() async {
-    if (_cancelando) return; // Evitar doble clic
+    if (_cancelando) return;
     setState(() => _cancelando = true);
 
     try {
       final prefs = await SharedPreferences.getInstance();
 
-      // Intentar obtener id_usuario de múltiples fuentes
       int? idUsuario = prefs.getInt('id_usuario');
 
-      // Si no está en SharedPreferences, intentar desde user_data
       if (idUsuario == null) {
         final userData = prefs.getString('user_data');
         if (userData != null) {
@@ -234,7 +264,6 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
             final rawId = user['id_usuario'];
             if (rawId != null) {
               idUsuario = rawId is int ? rawId : int.tryParse(rawId.toString());
-              // Guardar en SharedPreferences para futuras referencias
               if (idUsuario != null) {
                 await prefs.setInt('id_usuario', idUsuario);
               }
@@ -256,7 +285,6 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
 
       debugPrint('✅ ID usuario obtenido para cancelar: $idUsuario');
 
-      // 1) Cancelar en el backend con tipo "pasajero"
       final ok = await _api.cancelarViaje(
         idViaje: widget.idViaje,
         idUsuario: idUsuario,
@@ -265,8 +293,6 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
 
       if (ok) {
         _mostrarSnack('Cancelando viaje...');
-        // 2) El controlador cancelarViaje ya emite "viaje_cancelado"
-        //    y el listener de arriba se encarga de navegar al home.
       } else {
         _mostrarSnack('Error al cancelar el viaje');
         if (mounted) setState(() => _cancelando = false);
@@ -291,7 +317,6 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
 
   @override
   void dispose() {
-    // Dejamos la conexión global del socket, pero limpiamos listeners de esta pantalla
     _socket.off('viaje_asignado');
     _socket.off('viaje_en_curso');
     _socket.off('viaje_finalizado');

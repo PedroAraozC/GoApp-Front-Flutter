@@ -14,7 +14,9 @@ class ViajeAsignadoScreen extends StatefulWidget {
   final int idViaje;
   final String direccionOrigen;
   final String direccionDestino;
-  final double? precioEstimado;
+
+  /// ✅ Precio fijo (pactado) que se mantiene hasta finalizar.
+  final double precioFinal;
 
   final double latDestino;
   final double lngDestino;
@@ -31,7 +33,7 @@ class ViajeAsignadoScreen extends StatefulWidget {
     required this.lngOrigen,
     required this.latDestino,
     required this.lngDestino,
-    this.precioEstimado,
+    required this.precioFinal,
   });
 
   @override
@@ -62,18 +64,11 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
   @override
   void initState() {
     super.initState();
-
-    // POSICIÓN DEL PASAJERO DESDE EL VIAJE
     _posPasajero = LatLng(widget.latOrigen, widget.lngOrigen);
-
     _actualizarMarkers();
-
     _inicializarSocketListeners();
   }
 
-  // ===============================================================
-  // Permisos y streaming ubicación pasajero
-  // ===============================================================
   Future<bool> _ensureLocationPermissions() async {
     final enabled = await Geolocator.isLocationServiceEnabled();
     if (!enabled) {
@@ -111,7 +106,6 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
         ).listen((p) {
           if (_passengerId == null) return;
 
-          // Enviar ubicación al room del viaje
           _socket.enviarUbicacion(
             idViaje: widget.idViaje,
             lat: p.latitude,
@@ -120,7 +114,6 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
             tipo: 'pasajero',
           );
 
-          // Actualizar también marker local (por si el pasajero se mueve)
           setState(() {
             _posPasajero = LatLng(p.latitude, p.longitude);
           });
@@ -128,9 +121,6 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
         });
   }
 
-  // ===============================================================
-  // 🔌 SOCKET LISTENERS
-  // ===============================================================
   Future<void> _inicializarSocketListeners() async {
     _passengerId = await UserPreferences.getIdUsuario();
     final idUsuario = _passengerId;
@@ -142,21 +132,17 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
 
     await _socket.emitirConexionUsuario(idUsuario, 'pasajero');
 
-    // Unirse al room del viaje para recibir actualizaciones
     await _socket.unirseAViaje(
       idViaje: widget.idViaje,
       userId: idUsuario,
       tipo: 'pasajero',
     );
 
-    // Empezar a compartir ubicación del pasajero (para que el conductor lo vea si se mueve)
     await _startSharingPassengerLocation();
 
-    // 🔊 UBICACIÓN DEL CONDUCTOR (nuevo sistema)
     _socket.onUbicacionEnTiempoReal((data) async {
       debugPrint("📍 LLEGA UBICACIÓN EN TIEMPO REAL → $data");
       try {
-        // Solo procesar si es del conductor
         if (data['tipo'] != 'conductor') return;
 
         final lat = double.tryParse(data["lat"].toString());
@@ -166,7 +152,7 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
         _posConductor = LatLng(lat, lng);
 
         _actualizarMarkers();
-        await _drawRoute(); // 👈 siempre actualizar ruta
+        await _drawRoute();
         if (_posConductor != null) {
           _moverCamara(_posConductor!);
         }
@@ -175,7 +161,6 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
       }
     });
 
-    // 🔊 CONDUCTOR LLEGÓ AL ENCUENTRO
     _socket.onConductorLlegoEncuentro((data) {
       debugPrint("🚕 Conductor llegó al punto de encuentro → $data");
       if (mounted) {
@@ -189,7 +174,6 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
       }
     });
 
-    // ▶️ VIAJE EN CURSO
     _socket.onViajeEnCurso((data) {
       debugPrint("▶️ Viaje en curso → $data");
 
@@ -203,9 +187,6 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
         ),
       );
 
-      // ⚠️ Necesitamos lat/lng destino para trackear al destino.
-      // Si todavía NO los tenés en ViajeAsignadoScreen, pasalos por constructor (recomendado).
-      // Acá asumo que agregás latDestino/lngDestino al widget.
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -222,7 +203,6 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
       );
     });
 
-    // ✅ VIAJE FINALIZADO
     _socket.onViajeFinalizado((data) {
       debugPrint("✅ Viaje finalizado → $data");
       if (mounted) {
@@ -236,7 +216,6 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
       }
     });
 
-    // ❌ VIAJE CANCELADO
     _socket.onViajeCancelado((data) {
       debugPrint("❌ Viaje cancelado → $data");
       if (mounted) {
@@ -254,9 +233,6 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
     setState(() => _loading = false);
   }
 
-  // ===============================================================
-  // MAPA: markers + ruta
-  // ===============================================================
   void _actualizarMarkers() {
     final markers = <Marker>{};
 
@@ -367,9 +343,6 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
     _mapCtrl?.animateCamera(CameraUpdate.newLatLng(pos));
   }
 
-  // ===============================================================
-  // UI
-  // ===============================================================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -430,6 +403,20 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
                               Text('Tiempo: $_durationText'),
                             ],
                           ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              const Icon(Icons.attach_money),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Precio final: ${widget.precioFinal.toStringAsFixed(0)}',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
                           const SizedBox(height: 14),
                           ElevatedButton(
                             onPressed: _cancelando || _passengerId == null
@@ -442,25 +429,22 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
                                         idUsuario: _passengerId!,
                                         tipo: 'pasajero',
                                       );
-                                      if (!ok) {
-                                        if (mounted) {
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            const SnackBar(
-                                              content: Text(
-                                                'Error al cancelar el viaje',
-                                              ),
+                                      if (!ok && mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              'Error al cancelar el viaje',
                                             ),
-                                          );
-                                        }
+                                          ),
+                                        );
                                       }
                                     } catch (e) {
                                       debugPrint('Error al cancelar: $e');
                                     } finally {
-                                      if (mounted) {
+                                      if (mounted)
                                         setState(() => _cancelando = false);
-                                      }
                                     }
                                   },
                             style: ElevatedButton.styleFrom(
