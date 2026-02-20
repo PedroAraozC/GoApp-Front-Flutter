@@ -1285,7 +1285,7 @@ class _DriverMapScreenState extends State<DriverMapScreen>
                   ),
                 ),
                 Text(
-                  _formatCurrency(r.valor),
+                  _formatCurrency(r.precioMostrado),
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ],
@@ -1394,6 +1394,10 @@ class IncomingRide {
   final DateTime? horaFin;
   final double valor;
   final int idEstado;
+  final String modoCobro; // 'PACTADO' | 'TAXIMETRO'
+  final double? precioPactado;
+  final double? precioFinal;
+  double get precioMostrado => (precioPactado ?? precioFinal ?? 0.0);
 
   IncomingRide({
     required this.idViajes,
@@ -1409,6 +1413,10 @@ class IncomingRide {
     required this.horaFin,
     required this.valor,
     required this.idEstado,
+
+    required this.modoCobro,
+    required this.precioPactado,
+    required this.precioFinal,
   });
 
   static int _parseInt(dynamic v, {int fallback = 0}) {
@@ -1509,8 +1517,31 @@ class IncomingRide {
       horaFin: (parsed['hora_fin'] != null)
           ? DateTime.tryParse('${parsed['hora_fin']}')
           : null,
-      valor: _parseDouble(parsed['valor'], fallback: 0.0),
+
+      // ✅ PRECIO: prioridad a precio_pactado/precio_final (lo que manda el backend nuevo)
+      valor: _parseDouble(
+        parsed['precio_pactado'] ??
+            parsed['precioPactado'] ??
+            parsed['precio_final'] ??
+            parsed['precioFinal'] ??
+            parsed['precio_estimado'] ??
+            parsed['valor'],
+        fallback: 0.0,
+      ),
+
       idEstado: estado,
+
+      // ✅ NUEVOS CAMPOS
+      modoCobro: _str(
+        parsed['modo_cobro'] ?? parsed['modoCobro'] ?? 'PACTADO',
+      ).toUpperCase(),
+      precioPactado:
+          (parsed['precio_pactado'] ?? parsed['precioPactado']) == null
+          ? null
+          : _parseDouble(parsed['precio_pactado'] ?? parsed['precioPactado']),
+      precioFinal: (parsed['precio_final'] ?? parsed['precioFinal']) == null
+          ? null
+          : _parseDouble(parsed['precio_final'] ?? parsed['precioFinal']),
     );
   }
 }

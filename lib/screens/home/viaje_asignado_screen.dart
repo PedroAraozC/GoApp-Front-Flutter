@@ -5,6 +5,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
+
 import 'pasajero_viaje_en_curso_screen.dart';
 import '../../services/socket_service.dart';
 import '../../services/api_service.dart';
@@ -61,12 +62,40 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
   String _distanceText = '--';
   String _durationText = '--';
 
+  bool _navegando = false; // ✅ evita doble navegación
+
+  // ✅ handlers para remover SOLO los listeners de esta pantalla
+  Function(dynamic)? _hUbicacion;
+  Function(dynamic)? _hConductorLlego;
+
+  Function(dynamic)? _hViajeEnCursoWrapper;
+  Function(dynamic)? _hViajeEnCursoDirect;
+
+  Function(dynamic)? _hIniciarViaje;
+  Function(dynamic)? _hViajeIniciado;
+
+  Function(dynamic)? _hViajeFinalizado;
+  Function(dynamic)? _hViajeCancelado;
+
   @override
   void initState() {
     super.initState();
     _posPasajero = LatLng(widget.latOrigen, widget.lngOrigen);
     _actualizarMarkers();
     _inicializarSocketListeners();
+  }
+
+  int? _readViajeId(dynamic data) {
+    try {
+      final raw = (data is Map)
+          ? (data['id_viaje'] ?? data['id_viajes'] ?? data['id'])
+          : null;
+      if (raw == null) return null;
+      if (raw is num) return raw.toInt();
+      return int.tryParse(raw.toString());
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<bool> _ensureLocationPermissions() async {
@@ -114,11 +143,51 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
             tipo: 'pasajero',
           );
 
-          setState(() {
-            _posPasajero = LatLng(p.latitude, p.longitude);
-          });
+          if (!mounted) return;
+          setState(() => _posPasajero = LatLng(p.latitude, p.longitude));
           _actualizarMarkers();
         });
+  }
+
+  void _irAPasajeroViajeEnCurso(
+    dynamic data, {
+    String source = 'viaje_en_curso',
+  }) {
+    debugPrint("▶️ [$source] -> $data");
+
+    final idSocket = _readViajeId(data);
+    if (idSocket != null && idSocket != widget.idViaje) {
+      debugPrint(
+        'ℹ️ [$source] de otro viaje (idSocket=$idSocket, actual=${widget.idViaje})',
+      );
+      return;
+    }
+
+    if (!mounted || _navegando) return;
+    _navegando = true;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('▶️ El viaje comenzó'),
+        backgroundColor: Colors.blue,
+        duration: Duration(seconds: 3),
+      ),
+    );
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PasajeroViajeEnCursoScreen(
+          idViaje: widget.idViaje,
+          latDestino: widget.latDestino,
+          lngDestino: widget.lngDestino,
+          direccionOrigen: widget.direccionOrigen,
+          direccionDestino: widget.direccionDestino,
+          latConductorInicial: _posConductor?.latitude,
+          lngConductorInicial: _posConductor?.longitude,
+        ),
+      ),
+    );
   }
 
   Future<void> _inicializarSocketListeners() async {
@@ -127,7 +196,13 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
 
     if (idUsuario == null) {
       debugPrint("⚠️ id_usuario es null. No se puede registrar en socket.");
+      if (mounted) setState(() => _loading = false);
       return;
+    }
+
+    if (!_socket.isConnected) {
+      await _socket.connect();
+      debugPrint("🔌 Socket conectado (ViajeAsignadoScreen)");
     }
 
     await _socket.emitirConexionUsuario(idUsuario, 'pasajero');
@@ -140,9 +215,13 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
 
     await _startSharingPassengerLocation();
 
-    _socket.onUbicacionEnTiempoReal((data) async {
-      debugPrint("📍 LLEGA UBICACIÓN EN TIEMPO REAL → $data");
+    // -------------------------
+    // ✅ Ubicación en tiempo real
+    // -------------------------
+    _hUbicacion = _socket.onUbicacionEnTiempoReal((data) async {
+      debugPrint("📍 UBICACIÓN EN TIEMPO REAL → $data");
       try {
+        if (data is! Map) return;
         if (data['tipo'] != 'conductor') return;
 
         final lat = double.tryParse(data["lat"].toString());
@@ -151,86 +230,77 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
 
         _posConductor = LatLng(lat, lng);
 
+        if (!mounted) return;
         _actualizarMarkers();
         await _drawRoute();
-        if (_posConductor != null) {
-          _moverCamara(_posConductor!);
-        }
+        if (_posConductor != null) _moverCamara(_posConductor!);
       } catch (e) {
         debugPrint("❌ Error procesando ubicación del conductor: $e");
       }
     });
 
-    _socket.onConductorLlegoEncuentro((data) {
+    _hConductorLlego = _socket.onConductorLlegoEncuentro((data) {
       debugPrint("🚕 Conductor llegó al punto de encuentro → $data");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('🚕 El conductor llegó al punto de encuentro'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
-          ),
-        );
-      }
-    });
-
-    _socket.onViajeEnCurso((data) {
-      debugPrint("▶️ Viaje en curso → $data");
-
       if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('▶️ El viaje comenzó'),
-          backgroundColor: Colors.blue,
+          content: Text('🚕 El conductor llegó al punto de encuentro'),
+          backgroundColor: Colors.green,
           duration: Duration(seconds: 3),
         ),
       );
+    });
 
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PasajeroViajeEnCursoScreen(
-            idViaje: widget.idViaje,
-            latDestino: widget.latDestino,
-            lngDestino: widget.lngDestino,
-            direccionOrigen: widget.direccionOrigen,
-            direccionDestino: widget.direccionDestino,
-            latConductorInicial: _posConductor?.latitude,
-            lngConductorInicial: _posConductor?.longitude,
-          ),
+    // ✅ Wrapper
+    _hViajeEnCursoWrapper = _socket.onViajeEnCurso(
+      (data) =>
+          _irAPasajeroViajeEnCurso(data, source: 'wrapper:onViajeEnCurso'),
+    );
+
+    // ✅ Directos / alias
+    _hViajeEnCursoDirect = _socket.on(
+      'viaje_en_curso',
+      (data) => _irAPasajeroViajeEnCurso(data, source: 'socket:viaje_en_curso'),
+    );
+    _hIniciarViaje = _socket.on(
+      'iniciar_viaje',
+      (data) => _irAPasajeroViajeEnCurso(data, source: 'socket:iniciar_viaje'),
+    );
+    _hViajeIniciado = _socket.on(
+      'viaje_iniciado',
+      (data) => _irAPasajeroViajeEnCurso(data, source: 'socket:viaje_iniciado'),
+    );
+
+    _hViajeFinalizado = _socket.onViajeFinalizado((data) {
+      debugPrint("✅ Viaje finalizado → $data");
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Viaje finalizado'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 3),
         ),
       );
     });
 
-    _socket.onViajeFinalizado((data) {
-      debugPrint("✅ Viaje finalizado → $data");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Viaje finalizado'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
-          ),
-        );
-      }
-    });
-
-    _socket.onViajeCancelado((data) {
+    _hViajeCancelado = _socket.onViajeCancelado((data) {
       debugPrint("❌ Viaje cancelado → $data");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('❌ El viaje fue cancelado'),
-            backgroundColor: Colors.redAccent,
-            duration: Duration(seconds: 3),
-          ),
-        );
-        Navigator.pop(context);
-      }
+
+      final idSocket = _readViajeId(data);
+      if (idSocket != null && idSocket != widget.idViaje) return;
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('❌ El viaje fue cancelado'),
+          backgroundColor: Colors.redAccent,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      Navigator.pop(context);
     });
 
-    setState(() => _loading = false);
+    if (mounted) setState(() => _loading = false);
   }
 
   void _actualizarMarkers() {
@@ -254,9 +324,8 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
       );
     }
 
-    setState(() {
-      _markers = markers;
-    });
+    if (!mounted) return;
+    setState(() => _markers = markers);
   }
 
   Future<void> _drawRoute() async {
@@ -270,8 +339,7 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
       final dest = '${_posPasajero.latitude},${_posPasajero.longitude}';
 
       final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/directions/json'
-        '?origin=$origin&destination=$dest&key=$apiKey',
+        'https://maps.googleapis.com/maps/api/directions/json?origin=$origin&destination=$dest&key=$apiKey',
       );
 
       final resp = await http.get(url);
@@ -285,6 +353,7 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
       final distance = leg['distance']?['text']?.toString() ?? '--';
       final duration = leg['duration']?['text']?.toString() ?? '--';
 
+      if (!mounted) return;
       setState(() {
         _distanceText = distance;
         _durationText = duration;
@@ -295,6 +364,7 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
 
       final decoded = _decodePolyline(points.toString());
 
+      if (!mounted) return;
       setState(() {
         _polylines = {
           Polyline(
@@ -443,8 +513,9 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
                                     } catch (e) {
                                       debugPrint('Error al cancelar: $e');
                                     } finally {
-                                      if (mounted)
+                                      if (mounted) {
                                         setState(() => _cancelando = false);
+                                      }
                                     }
                                   },
                             style: ElevatedButton.styleFrom(
@@ -477,11 +548,20 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
   @override
   void dispose() {
     _posSub?.cancel();
-    _socket.off('ubicacion_en_tiempo_real');
-    _socket.off('conductor_llego_encuentro');
-    _socket.off('viaje_en_curso');
-    _socket.off('viaje_finalizado');
-    _socket.off('viaje_cancelado');
+
+    // ✅ remover SOLO listeners de esta pantalla
+    _socket.off('ubicacion_en_tiempo_real', _hUbicacion);
+    _socket.off('conductor_llego_encuentro', _hConductorLlego);
+
+    _socket.off('viaje_en_curso', _hViajeEnCursoWrapper);
+    _socket.off('viaje_en_curso', _hViajeEnCursoDirect);
+
+    _socket.off('iniciar_viaje', _hIniciarViaje);
+    _socket.off('viaje_iniciado', _hViajeIniciado);
+
+    _socket.off('viaje_finalizado', _hViajeFinalizado);
+    _socket.off('viaje_cancelado', _hViajeCancelado);
+
     super.dispose();
   }
 }

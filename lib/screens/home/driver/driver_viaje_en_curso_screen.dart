@@ -16,39 +16,6 @@ import '../../../services/api_service.dart';
 import '../../../services/socket_service.dart';
 import 'driver_map_screen.dart'; // IncomingRide
 
-class TarifaVigente {
-  final int idTarifa;
-  final double base;
-  final double porKm;
-  final double porMin;
-  final double minimo;
-
-  TarifaVigente({
-    required this.idTarifa,
-    required this.base,
-    required this.porKm,
-    required this.porMin,
-    required this.minimo,
-  });
-
-  static double _d(dynamic v) {
-    if (v is num) return v.toDouble();
-    return double.tryParse('${v ?? ''}') ?? 0.0;
-  }
-
-  factory TarifaVigente.fromJson(Map<String, dynamic> j) {
-    return TarifaVigente(
-      idTarifa: (j['id_tarifa'] is num)
-          ? (j['id_tarifa'] as num).toInt()
-          : int.tryParse('${j['id_tarifa']}') ?? 0,
-      base: _d(j['base']),
-      porKm: _d(j['por_km']),
-      porMin: _d(j['por_min']),
-      minimo: _d(j['minimo']),
-    );
-  }
-}
-
 class DriverViajeEnCursoScreen extends StatefulWidget {
   final IncomingRide ride;
 
@@ -72,7 +39,6 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
 
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
-
   StreamSubscription<Position>? _positionSub;
 
   String _distanceText = '--';
@@ -83,24 +49,7 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
   BitmapDescriptor? _iconTarget;
   BitmapDescriptor? _iconShadow;
 
-  TarifaVigente? _tarifa;
-  bool _loadingTarifa = true;
-
-  DateTime? _startTime;
-  Position? _lastPos;
-  double _meters = 0.0;
-  int _seconds = 0;
-  Timer? _tick;
-
-  double get _km => _meters / 1000.0;
-  double get _mins => _seconds / 60.0;
-
-  double get _precioActual {
-    final t = _tarifa;
-    if (t == null) return widget.ride.valor; // fallback
-    final raw = t.base + (_km * t.porKm) + (_mins * t.porMin);
-    return raw < t.minimo ? t.minimo : raw;
-  }
+  double get _precioPactado => widget.ride.precioMostrado;
 
   @override
   void initState() {
@@ -113,20 +62,7 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
     await _initIcons();
     await _resolveDriverId();
     await _inicializarSocket();
-    await _loadTarifaVigente();
     await _initLocationAndTracking();
-  }
-
-  Future<void> _loadTarifaVigente() async {
-    setState(() => _loadingTarifa = true);
-    try {
-      final raw = await _api.getTarifaVigente();
-      if (raw != null) {
-        _tarifa = TarifaVigente.fromJson(raw);
-      }
-    } finally {
-      if (mounted) setState(() => _loadingTarifa = false);
-    }
   }
 
   Future<void> _initIcons() async {
@@ -182,9 +118,13 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
 
   @override
   void dispose() {
-    _tick?.cancel();
     _positionSub?.cancel();
     _mapCtrl?.dispose();
+
+    if (_driverId != null) {
+      _socket.salirDeViaje(idViaje: widget.ride.idViajes, userId: _driverId!);
+    }
+
     super.dispose();
   }
 
@@ -196,15 +136,6 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
       desiredAccuracy: LocationAccuracy.high,
     );
     _driverPos = LatLng(pos.latitude, pos.longitude);
-
-    _startTime ??= DateTime.now();
-    _lastPos = pos;
-
-    _tick?.cancel();
-    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() => _seconds += 1);
-    });
 
     _setMarkers();
     await _moveCameraInitial();
@@ -218,24 +149,10 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
         ).listen((p) {
           if (!mounted) return;
 
-          if (_lastPos != null) {
-            final d = Geolocator.distanceBetween(
-              _lastPos!.latitude,
-              _lastPos!.longitude,
-              p.latitude,
-              p.longitude,
-            );
-            if (d.isFinite && d > 0) _meters += d;
-          }
-          _lastPos = p;
-
           _driverPos = LatLng(p.latitude, p.longitude);
-
           _setMarkers();
           _buildRoute();
           _enviarUbicacion(p.latitude, p.longitude);
-
-          setState(() {}); // refresca precio
         });
 
     await _buildRoute();
@@ -248,8 +165,9 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
       return false;
     }
     var p = await Geolocator.checkPermission();
-    if (p == LocationPermission.denied)
+    if (p == LocationPermission.denied) {
       p = await Geolocator.requestPermission();
+    }
     if (p == LocationPermission.deniedForever ||
         p == LocationPermission.denied) {
       _msg('No tenés permisos de ubicación.');
@@ -355,7 +273,7 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
 
     final apiKey =
         dotenv.env['GOOGLE_MAPS_API_KEY'] ?? dotenv.env['GOOGLE_API_KEY'];
-    if (apiKey == null) return;
+    if (apiKey == null || apiKey.trim().isEmpty) return;
 
     final origin = '${_driverPos!.latitude},${_driverPos!.longitude}';
     final destination = '${_destPos.latitude},${_destPos.longitude}';
@@ -387,14 +305,15 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
               color: Colors.blue,
             ),
           );
-        _distanceText = leg['distance']['text'] ?? '--';
-        _durationText = leg['duration']['text'] ?? '--';
+
+        _distanceText = leg['distance']?['text']?.toString() ?? '--';
+        _durationText = leg['duration']?['text']?.toString() ?? '--';
       });
     } catch (_) {}
   }
 
   List<LatLng> _decodePolyline(String polyline) {
-    List<LatLng> points = [];
+    final points = <LatLng>[];
     int index = 0, len = polyline.length;
     int lat = 0, lng = 0;
 
@@ -405,7 +324,7 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
         result |= (b & 0x1F) << shift;
         shift += 5;
       } while (b >= 0x20);
-      int dlat = (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+      final dlat = (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
       lat += dlat;
 
       shift = 0;
@@ -415,7 +334,7 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
         result |= (b & 0x1F) << shift;
         shift += 5;
       } while (b >= 0x20);
-      int dlng = (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+      final dlng = (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
       lng += dlng;
 
       points.add(LatLng(lat / 1E5, lng / 1E5));
@@ -443,24 +362,46 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
     );
   }
 
+  Future<void> _showCobrarDialog(double total) async {
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('Cobrar viaje'),
+        content: Text(
+          'Total a cobrar: \$${total.toStringAsFixed(0)}',
+          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _onFinalizarViaje() async {
     if (_driverId == null) {
       _msg('Error: No se encontró el ID del conductor');
       return;
     }
 
-    final precioFinal = _precioActual;
-    final distanciaKm = _km;
-    final duracionMin = _mins;
-
     setState(() => _finishingTrip = true);
+
     try {
+      // ✅ Para PACTADO mandamos el precio pactado como precio_final
+      final double? precioFinalToSend = (widget.ride.modoCobro == 'PACTADO')
+          ? _precioPactado
+          : null;
+
       final ok = await _api.finalizarViaje(
         idViaje: widget.ride.idViajes,
         idConductor: _driverId!,
-        precioFinal: precioFinal,
-        distanciaKm: distanciaKm,
-        duracionMin: duracionMin,
+        precioFinal: precioFinalToSend,
       );
 
       if (!ok) {
@@ -468,7 +409,8 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
         return;
       }
 
-      _msg('Viaje finalizado. Total: \$${precioFinal.toStringAsFixed(0)} 🏁');
+      // ✅ Ventana con precio a cobrar (lo que pediste)
+      await _showCobrarDialog(_precioPactado);
 
       final idUsuario = await UserPreferences.getIdUsuario();
       if (idUsuario != null) {
@@ -476,7 +418,7 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
           idUsuario: idUsuario,
           uniqueId: 'app_${widget.ride.idViajes}',
           idViaje: widget.ride.idViajes,
-          monto: precioFinal,
+          monto: _precioPactado,
           fecha: DateTime.now(),
           tipo: EarningType.viajeApp,
         );
@@ -567,27 +509,20 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
                               const Icon(Icons.attach_money, size: 18),
                               const SizedBox(width: 6),
                               Text(
-                                _loadingTarifa
-                                    ? 'Tarifa: cargando...'
-                                    : (_tarifa == null
-                                          ? 'Tarifa: no disponible (fallback)'
-                                          : 'Tarifa #${_tarifa!.idTarifa}'),
+                                widget.ride.modoCobro == 'PACTADO'
+                                    ? 'Precio final pactado'
+                                    : 'Modo: TAXÍMETRO',
                                 style: const TextStyle(color: Colors.black54),
                               ),
                               const Spacer(),
                               Text(
-                                '\$${_precioActual.toStringAsFixed(0)}',
+                                '\$${_precioPactado.toStringAsFixed(0)}',
                                 style: const TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ],
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            'Tiempo: ${_mins.toStringAsFixed(1)} min • Distancia: ${_km.toStringAsFixed(2)} km',
-                            style: const TextStyle(color: Colors.black54),
                           ),
                         ],
                       ),
