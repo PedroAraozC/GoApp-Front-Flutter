@@ -1290,6 +1290,50 @@ class _DriverMapScreenState extends State<DriverMapScreen>
                 ),
               ],
             ),
+            const SizedBox(height: 10),
+
+            // ✅ Info del pasajero
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    (r.nombrePasajero.isNotEmpty ||
+                            r.apellidoPasajero.isNotEmpty)
+                        ? '${r.nombrePasajero} ${r.apellidoPasajero}'.trim()
+                        : 'Pasajero',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.star, size: 18, color: Colors.amber),
+                    const SizedBox(width: 4),
+                    Text(
+                      r.ratingPasajero.toStringAsFixed(1),
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(width: 12),
+                    const Icon(
+                      Icons.directions_car,
+                      size: 18,
+                      color: Colors.black54,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${r.viajesTotalesPasajero}',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -1381,6 +1425,11 @@ class _DriverMapScreenState extends State<DriverMapScreen>
 }
 
 class IncomingRide {
+  // ✅ Info pasajero
+  final String nombrePasajero;
+  final String apellidoPasajero;
+  final double ratingPasajero;
+  final int viajesTotalesPasajero;
   final int idViajes;
   final int idPasajero;
   final int? idConductor;
@@ -1400,6 +1449,11 @@ class IncomingRide {
   double get precioMostrado => (precioPactado ?? precioFinal ?? 0.0);
 
   IncomingRide({
+    // ✅ Info pasajero
+    required this.nombrePasajero,
+    required this.apellidoPasajero,
+    required this.ratingPasajero,
+    required this.viajesTotalesPasajero,
     required this.idViajes,
     required this.idPasajero,
     required this.idConductor,
@@ -1491,6 +1545,43 @@ class IncomingRide {
       );
     }
 
+    // ✅ Puede venir "plano" o dentro de "pasajero"
+    final dynamic pasajeroRaw = parsed['pasajero'];
+    final Map<String, dynamic>? pasajero = pasajeroRaw is Map
+        ? pasajeroRaw.map((k, v) => MapEntry(k.toString(), v))
+        : null;
+
+    final String nombrePasajero = _str(
+      pasajero?['nombre'] ??
+          parsed['nombre'] ??
+          parsed['nombre_pasajero'] ??
+          parsed['pasajero_nombre'],
+    );
+
+    final String apellidoPasajero = _str(
+      pasajero?['apellido'] ??
+          parsed['apellido'] ??
+          parsed['apellido_pasajero'] ??
+          parsed['pasajero_apellido'],
+    );
+
+    final double ratingPasajero = _parseDouble(
+      pasajero?['rating'] ??
+          parsed['rating'] ??
+          parsed['calificacion'] ??
+          parsed['rating_pasajero'],
+      fallback: 0.0,
+    );
+
+    final int viajesTotalesPasajero = _parseInt(
+      pasajero?['viajes_totales'] ??
+          pasajero?['viajesTotales'] ??
+          parsed['viajes_totales'] ??
+          parsed['viajesTotales'] ??
+          parsed['viajes_pasajero'],
+      fallback: 0,
+    );
+
     return IncomingRide(
       idViajes: idViaje,
       idPasajero: idPasajero,
@@ -1542,6 +1633,12 @@ class IncomingRide {
       precioFinal: (parsed['precio_final'] ?? parsed['precioFinal']) == null
           ? null
           : _parseDouble(parsed['precio_final'] ?? parsed['precioFinal']),
+
+      // ✅ Info pasajero
+      nombrePasajero: nombrePasajero,
+      apellidoPasajero: apellidoPasajero,
+      ratingPasajero: ratingPasajero,
+      viajesTotalesPasajero: viajesTotalesPasajero,
     );
   }
 }

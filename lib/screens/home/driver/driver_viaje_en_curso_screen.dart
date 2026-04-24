@@ -15,6 +15,7 @@ import '../../../services/earnings_service.dart';
 import '../../../services/api_service.dart';
 import '../../../services/socket_service.dart';
 import 'driver_map_screen.dart'; // IncomingRide
+import '../../../screens/home/widgets/rating_modal.dart'; // RatingModal
 
 class DriverViajeEnCursoScreen extends StatefulWidget {
   final IncomingRide ride;
@@ -30,6 +31,7 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
   final ApiService _api = ApiService();
   final SocketService _socket = SocketService.instance;
 
+  bool _ratingShown = false;
   GoogleMapController? _mapCtrl;
   LatLng? _driverPos;
   late LatLng _destPos;
@@ -411,6 +413,18 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
 
       // ✅ Ventana con precio a cobrar (lo que pediste)
       await _showCobrarDialog(_precioPactado);
+      if (!_ratingShown && mounted) {
+        _ratingShown = true;
+
+        await RatingModal.show(
+          context,
+          idViaje:
+              widget.ride.idViajes, // o ride.idViajes (según cómo tengas el id)
+          tipo: "CONDUCTOR_A_PASAJERO",
+          titulo: "Calificá al pasajero",
+          subtitulo: "Tu calificación ayuda a mejorar la experiencia.",
+        );
+      }
 
       final idUsuario = await UserPreferences.getIdUsuario();
       if (idUsuario != null) {

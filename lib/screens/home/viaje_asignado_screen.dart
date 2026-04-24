@@ -153,6 +153,9 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
     dynamic data, {
     String source = 'viaje_en_curso',
   }) {
+    debugPrint(
+      "🔥 INTENTO NAVEGACIÓN desde [$source] | navegando=$_navegando | mounted=$mounted | data=$data",
+    );
     debugPrint("▶️ [$source] -> $data");
 
     final idSocket = _readViajeId(data);
@@ -173,7 +176,7 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
         duration: Duration(seconds: 3),
       ),
     );
-
+    debugPrint('Estado emitido de viaje_en_curso: $data');
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
@@ -205,6 +208,8 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
       debugPrint("🔌 Socket conectado (ViajeAsignadoScreen)");
     }
 
+    if (!_socket.isConnected) await _socket.connect();
+
     await _socket.emitirConexionUsuario(idUsuario, 'pasajero');
 
     await _socket.unirseAViaje(
@@ -212,8 +217,6 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
       userId: idUsuario,
       tipo: 'pasajero',
     );
-
-    await _startSharingPassengerLocation();
 
     // -------------------------
     // ✅ Ubicación en tiempo real
@@ -250,12 +253,6 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
         ),
       );
     });
-
-    // ✅ Wrapper
-    _hViajeEnCursoWrapper = _socket.onViajeEnCurso(
-      (data) =>
-          _irAPasajeroViajeEnCurso(data, source: 'wrapper:onViajeEnCurso'),
-    );
 
     // ✅ Directos / alias
     _hViajeEnCursoDirect = _socket.on(
@@ -300,6 +297,7 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
       Navigator.pop(context);
     });
 
+    await _startSharingPassengerLocation();
     if (mounted) setState(() => _loading = false);
   }
 
@@ -553,7 +551,6 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
     _socket.off('ubicacion_en_tiempo_real', _hUbicacion);
     _socket.off('conductor_llego_encuentro', _hConductorLlego);
 
-    _socket.off('viaje_en_curso', _hViajeEnCursoWrapper);
     _socket.off('viaje_en_curso', _hViajeEnCursoDirect);
 
     _socket.off('iniciar_viaje', _hIniciarViaje);

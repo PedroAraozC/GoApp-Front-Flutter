@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import '../../services/api_service.dart';
 import '../../services/socket_service.dart';
 import '../../services/user_preferences.dart';
+import 'widgets/rating_modal.dart';
 
 class PasajeroViajeEnCursoScreen extends StatefulWidget {
   final int idViaje;
@@ -44,6 +45,10 @@ class _PasajeroViajeEnCursoScreenState
   final SocketService _socket = SocketService.instance;
 
   GoogleMapController? _mapCtrl;
+
+  String _conductorNombre = '';
+  String _conductorApellido = '';
+  bool _detalleCargado = false;
 
   LatLng? _posConductor;
   late final LatLng _posDestino;
@@ -87,6 +92,27 @@ class _PasajeroViajeEnCursoScreenState
 
     _actualizarMarkers();
     _initSocket();
+    _fetchDetalleViaje();
+  }
+
+  Future<void> _fetchDetalleViaje() async {
+    if (_detalleCargado) return;
+    _detalleCargado = true;
+
+    final r = await _api.getDetalleViaje(widget.idViaje);
+    if (!mounted) return;
+    if (r["ok"] != true) return;
+
+    final data = r["data"];
+    if (data is! Map) return;
+
+    final conductor = data["conductor"];
+    if (conductor is Map) {
+      setState(() {
+        _conductorNombre = (conductor["nombre"] ?? "").toString();
+        _conductorApellido = (conductor["apellido"] ?? "").toString();
+      });
+    }
   }
 
   int? _readViajeId(dynamic data) {
@@ -158,6 +184,23 @@ class _PasajeroViajeEnCursoScreenState
             .toDouble();
 
     await _showFinalPriceDialog(total);
+
+    if (!mounted) return;
+
+    final nombreCompleto = ('$_conductorNombre $_conductorApellido').trim();
+    final titulo = nombreCompleto.isNotEmpty
+        ? 'Calificá a $nombreCompleto'
+        : 'Calificá al conductor';
+
+    // ✅ Modal para calificar al conductor (1 sola vez)
+    // _endingHandled ya evita duplicado, así que estamos seguros
+    await RatingModal.show(
+      context,
+      idViaje: widget.idViaje,
+      tipo: "PASAJERO_A_CONDUCTOR",
+      titulo: "Calificá al conductor",
+      subtitulo: "Contanos cómo fue el viaje.",
+    );
 
     if (!mounted) return;
 

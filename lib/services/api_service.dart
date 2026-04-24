@@ -412,6 +412,74 @@ class ApiService {
   }
 
   // ==============================
+  // ⭐ Calificar viaje
+  // POST /calificaciones
+  // tipo:
+  //  - "CONDUCTOR_A_PASAJERO"
+  //  - "PASAJERO_A_CONDUCTOR"
+  // ==============================
+  Future<Map<String, dynamic>> calificarViaje({
+    required int idViaje,
+    required int idCalificador,
+    required String tipo,
+    required int calificacion, // 1..5
+    String? comentario,
+  }) async {
+    try {
+      final url = Uri.parse('$_baseUrl/calificaciones');
+
+      final body = {
+        "id_viaje": idViaje,
+        "id_calificador": idCalificador,
+        "tipo": tipo,
+        "calificacion": calificacion,
+        "comentario": (comentario != null && comentario.trim().isNotEmpty)
+            ? comentario.trim()
+            : null,
+      };
+
+      final resp = await http.post(
+        url,
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(body),
+      );
+
+      // Intentamos parsear JSON siempre
+      Map<String, dynamic> data = {};
+      try {
+        data = jsonDecode(resp.body) as Map<String, dynamic>;
+      } catch (_) {
+        data = {"ok": false, "message": resp.body};
+      }
+
+      // Normalizamos resultado
+      if (resp.statusCode == 201) {
+        return {"ok": true, ...data};
+      }
+
+      // Duplicado (ya calificó)
+      if (resp.statusCode == 409) {
+        return {
+          "ok": false,
+          "code": "DUPLICATE",
+          "message":
+              data["message"] ?? "Ya existe una calificación para este viaje",
+        };
+      }
+
+      // Errores típicos 400/403/404
+      return {
+        "ok": false,
+        "status": resp.statusCode,
+        "message": data["message"] ?? "Error al calificar viaje",
+        "data": data,
+      };
+    } catch (e) {
+      return {"ok": false, "message": "Error de conexión: $e"};
+    }
+  }
+
+  // ==============================
   // 🔹 Cancelar viaje
   // ==============================
   Future<bool> cancelarViaje({
@@ -554,6 +622,37 @@ class ApiService {
     } catch (e) {
       debugPrint('❌ obtenerHistorialViajesConductor(): $e');
       return [];
+    }
+  }
+
+  // ==============================
+  // 📄 Detalle de viaje (conductor/pasajero)
+  // GET /viajes/:id/detalle
+  // ==============================
+  Future<Map<String, dynamic>> getDetalleViaje(int idViaje) async {
+    try {
+      final url = Uri.parse('$_baseUrl/viajes/$idViaje/detalle');
+      final resp = await http.get(url);
+
+      Map<String, dynamic> data = {};
+      try {
+        data = jsonDecode(resp.body) as Map<String, dynamic>;
+      } catch (_) {
+        data = {"ok": false, "message": resp.body};
+      }
+
+      if (resp.statusCode == 200 && data["ok"] == true) {
+        return {"ok": true, "data": data["data"]};
+      }
+
+      return {
+        "ok": false,
+        "status": resp.statusCode,
+        "message": data["message"] ?? "Error obteniendo detalle del viaje",
+        "data": data,
+      };
+    } catch (e) {
+      return {"ok": false, "message": "Error de conexión: $e"};
     }
   }
 }

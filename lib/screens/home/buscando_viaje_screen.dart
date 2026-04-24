@@ -39,6 +39,12 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
   double? _latConductorIni;
   double? _lngConductorIni;
 
+  Function(dynamic)? _hViajeAsignado;
+  Function(dynamic)? _hViajeAceptado;
+  Function(dynamic)? _hViajeEnCurso;
+  Function(dynamic)? _hViajeCancelado;
+  Function(dynamic)? _hViajeBuscando;
+
   @override
   void initState() {
     super.initState();
@@ -136,7 +142,6 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
         ]) ??
         _lngD;
 
-    // a veces el backend manda ubicación inicial del conductor
     _latConductorIni = _readDouble(data, [
       'lat_conductor',
       'latConductor',
@@ -211,19 +216,16 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
     final prefs = await SharedPreferences.getInstance();
     _idUsuario = prefs.getInt('id_usuario');
 
-    // Conectar
     if (!_socket.isConnected) {
       await _socket.connect();
       debugPrint('🔌 Socket conectado desde BuscandoViajeScreen');
     }
 
-    // Registrar pasajero
     if (_idUsuario != null) {
       await _socket.emitirConexionUsuario(_idUsuario!, 'pasajero');
       debugPrint('✅ Pasajero $_idUsuario registrado en socket (Buscando)');
     }
 
-    // ✅ CRÍTICO: unirse al room del viaje YA en Buscando
     if (_idUsuario != null) {
       await _socket.unirseAViaje(
         idViaje: widget.idViaje,
@@ -233,44 +235,32 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
       debugPrint('🚪 join_viaje ok → viaje_${widget.idViaje}');
     }
 
-    // ---------------------------
-    // Eventos de asignación
-    // ---------------------------
-    _socket.on('viaje_asignado', (data) {
+    _hViajeAsignado = _socket.on('viaje_asignado', (data) {
       debugPrint('🚕 Evento: viaje_asignado -> $data');
       if (data is Map) _irAViajeAsignado(Map<String, dynamic>.from(data));
     });
 
-    // compat: algunos backends usan este nombre
-    _socket.on('viaje_aceptado', (data) {
+    _hViajeAceptado = _socket.on('viaje_aceptado', (data) {
       debugPrint('✅ Evento: viaje_aceptado -> $data');
       _mostrarSnack('✅ Un conductor aceptó tu viaje');
       if (data is Map) _irAViajeAsignado(Map<String, dynamic>.from(data));
     });
 
-    // ---------------------------
-    // ✅ Evento: viaje en curso
-    // ---------------------------
-    _socket.on('viaje_en_curso', (data) {
+    _hViajeEnCurso = _socket.on('viaje_en_curso', (data) {
       debugPrint('▶️ Evento: viaje_en_curso -> $data');
 
-      // Filtrar por id viaje (si viene)
       final idSocket = _readViajeId(data);
       if (idSocket != null && idSocket != widget.idViaje) return;
 
       if (mounted) setState(() => _viajeEnCurso = true);
       _mostrarSnack('▶️ Tu viaje comenzó');
 
-      // ✅ Si estás todavía en Buscando, no esperes otra pantalla: navegá directo
       if (data is Map) {
         _irAPasajeroViajeEnCurso(Map<String, dynamic>.from(data));
       }
     });
 
-    // ---------------------------
-    // Cancelado
-    // ---------------------------
-    _socket.on('viaje_cancelado', (data) {
+    _hViajeCancelado = _socket.on('viaje_cancelado', (data) {
       debugPrint('❌ Evento: viaje_cancelado -> $data');
 
       final idSocket = _readViajeId(data);
@@ -291,8 +281,7 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
       });
     });
 
-    // vuelve a buscar
-    _socket.on('viaje_buscando_conductor', (data) {
+    _hViajeBuscando = _socket.on('viaje_buscando_conductor', (data) {
       debugPrint('🔄 Evento: viaje_buscando_conductor -> $data');
 
       final idSocket = _readViajeId(data);
@@ -362,11 +351,11 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
 
   @override
   void dispose() {
-    _socket.off('viaje_asignado');
-    _socket.off('viaje_aceptado');
-    _socket.off('viaje_en_curso');
-    _socket.off('viaje_cancelado');
-    _socket.off('viaje_buscando_conductor');
+    _socket.off('viaje_asignado', _hViajeAsignado);
+    _socket.off('viaje_aceptado', _hViajeAceptado);
+    _socket.off('viaje_en_curso', _hViajeEnCurso);
+    _socket.off('viaje_cancelado', _hViajeCancelado);
+    _socket.off('viaje_buscando_conductor', _hViajeBuscando);
     super.dispose();
   }
 
