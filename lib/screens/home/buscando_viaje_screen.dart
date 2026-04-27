@@ -1,19 +1,18 @@
-import 'dart:async';
-
+// lib/screens/.../buscando_viaje_screen.dart
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../services/socket_service.dart';
 import '../../services/api_service.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:http/http.dart' as http;
-import 'package:flutter_polyline_points/flutter_polyline_points.dart';
+
+import 'viaje_asignado_screen.dart';
+import 'pasajero_viaje_en_curso_screen.dart';
 
 class BuscandoViajeScreen extends StatefulWidget {
-  final int id_viaje;
+  final int idViaje;
 
-  const BuscandoViajeScreen({super.key, required this.id_viaje});
+  const BuscandoViajeScreen({super.key, required this.idViaje});
 
   @override
   State<BuscandoViajeScreen> createState() => _BuscandoViajeScreenState();
@@ -22,167 +21,34 @@ class BuscandoViajeScreen extends StatefulWidget {
 class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
   final SocketService _socket = SocketService.instance;
   final ApiService _api = ApiService();
+
   bool _viajeAsignado = false;
   bool _viajeCancelado = false;
   bool _viajeEnCurso = false;
   bool _cancelando = false;
 
-  GoogleMapController? _mapCtrl;
-  LatLng? _passengerLocation;
-  LatLng? _driverLocation;
-  final Set<Marker> _markers = {};
-  final Set<Polyline> _polylines = {};
+  bool _navegando = false;
 
-  final PolylinePoints _polylinePoints = PolylinePoints();
-  final String _googleApiKey =
-      dotenv.env['GOOGLE_MAPS_API_KEY'] ?? dotenv.env['GOOGLE_API_KEY'] ?? '';
+  int? _idUsuario;
 
-  StreamSubscription<Position>? _positionSub;
-  
+  // Cache por si llega viaje_en_curso antes de navegar
+  String _dirO = '';
+  String _dirD = '';
+  double _latO = 0.0, _lngO = 0.0, _latD = 0.0, _lngD = 0.0;
+  double _precioFinal = 0.0;
+  double? _latConductorIni;
+  double? _lngConductorIni;
+
+  Function(dynamic)? _hViajeAsignado;
+  Function(dynamic)? _hViajeAceptado;
+  Function(dynamic)? _hViajeEnCurso;
+  Function(dynamic)? _hViajeCancelado;
+  Function(dynamic)? _hViajeBuscando;
+
   @override
   void initState() {
     super.initState();
-     _initLocation();  
     _inicializarSocketListeners();
-  }
-
-  Future<void> _initLocation() async {
-  try {
-    if (!await Geolocator.isLocationServiceEnabled()) return;
-    var p = await Geolocator.checkPermission();
-    if (p == LocationPermission.denied) {
-      p = await Geolocator.requestPermission();
-    }
-    if (p == LocationPermission.deniedForever) return;
-
-    final pos = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.high,
-    );
-    _passengerLocation = LatLng(pos.latitude, pos.longitude);
-
-    _markers.add(
-      Marker(
-        markerId: const MarkerId('passenger'),
-        position: _passengerLocation!,
-        infoWindow: const InfoWindow(title: 'Tu ubicación'),
-      ),
-    );
-    setState(() {});
-  } catch (e) {
-    debugPrint('Error init location pasajero: $e');
-  }
-}
-
-  Future<void> _inicializarSocketListeners() async {
-    final prefs = await SharedPreferences.getInstance();
-    final idUsuario = prefs.getInt('id_usuario');
-
-    // Conectamos si no está conectado todavía
-    if (!_socket.isConnected) {
-      await _socket.connect();
-      await Future.delayed(const Duration(milliseconds: 500));
-      debugPrint('🔌 Socket conectado desde BuscandoViajeScreen');
-    }
-
-    // ✅ Registramos al usuario en el socket
-    if (idUsuario != null) {
-      await _socket.emitirConexionUsuario(idUsuario, 'pasajero');
-      debugPrint(
-        '✅ Usuario $idUsuario registrado en socket desde BuscandoViajeScreen',
-      );
-      _mostrarSnack('Conectado al servidor.');
-    }
-
-    // 🆕 Evento: viaje creado
-    _socket.on('viaje_creado', (data) {
-      debugPrint('🆕 Evento: viaje_creado -> $data');
-      _mostrarSnack('Tu solicitud de viaje fue enviada correctamente.');
-    });
-
-    // 🚕 Evento: viaje asignado
-    _socket.on('viaje_asignado', (data) {
-      debugPrint('🚕 Evento: viaje_asignado -> $data');
-      if (mounted) setState(() => _viajeAsignado = true);
-      _mostrarSnack('Un conductor fue asignado a tu viaje 🚕');
-    });
-
-    
-
-    // ▶️ Evento: viaje en curso
-    _socket.on('viaje_en_curso', (data) {
-      debugPrint('▶️ Evento: viaje_en_curso -> $data');
-      if (mounted) setState(() => _viajeEnCurso = true);
-      _mostrarSnack('Tu viaje ha comenzado ▶️');
-    });
-
-    // 🏁 Evento: viaje finalizado
-    _socket.on('viaje_finalizado', (data) {
-      debugPrint('🏁 Evento: viaje_finalizado -> $data');
-      if (mounted) {
-        setState(() {
-          _viajeEnCurso = false;
-          _viajeAsignado = false;
-        });
-      }
-      _mostrarSnack('El viaje ha finalizado. ¡Gracias por usar GoApp!');
-    });
-
-    // ❌ Evento: viaje cancelado
-    _socket.on('viaje_cancelado', (data) {
-      debugPrint('❌ Evento: viaje_cancelado -> $data');
-      if (mounted) {
-        setState(() {
-          _viajeCancelado = true;
-          _cancelando = false;
-        });
-      }
-      _mostrarSnack('Tu viaje fue cancelado.');
-
-      // Opcional: Volver a la pantalla anterior después de 2 segundos
-      Future.delayed(const Duration(seconds: 2), () {
-        if (!mounted) return;
-
-        Navigator.of(
-          context,
-        ).pushNamedAndRemoveUntil('/home', (route) => false);
-      });
-    });
-  }
-
-  Future<void> _cancelarViaje() async {
-    if (_cancelando) return; // Evitar doble clic
-    setState(() => _cancelando = true);
-
-    try {
-      debugPrint('📤 Cancelando viaje con ID: ${widget.id_viaje}');
-      // 1) Llamar al backend para cancelar el viaje
-      final resp = await _api.cancelarViaje(widget.id_viaje!);
-
-      if (!mounted) return;
-
-      final msg = resp['message']?.toString() ?? 'Respuesta desconocida';
-
-      if (resp['message'] == 'Viaje cancelado exitosamente') {
-        _mostrarSnack('Viaje cancelado correctamente');
-
-        // 2) Ir al menú principal del usuario
-        Navigator.of(context).pushNamedAndRemoveUntil(
-          '/home', // 👈 ruta de tu HomeScreen de pasajero
-          (route) => false,
-        );
-      } else {
-        _mostrarSnack(msg);
-      }
-    } catch (e) {
-      debugPrint('❌ Error al cancelar viaje: $e');
-      if (mounted) {
-        _mostrarSnack('Error al cancelar el viaje');
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _cancelando = false);
-      }
-    }
   }
 
   void _mostrarSnack(String mensaje) {
@@ -196,9 +62,300 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
     );
   }
 
+  double? _parseMoney(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString().trim());
+  }
+
+  double? _readDouble(dynamic data, List<String> keys) {
+    for (final k in keys) {
+      final v = (data is Map) ? data[k] : null;
+      if (v == null) continue;
+      final d = (v is num) ? v.toDouble() : double.tryParse(v.toString());
+      if (d != null) return d;
+    }
+    return null;
+  }
+
+  int? _readViajeId(dynamic data) {
+    final rawId = data?['id_viajes'] ?? data?['id_viaje'] ?? data?['id'];
+    if (rawId == null) return null;
+    if (rawId is num) return rawId.toInt();
+    return int.tryParse(rawId.toString());
+  }
+
+  void _cacheDesdeData(Map data) {
+    _dirO =
+        (data['direccion_desde'] ??
+                data['direccionDesde'] ??
+                data['direccion_origen'] ??
+                '')
+            .toString();
+    _dirD =
+        (data['direccion_hasta'] ??
+                data['direccionHasta'] ??
+                data['direccion_destino'] ??
+                '')
+            .toString();
+
+    _precioFinal =
+        (_parseMoney(data['precio_pactado']) ??
+        _parseMoney(data['precio_final']) ??
+        _parseMoney(data['precio_estimado']) ??
+        _parseMoney(data['valor']) ??
+        0.0);
+
+    _latO =
+        _readDouble(data, [
+          'lat_desde',
+          'latDesde',
+          'origen_lat',
+          'lat_origen',
+        ]) ??
+        _latO;
+    _lngO =
+        _readDouble(data, [
+          'lon_desde',
+          'lonDesde',
+          'origen_lng',
+          'lng_desde',
+          'lng_origen',
+        ]) ??
+        _lngO;
+
+    _latD =
+        _readDouble(data, [
+          'lat_hasta',
+          'latHasta',
+          'lat_destino',
+          'destino_lat',
+        ]) ??
+        _latD;
+    _lngD =
+        _readDouble(data, [
+          'lon_hasta',
+          'lonHasta',
+          'lng_destino',
+          'lon_destino',
+          'destino_lng',
+        ]) ??
+        _lngD;
+
+    _latConductorIni = _readDouble(data, [
+      'lat_conductor',
+      'latConductor',
+      'driver_lat',
+    ]);
+    _lngConductorIni = _readDouble(data, [
+      'lng_conductor',
+      'lon_conductor',
+      'lngConductor',
+      'driver_lng',
+    ]);
+  }
+
+  void _irAViajeAsignado(Map data) {
+    final idSocket = _readViajeId(data);
+    if (idSocket == null || idSocket != widget.idViaje) return;
+    if (!mounted || _navegando || _viajeCancelado) return;
+
+    _cacheDesdeData(data);
+
+    setState(() {
+      _viajeAsignado = true;
+      _navegando = true;
+    });
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ViajeAsignadoScreen(
+          idViaje: widget.idViaje,
+          direccionOrigen: _dirO,
+          direccionDestino: _dirD,
+          latOrigen: _latO,
+          lngOrigen: _lngO,
+          latDestino: _latD,
+          lngDestino: _lngD,
+          precioFinal: _precioFinal,
+        ),
+      ),
+    );
+  }
+
+  void _irAPasajeroViajeEnCurso(Map data) {
+    final idSocket = _readViajeId(data);
+    if (idSocket == null || idSocket != widget.idViaje) return;
+    if (!mounted || _navegando || _viajeCancelado) return;
+
+    _cacheDesdeData(data);
+
+    setState(() {
+      _viajeEnCurso = true;
+      _navegando = true;
+    });
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PasajeroViajeEnCursoScreen(
+          idViaje: widget.idViaje,
+          latDestino: _latD,
+          lngDestino: _lngD,
+          direccionOrigen: _dirO,
+          direccionDestino: _dirD,
+          latConductorInicial: _latConductorIni,
+          lngConductorInicial: _lngConductorIni,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _inicializarSocketListeners() async {
+    final prefs = await SharedPreferences.getInstance();
+    _idUsuario = prefs.getInt('id_usuario');
+
+    if (!_socket.isConnected) {
+      await _socket.connect();
+      debugPrint('🔌 Socket conectado desde BuscandoViajeScreen');
+    }
+
+    if (_idUsuario != null) {
+      await _socket.emitirConexionUsuario(_idUsuario!, 'pasajero');
+      debugPrint('✅ Pasajero $_idUsuario registrado en socket (Buscando)');
+    }
+
+    if (_idUsuario != null) {
+      await _socket.unirseAViaje(
+        idViaje: widget.idViaje,
+        userId: _idUsuario!,
+        tipo: 'pasajero',
+      );
+      debugPrint('🚪 join_viaje ok → viaje_${widget.idViaje}');
+    }
+
+    _hViajeAsignado = _socket.on('viaje_asignado', (data) {
+      debugPrint('🚕 Evento: viaje_asignado -> $data');
+      if (data is Map) _irAViajeAsignado(Map<String, dynamic>.from(data));
+    });
+
+    _hViajeAceptado = _socket.on('viaje_aceptado', (data) {
+      debugPrint('✅ Evento: viaje_aceptado -> $data');
+      _mostrarSnack('✅ Un conductor aceptó tu viaje');
+      if (data is Map) _irAViajeAsignado(Map<String, dynamic>.from(data));
+    });
+
+    _hViajeEnCurso = _socket.on('viaje_en_curso', (data) {
+      debugPrint('▶️ Evento: viaje_en_curso -> $data');
+
+      final idSocket = _readViajeId(data);
+      if (idSocket != null && idSocket != widget.idViaje) return;
+
+      if (mounted) setState(() => _viajeEnCurso = true);
+      _mostrarSnack('▶️ Tu viaje comenzó');
+
+      if (data is Map) {
+        _irAPasajeroViajeEnCurso(Map<String, dynamic>.from(data));
+      }
+    });
+
+    _hViajeCancelado = _socket.on('viaje_cancelado', (data) {
+      debugPrint('❌ Evento: viaje_cancelado -> $data');
+
+      final idSocket = _readViajeId(data);
+      if (idSocket == null || idSocket != widget.idViaje) return;
+
+      if (!mounted) return;
+      setState(() {
+        _viajeCancelado = true;
+        _cancelando = false;
+      });
+      _mostrarSnack('Tu viaje fue cancelado.');
+
+      Future.delayed(const Duration(seconds: 2), () {
+        if (!mounted) return;
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil('/home', (route) => false);
+      });
+    });
+
+    _hViajeBuscando = _socket.on('viaje_buscando_conductor', (data) {
+      debugPrint('🔄 Evento: viaje_buscando_conductor -> $data');
+
+      final idSocket = _readViajeId(data);
+      if (idSocket == null || idSocket != widget.idViaje) return;
+
+      if (!mounted) return;
+      setState(() {
+        _viajeAsignado = false;
+        _viajeEnCurso = false;
+        _navegando = false;
+      });
+      _mostrarSnack('El conductor canceló. Buscando otro conductor...');
+    });
+  }
+
+  Future<void> _cancelarViaje() async {
+    if (_cancelando) return;
+    setState(() => _cancelando = true);
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      int? idUsuario = prefs.getInt('id_usuario');
+
+      if (idUsuario == null) {
+        final userData = prefs.getString('user_data');
+        if (userData != null) {
+          try {
+            final user = jsonDecode(userData) as Map<String, dynamic>;
+            final rawId = user['id_usuario'];
+            if (rawId != null) {
+              idUsuario = rawId is int ? rawId : int.tryParse(rawId.toString());
+              if (idUsuario != null)
+                await prefs.setInt('id_usuario', idUsuario);
+            }
+          } catch (e) {
+            debugPrint('❌ Error parseando user_data: $e');
+          }
+        }
+      }
+
+      if (idUsuario == null) {
+        _mostrarSnack(
+          'Error: No se encontró el ID de usuario. Cierra sesión y vuelve a iniciar.',
+        );
+        if (mounted) setState(() => _cancelando = false);
+        return;
+      }
+
+      final ok = await _api.cancelarViaje(
+        idViaje: widget.idViaje,
+        idUsuario: idUsuario,
+        tipo: 'pasajero',
+      );
+
+      if (ok) {
+        _mostrarSnack('Cancelando viaje...');
+      } else {
+        _mostrarSnack('Error al cancelar el viaje');
+        if (mounted) setState(() => _cancelando = false);
+      }
+    } catch (e) {
+      debugPrint('❌ Error al cancelar viaje: $e');
+      _mostrarSnack('Error al cancelar el viaje: $e');
+      if (mounted) setState(() => _cancelando = false);
+    }
+  }
+
   @override
   void dispose() {
-    // ⚠️ No desconectamos el socket: queremos mantener la sesión global
+    _socket.off('viaje_asignado', _hViajeAsignado);
+    _socket.off('viaje_aceptado', _hViajeAceptado);
+    _socket.off('viaje_en_curso', _hViajeEnCurso);
+    _socket.off('viaje_cancelado', _hViajeCancelado);
+    _socket.off('viaje_buscando_conductor', _hViajeBuscando);
     super.dispose();
   }
 

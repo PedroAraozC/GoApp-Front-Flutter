@@ -1,7 +1,7 @@
 // lib/screens/home/home_screen.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:google_sign_in/google_sign_in.dart'; // <- ya casi no se usa, puedes quitarlo si quieres
+// <- ya casi no se usa, puedes quitarlo si quieres
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:taxi_tuc/screens/perfil/viajes_screen.dart';
 
@@ -15,7 +15,6 @@ import '../../services/user_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 final apiKey = dotenv.env['GOOGLE_API_KEY'];
-final _BASE_URL = dotenv.env['API_URL'];
 
 class HomeScreen extends StatefulWidget {
   final Map<String, dynamic> user;
@@ -34,20 +33,50 @@ class _HomeScreenState extends State<HomeScreen> {
     _connectSocket();
   }
 
+  final ApiService _api = ApiService();
+  Map<String, dynamic>? _tarifaVigente;
+
+  bool _loadingTarifa = false;
+
+  Future<Map<String, dynamic>?> _getTarifaVigente() async {
+    if (_tarifaVigente != null) return _tarifaVigente;
+
+    setState(() => _loadingTarifa = true);
+    final t = await _api.obtenerTarifaVigente();
+    if (!mounted) return null;
+
+    setState(() {
+      _tarifaVigente = t;
+      _loadingTarifa = false;
+    });
+
+    return t;
+  }
+
   void _connectSocket() async {
     try {
       await _socket.connect();
       debugPrint('🔌 Conectando socket desde HomeScreen...');
 
       Future.delayed(const Duration(seconds: 1), () async {
-        // Podrías usar también UserPreferences.getUser()
         final prefs = await SharedPreferences.getInstance();
-        final idUsuario =
+
+        final dynamic rawId =
             prefs.getInt('id_usuario') ?? widget.user['id_usuario'];
+        final int? idUsuario = (rawId is int) ? rawId : int.tryParse('$rawId');
+
+        debugPrint('👤 [Home] idUsuario raw=$rawId -> int=$idUsuario');
+
         if (idUsuario != null) {
-          _socket.emitirConexionUsuario(idUsuario, 'pasajero');
-          debugPrint('✅ Usuario $idUsuario registrado en socket.');
-          _mostrarSnack('Conectado al servidor en tiempo real.');
+          try {
+            await _socket.emitirConexionUsuario(idUsuario, 'pasajero');
+            debugPrint('✅ [Home] Usuario $idUsuario registrado en socket.');
+            _mostrarSnack('Conectado al servidor en tiempo real.');
+          } catch (e) {
+            debugPrint('❌ [Home] Error registrando usuario en socket: $e');
+          }
+        } else {
+          debugPrint('⚠️ [Home] No hay id_usuario válido para registrar.');
         }
       });
 
@@ -188,7 +217,12 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
     }
+    final tarifa = await api.obtenerTarifaVigente();
 
+    if (tarifa == null) {
+      _mostrarSnack('No hay tarifa vigente. Contactá soporte.');
+      return;
+    }
     // 3) Si aun así no tenemos id → solo podemos trabajar con lo local
     if (id == null) {
       debugPrint('⚠️ [Home] No hay id_usuario. Uso solo datos locales.');
@@ -203,7 +237,9 @@ class _HomeScreenState extends State<HomeScreen> {
         if (!mounted) return;
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const IniciarViajeScreen()),
+          MaterialPageRoute(
+            builder: (_) => IniciarViajeScreen(tarifaVigente: tarifa),
+          ),
         );
         return;
       }
@@ -248,19 +284,26 @@ class _HomeScreenState extends State<HomeScreen> {
         if (!mounted) return;
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const IniciarViajeScreen()),
+          MaterialPageRoute(
+            builder: (_) => IniciarViajeScreen(tarifaVigente: tarifa),
+          ),
         );
       }
       // Si canceló, simplemente no hacemos nada más
       return;
     }
 
-    // 6) Perfil ya está completo → vamos directo a iniciar viaje
-    debugPrint('✅ [Home] Perfil completo. Navegando a IniciarViajeScreen...');
-    if (!mounted) return;
+    // 6) Perfil ya está completo → traigo tarifa vigente y voy a iniciar viaje
+    debugPrint('✅ [Home] Perfil completo. Obteniendo tarifa vigente...');
+
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const IniciarViajeScreen()),
+      MaterialPageRoute(
+        builder: (_) => IniciarViajeScreen(
+          // 👇 si tu pantalla aún no recibe esto, te indico abajo cómo
+          tarifaVigente: tarifa,
+        ),
+      ),
     );
   }
 
@@ -421,11 +464,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-          ),
-          IconButton(
-            tooltip: 'Cerrar sesión',
-            icon: const Icon(Icons.logout),
-            onPressed: () => _logout(context),
           ),
         ],
       ),

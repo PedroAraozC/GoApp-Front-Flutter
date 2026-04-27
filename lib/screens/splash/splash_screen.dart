@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:taxi_tuc/screens/home/driver/driver_home_screen.dart';
+import 'package:taxi_tuc/screens/home/driver/driver_map_screen.dart';
 import 'package:taxi_tuc/screens/home/home_screen.dart'; // 👈 import home pasajero
 import '../../services/user_preferences.dart';
 import '../../screens/auth/auth_screen.dart';
@@ -63,7 +63,7 @@ class _SplashScreenState extends State<SplashScreen>
         // 👨‍✈️ Conductor
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const DriverHomeScreen()),
+          MaterialPageRoute(builder: (_) => const DriverMapScreen()),
         );
       } else if (roleId == 2) {
         // 🧑‍✈️ Pasajero
@@ -76,6 +76,7 @@ class _SplashScreenState extends State<SplashScreen>
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const AuthScreen()),
+          // MaterialPageRoute(builder: (_) => const PagosScreen()),
         );
       }
     } catch (e) {
@@ -98,13 +99,13 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFFCC00),
+      backgroundColor: const Color.fromARGB(255, 0, 0, 0),
       body: Center(
         child: FadeTransition(
           opacity: _fade,
           child: ScaleTransition(
             scale: _scale,
-            child: Image.asset('assets/images/taxituc_splash.png', width: 180),
+            child: Image.asset('assets/images/taxituc_splash.png', width: 300),
           ),
         ),
       ),

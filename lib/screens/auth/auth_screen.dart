@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:taxi_tuc/screens/home/driver/driver_map_screen.dart';
 
 import 'package:taxi_tuc/screens/password/passwordRecovery/password_recovey.dart';
 import '../auth/services/auth_service.dart';
@@ -9,7 +10,6 @@ import '../../services/google_auth_service.dart';
 import '../../services/socket_service.dart';
 import '../../services/user_preferences.dart';
 import '../home/home_screen.dart';
-import '../home/driver/driver_home_screen.dart';
 
 // ====== Colores de marca ======
 const Color kTaxiYellow = Color.fromARGB(255, 235, 213, 18);
@@ -132,7 +132,7 @@ class _AuthScreenState extends State<AuthScreen> {
         // Chofer
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const DriverHomeScreen()),
+          MaterialPageRoute(builder: (_) => const DriverMapScreen()),
         );
       } else if (roleId == 2) {
         // Pasajero
@@ -226,7 +226,7 @@ class _AuthScreenState extends State<AuthScreen> {
         // Chofer
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const DriverHomeScreen()),
+          MaterialPageRoute(builder: (_) => const DriverMapScreen()),
         );
       } else if (roleId == 2) {
         // Pasajero

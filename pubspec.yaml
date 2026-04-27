@@ -17,6 +17,7 @@ dependencies:
     sdk: flutter
   intl: ^0.20.2
   google_sign_in: ^6.2.1
+  google_fonts: ^6.2.1
   http: ^1.5.0
   geolocator: ^10.1.0
   geocoding: ^2.1.0
@@ -25,6 +26,8 @@ dependencies:
   uuid: ^4.4.0
   font_awesome_flutter: ^10.10.0
   flutter_launcher_icons: ^0.14.4
+  audioplayers: ^6.0.0
+  fl_chart: ^0.66.1
 
 dev_dependencies:
   flutter_test:
@@ -36,6 +39,8 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
+    - assets/sounds/
+    - assets/markers/
     - .env
     - assets/images/pin_origen.png
     - assets/images/pin_destino.png
@@ -44,28 +49,34 @@ flutter:
     - assets/images/app_icon.png
     - assets/images/splash_inicio.png
     - assets/images/taxi-icon.png
+    - assets/sounds/click.mp3
 
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/images/app_icon.png"
+  image_path: "assets/images/taxi-icon.png"
   min_sdk_android: 21 # o tu versión mínima
 
-flutter_native_splash:
-  # Colores de fondo
-  #color: "#FFFFFF"           # claro
-  #color_dark: "#000000"      # oscuro
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/taxi-icon.png"
+  adaptive_icon_background: "#000000"
+  adaptive_icon_foreground: "assets/images/taxi-icon.png"
+  min_sdk_android: 21 # o tu versión mínima
+  
 
-  # Imagen principal
+
+flutter_native_splash:
   image: assets/images/splash_inicio.png
   image_dark: assets/images/splash_inicio.png
 
-    # Android 12 (recomendado definir imágenes con padding)
   android_12:
     image: assets/images/splash_inicio.png
     image_dark: assets/images/splash_inicio.png
-    icon_background_color: "#FFFFFF"
-    icon_background_color_dark: "#000000"
+    color: "#FFFFFF"
+    color_dark: "#000000"
+
 
   # Plataformas
   android: true

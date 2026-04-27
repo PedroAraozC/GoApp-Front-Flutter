@@ -47,50 +47,49 @@ class AuthService {
   }
 
   Future<Map<String, dynamic>> register(
-  String apellido,
-  String nombre,
-  String mail,
-  String password,
-) async {
-  try {
-    final url = Uri.parse('$baseUrl/usuarios/register');
+    String apellido,
+    String nombre,
+    String mail,
+    String password,
+  ) async {
+    try {
+      final url = Uri.parse('$baseUrl/usuarios/register');
 
-    final response = await http
-        .post(
-          url,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'apellido': apellido,
-            'nombre': nombre,
-            'email': mail,
-            'password': password,
-          }),
-        )
-        .timeout(
-          const Duration(seconds: 10),
-          onTimeout: () {
-            throw Exception('Tiempo de espera agotado. Verifica tu conexión.');
-          },
-        );
+      final response = await http
+          .post(
+            url,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'apellido': apellido,
+              'nombre': nombre,
+              'email': mail,
+              'password': password,
+            }),
+          )
+          .timeout(
+            const Duration(seconds: 10),
+            onTimeout: () {
+              throw Exception(
+                'Tiempo de espera agotado. Verifica tu conexión.',
+              );
+            },
+          );
 
-    final decoded = jsonDecode(response.body);
+      final decoded = jsonDecode(response.body);
 
-    if (response.statusCode == 200) {
-      return {
-        'status': response.statusCode,
-        'message': decoded['message'] ?? 'Usuario registrado correctamente'
-      };
-    } else {
-      return {
-        'status': response.statusCode,
-        'message': decoded['message'] ?? 'Error al registrar usuario.'
-      };
+      if (response.statusCode == 200) {
+        return {
+          'status': response.statusCode,
+          'message': decoded['message'] ?? 'Usuario registrado correctamente',
+        };
+      } else {
+        return {
+          'status': response.statusCode,
+          'message': decoded['message'] ?? 'Error al registrar usuario.',
+        };
+      }
+    } catch (e) {
+      return {'message': 'Error en registro: $e'};
     }
-  } catch (e) {
-    return {
-      'message': 'Error en registro: $e'
-    };
   }
-}
-
 }
