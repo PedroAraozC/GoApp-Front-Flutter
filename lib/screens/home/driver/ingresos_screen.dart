@@ -38,7 +38,8 @@ class _IngresosScreenState extends State<IngresosScreen> {
     try {
       final items = await _service.getAll(idUsuario: widget.idUsuario);
       final total = await _service.getTotal(idUsuario: widget.idUsuario);
-      final saldo = await _apiService.obtenerSaldoAdeudado(widget.idUsuario) ?? 0.0;
+      final saldo =
+          await _apiService.obtenerSaldoAdeudado(widget.idUsuario) ?? 0.0;
       if (!mounted) return;
 
       setState(() {
@@ -222,14 +223,17 @@ class _IngresosScreenState extends State<IngresosScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Saldo Adeudado (Comisiones)',
+                                'Saldo Adeudado',
                                 style: Theme.of(context).textTheme.titleMedium,
                               ),
                               const SizedBox(height: 6),
                               Text(
                                 _money.format(_saldoAdeudado),
                                 style: Theme.of(context).textTheme.headlineSmall
-                                    ?.copyWith(fontWeight: FontWeight.bold, color: cs.error),
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      color: cs.error,
+                                    ),
                               ),
                             ],
                           ),
