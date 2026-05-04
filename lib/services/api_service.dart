@@ -655,4 +655,41 @@ class ApiService {
       return {"ok": false, "message": "Error de conexión: $e"};
     }
   }
+
+  // ==============================
+  // 🔹 Saldo Adeudado (Deuda Conductor)
+  // ==============================
+  Future<double?> obtenerSaldoAdeudado(int idConductor) async {
+    try {
+      final url = Uri.parse('$_baseUrl/deuda/$idConductor');
+      final resp = await http.get(url);
+      if (resp.statusCode == 200) {
+        final decoded = jsonDecode(resp.body);
+        return (decoded['saldo_adeudado'] as num).toDouble();
+      }
+      return null;
+    } catch (e) {
+      debugPrint('❌ Error en obtenerSaldoAdeudado(): $e');
+      return null;
+    }
+  }
+
+  Future<bool> pagarSaldoAdeudado(int idConductor) async {
+    try {
+      final url = Uri.parse('$_baseUrl/deuda/pagar');
+      final body = jsonEncode({'id_conductor': idConductor});
+      final resp = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: body,
+      );
+      if (resp.statusCode == 200) {
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('❌ Error en pagarSaldoAdeudado(): $e');
+      return false;
+    }
+  }
 }
