@@ -692,4 +692,43 @@ class ApiService {
       return false;
     }
   }
+
+  //Carnet de conductor en pantalla de viaje en curso
+  Future<Map<String, dynamic>> obtenerCarnetConductor(int idUsuario) async {
+    final url = Uri.parse('$_baseUrl/conductores/$idUsuario/carnet');
+
+    final response = await http.get(url);
+
+    return jsonDecode(response.body);
+  }
+
+  //metodo para obtener viaje activo pasajero
+  Future<Map<String, dynamic>?> obtenerViajeActivo({
+    required int idUsuario,
+    required String tipo,
+  }) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/viajes/activo/$tipo/$idUsuario'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      debugPrint('📡 obtenerViajeActivo status: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        debugPrint('📦 obtenerViajeActivo body: $data');
+
+        if (data['ok'] == true) {
+          return data['data'];
+        }
+      }
+
+      return null;
+    } catch (e) {
+      debugPrint('❌ obtenerViajeActivo error: $e');
+      return null;
+    }
+  }
 }

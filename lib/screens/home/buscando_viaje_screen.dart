@@ -8,17 +8,25 @@ import '../../services/api_service.dart';
 
 import 'viaje_asignado_screen.dart';
 import 'pasajero_viaje_en_curso_screen.dart';
+import 'dart:math' as Math;
 
 class BuscandoViajeScreen extends StatefulWidget {
   final int idViaje;
-
-  const BuscandoViajeScreen({super.key, required this.idViaje});
+  final String direccionOrigen;
+  final String direccionDestino;
+  const BuscandoViajeScreen({
+    super.key,
+    required this.idViaje,
+    required this.direccionOrigen,
+    required this.direccionDestino,
+  });
 
   @override
   State<BuscandoViajeScreen> createState() => _BuscandoViajeScreenState();
 }
 
-class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
+class _BuscandoViajeScreenState extends State<BuscandoViajeScreen>
+    with TickerProviderStateMixin {
   final SocketService _socket = SocketService.instance;
   final ApiService _api = ApiService();
 
@@ -28,6 +36,9 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
   bool _cancelando = false;
 
   bool _navegando = false;
+
+  late AnimationController _pulseController;
+  late AnimationController _floatController;
 
   int? _idUsuario;
 
@@ -48,6 +59,19 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
   @override
   void initState() {
     super.initState();
+    _dirO = widget.direccionOrigen;
+    _dirD = widget.direccionDestino;
+
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    )..repeat(reverse: true);
+
+    _floatController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 12),
+    )..repeat();
+
     _inicializarSocketListeners();
   }
 
@@ -207,6 +231,7 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
           direccionDestino: _dirD,
           latConductorInicial: _latConductorIni,
           lngConductorInicial: _lngConductorIni,
+          idConductor: data["id_conductor"],
         ),
       ),
     );
@@ -356,58 +381,380 @@ class _BuscandoViajeScreenState extends State<BuscandoViajeScreen> {
     _socket.off('viaje_en_curso', _hViajeEnCurso);
     _socket.off('viaje_cancelado', _hViajeCancelado);
     _socket.off('viaje_buscando_conductor', _hViajeBuscando);
+    _pulseController.dispose();
+    _floatController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    String estadoActual = 'Buscando conductor...';
-    if (_viajeAsignado) estadoActual = 'Conductor asignado 🚕';
-    if (_viajeEnCurso) estadoActual = 'Viaje en curso ▶️';
-    if (_viajeCancelado) estadoActual = 'Viaje cancelado ❌';
+    String estadoActual = 'Estamos buscando un taxi para vos...';
+
+    if (_viajeAsignado) {
+      estadoActual = 'Conductor asignado 🚕';
+    }
+
+    if (_viajeEnCurso) {
+      estadoActual = 'Tu viaje comenzó ▶️';
+    }
+
+    if (_viajeCancelado) {
+      estadoActual = 'Viaje cancelado ❌';
+    }
 
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(title: const Text('Buscando viaje'), centerTitle: true),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (!_viajeCancelado && !_cancelando)
-              const CircularProgressIndicator(color: Colors.amber),
-            if (_cancelando) const CircularProgressIndicator(color: Colors.red),
-            const SizedBox(height: 20),
-            Text(
-              _cancelando ? 'Cancelando...' : estadoActual,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 20),
-            if (!_viajeCancelado)
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.redAccent,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 12,
-                  ),
-                ),
-                onPressed: _cancelando ? null : _cancelarViaje,
-                icon: _cancelando
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.cancel),
-                label: Text(_cancelando ? 'Cancelando...' : 'Cancelar viaje'),
-              ),
-          ],
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: const Color.fromARGB(255, 255, 255, 255),
+        foregroundColor: Colors.black,
+        centerTitle: true,
+        title: const Text(
+          'Buscando viaje',
+          style: TextStyle(fontWeight: FontWeight.w600),
         ),
       ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: MediaQuery.of(context).size.height,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Column(
+                children: [
+                  const SizedBox(height: 20),
+
+                  /// ANIMACIÓN CENTRAL
+                  SizedBox(
+                    height: 300,
+                    child: AnimatedBuilder(
+                      animation: Listenable.merge([
+                        _pulseController,
+                        _floatController,
+                      ]),
+                      builder: (_, __) {
+                        return Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            /// BURBUJAS
+                            ...List.generate(8, (index) {
+                              final progress =
+                                  ((_floatController.value + (index * 0.12)) %
+                                  1);
+
+                              final radius = 120 + (progress * 40);
+
+                              final angle = progress * 6.28;
+
+                              final dx = radius * Math.cos(angle);
+                              final dy = radius * Math.sin(angle);
+
+                              return Positioned(
+                                left: 130 + dx,
+                                top: 130 + dy,
+                                child: Opacity(
+                                  opacity: 1 - progress,
+                                  child: Container(
+                                    width: 10 + (progress * 10),
+                                    height: 10 + (progress * 10),
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: Colors.amber.withOpacity(0.15),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }),
+
+                            /// CÍRCULO 1
+                            Transform.scale(
+                              scale: 1 + (_pulseController.value * 0.05),
+                              child: Container(
+                                width: 260,
+                                height: 260,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.amber.withOpacity(0.06),
+                                ),
+                              ),
+                            ),
+
+                            /// CÍRCULO 2
+                            Transform.scale(
+                              scale: 1 + (_pulseController.value * 0.08),
+                              child: Container(
+                                width: 190,
+                                height: 190,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.amber.withOpacity(0.10),
+                                ),
+                              ),
+                            ),
+
+                            /// CÍRCULO 3
+                            Transform.scale(
+                              scale: 1 + (_pulseController.value * 0.12),
+                              child: Container(
+                                width: 120,
+                                height: 120,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.amber.withOpacity(0.18),
+                                ),
+                              ),
+                            ),
+
+                            /// TAXI CENTRAL
+                            Container(
+                              width: 72,
+                              height: 72,
+                              decoration: BoxDecoration(
+                                color: Colors.amber,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.amber.withOpacity(0.45),
+                                    blurRadius: 25,
+                                    spreadRadius: 3,
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.local_taxi,
+                                color: Colors.white,
+                                size: 36,
+                              ),
+                            ),
+
+                            /// MINI TAXIS ORBITANDO
+                            ...List.generate(4, (index) {
+                              final angle =
+                                  (_floatController.value * 6.28) +
+                                  (index * 1.57);
+
+                              final radius = 115.0;
+
+                              final dx = radius * Math.cos(angle);
+                              final dy = radius * Math.sin(angle);
+
+                              return Transform.translate(
+                                offset: Offset(dx, dy),
+                                child: _miniTaxi(),
+                              );
+                            }),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  /// TEXOS
+                  Text(
+                    estadoActual,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 30,
+                      fontWeight: FontWeight.bold,
+                      height: 1.2,
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  Text(
+                    _cancelando
+                        ? 'Estamos cancelando tu solicitud...'
+                        : 'Puede tardar unos segundos.\nTe avisaremos cuando tengamos un conductor disponible cerca tuyo.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey.shade600,
+                      height: 1.5,
+                    ),
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  /// CARD DIRECCIONES
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: Colors.grey.shade200),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.03),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                color: Colors.amber.withOpacity(0.15),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.location_on,
+                                color: Colors.amber,
+                              ),
+                            ),
+
+                            const SizedBox(width: 14),
+
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Desde',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _dirO.isEmpty ? 'Origen' : _dirO,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          child: Divider(color: Colors.grey.shade200),
+                        ),
+
+                        Row(
+                          children: [
+                            Container(
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                color: Colors.amber.withOpacity(0.15),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.flag,
+                                color: Colors.amber,
+                              ),
+                            ),
+
+                            const SizedBox(width: 14),
+
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Hasta',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _dirD.isEmpty ? 'Destino' : _dirD,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 30),
+
+                  /// BOTÓN CANCELAR
+                  SizedBox(
+                    width: double.infinity,
+                    height: 60,
+                    child: ElevatedButton(
+                      onPressed: _cancelando ? null : _cancelarViaje,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.grey.shade100,
+                        foregroundColor: Colors.black87,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                      ),
+                      child: _cancelando
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.red,
+                              ),
+                            )
+                          : const Text(
+                              'Cancelar búsqueda',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _miniTaxi() {
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: const Icon(Icons.local_taxi, color: Colors.amber, size: 24),
     );
   }
 }

@@ -11,6 +11,9 @@ import '../../screens/perfil/perfil_screen.dart';
 import '../../services/api_service.dart';
 import '../../screens/home/widgets/completar_datos_screen.dart';
 import '../../screens/home/iniciar_viaje_screen.dart';
+import '../../screens/home/buscando_viaje_screen.dart';
+import '../../screens/home/pasajero_viaje_en_curso_screen.dart';
+import '../../screens/home/viaje_asignado_screen.dart';
 import '../../services/user_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
@@ -30,6 +33,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      verificarViajeActivo();
+    });
     _connectSocket();
   }
 
@@ -162,6 +168,121 @@ class _HomeScreenState extends State<HomeScreen> {
       'apellido_usuario': raw['apellido_usuario'] ?? raw['apellido'],
       'token': raw['token'],
     };
+  }
+
+  Future<void> verificarViajeActivo() async {
+    try {
+      final int? idUsuario = _toInt(widget.user['id_usuario']);
+
+      if (idUsuario == null) {
+        debugPrint("❌ No hay id_usuario");
+        return;
+      }
+
+      debugPrint("🔎 Verificando viaje activo pasajero...");
+
+      final viaje = await _api.obtenerViajeActivo(
+        idUsuario: idUsuario,
+        tipo: 'pasajero',
+      );
+
+      if (viaje == null) {
+        debugPrint("✅ No hay viaje activo");
+        return;
+      }
+
+      debugPrint("🚕 Viaje activo recuperado: $viaje");
+
+      final estado = int.tryParse('${viaje['id_estado']}') ?? 0;
+
+      final idViaje = int.tryParse('${viaje['id_viajes']}') ?? 0;
+
+      final idConductor = int.tryParse('${viaje['id_conductor']}') ?? 0;
+
+      final direccionOrigen = '${viaje['direccion_desde'] ?? ''}';
+
+      final direccionDestino = '${viaje['direccion_hasta'] ?? ''}';
+
+      final latDestino = double.tryParse('${viaje['lat_hasta'] ?? 0}') ?? 0;
+
+      final lngDestino = double.tryParse('${viaje['lon_hasta'] ?? 0}') ?? 0;
+
+      final latOrigen = double.tryParse('${viaje['lat_desde'] ?? 0}') ?? 0;
+
+      final lngOrigen = double.tryParse('${viaje['lon_desde'] ?? 0}') ?? 0;
+
+      final precioFinal = double.tryParse('${viaje['precio_final'] ?? 0}') ?? 0;
+
+      // ✅ Re-unirse al room del viaje
+      _socket.emit('join_viaje', {
+        'id_viaje': idViaje,
+        'user_id': idUsuario,
+        'tipo': 'pasajero',
+      });
+
+      if (!mounted) return;
+
+      // =========================
+      // BUSCANDO CONDUCTOR
+      // =========================
+      if (estado == 5) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => BuscandoViajeScreen(
+              idViaje: idViaje,
+              direccionOrigen: direccionOrigen,
+              direccionDestino: direccionDestino,
+            ),
+          ),
+        );
+        return;
+      }
+
+      // =========================
+      // ASIGNADO / EN CAMINO
+      // =========================
+      if (estado == 1 || estado == 6 || estado == 7) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ViajeAsignadoScreen(
+              idViaje: idViaje,
+              direccionOrigen: direccionOrigen,
+              direccionDestino: direccionDestino,
+              latOrigen: latOrigen,
+              lngOrigen: lngOrigen,
+              latDestino: latDestino,
+              lngDestino: lngDestino,
+              precioFinal: precioFinal,
+            ),
+          ),
+        );
+        return;
+      }
+
+      // =========================
+      // VIAJE EN CURSO
+      // =========================
+      if (estado == 2) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PasajeroViajeEnCursoScreen(
+              idViaje: idViaje,
+              idConductor: idConductor,
+              latDestino: latDestino,
+              lngDestino: lngDestino,
+              direccionOrigen: direccionOrigen,
+              direccionDestino: direccionDestino,
+            ),
+          ),
+        );
+        return;
+      }
+    } catch (e) {
+      debugPrint("❌ verificarViajeActivo: $e");
+    }
   }
 
   bool _needsProfileCompletion(Map<String, dynamic> u) {

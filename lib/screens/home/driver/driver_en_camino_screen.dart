@@ -50,6 +50,8 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
 
   String _distanceText = '--';
   String _durationText = '--';
+  double _distanciaAlPasajeroMetros = 9999;
+  static const double _distanciaPermitidaMetros = 60;
 
   BitmapDescriptor? _iconDriver;
   BitmapDescriptor? _iconPassenger;
@@ -146,6 +148,7 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
         if (lat == null || lng == null) return;
 
         setState(() => _passengerPos = LatLng(lat, lng));
+        _calcularDistanciaAlPasajero();
 
         _setMarkers();
         await _buildRoute();
@@ -185,6 +188,7 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
     );
 
     _driverPos = LatLng(current.latitude, current.longitude);
+    _calcularDistanciaAlPasajero();
 
     _setMarkers();
     await _buildRoute();
@@ -202,6 +206,7 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
           if (!mounted) return;
 
           _driverPos = LatLng(pos.latitude, pos.longitude);
+          _calcularDistanciaAlPasajero();
 
           _setMarkers();
           await _buildRoute();
@@ -366,7 +371,34 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
     return poly;
   }
 
+  void _calcularDistanciaAlPasajero() {
+    if (_driverPos == null) return;
+
+    final metros = Geolocator.distanceBetween(
+      _driverPos!.latitude,
+      _driverPos!.longitude,
+      _passengerPos.latitude,
+      _passengerPos.longitude,
+    );
+
+    setState(() {
+      _distanciaAlPasajeroMetros = metros;
+    });
+
+    debugPrint(
+      '📍 Distancia conductor-pasajero: ${metros.toStringAsFixed(2)}m',
+    );
+  }
+
   Future<void> _onLlegarEncuentro() async {
+    if (_distanciaAlPasajeroMetros > _distanciaPermitidaMetros) {
+      _msg(
+        'Debés estar a menos de '
+        '${_distanciaPermitidaMetros.toInt()}m del pasajero',
+      );
+      return;
+    }
+
     if (_driverId == null) {
       _msg('Error: No se encontró el ID del conductor');
       return;
@@ -395,6 +427,11 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
   }
 
   Future<void> _onComenzarViaje() async {
+    if (_distanciaAlPasajeroMetros > _distanciaPermitidaMetros) {
+      _msg('Acercate más al pasajero para iniciar el viaje');
+      return;
+    }
+
     if (_driverId == null) {
       _msg('Error: No se encontró el ID del conductor');
       return;
@@ -455,7 +492,10 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('En camino al pasajero')),
+      appBar: AppBar(
+        title: const Text('En camino al pasajero'),
+        backgroundColor: const ui.Color.fromARGB(255, 255, 255, 255),
+      ),
       body: Stack(
         children: [
           Positioned.fill(
@@ -474,13 +514,14 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
                   ),
           ),
           Positioned(
-            left: 16,
-            right: 16,
-            bottom: 16,
-            child: Card(
-              elevation: 6,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              height: _llegueAlEncuentro ? 220 : 200,
+              decoration: BoxDecoration(
+                color: const ui.Color.fromARGB(255, 255, 255, 255),
+                borderRadius: BorderRadius.circular(14),
               ),
               child: Padding(
                 padding: const EdgeInsets.all(14),
@@ -508,13 +549,31 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
                         Text('Distancia: $_distanceText'),
                         const SizedBox(width: 14),
                         Text('Tiempo: $_durationText'),
+                        const SizedBox(height: 8),
                       ],
                     ),
                     const SizedBox(height: 12),
                     if (_llegueAlEncuentro)
                       ElevatedButton(
-                        onPressed: _comenzandoViaje ? null : _onComenzarViaje,
+                        onPressed:
+                            (_comenzandoViaje ||
+                                _distanciaAlPasajeroMetros >
+                                    _distanciaPermitidaMetros)
+                            ? null
+                            : _onComenzarViaje,
                         style: ElevatedButton.styleFrom(
+                          backgroundColor: const ui.Color.fromARGB(
+                            248,
+                            34,
+                            150,
+                            243,
+                          ),
+                          foregroundColor: const ui.Color.fromARGB(
+                            255,
+                            255,
+                            255,
+                            255,
+                          ),
                           minimumSize: const Size.fromHeight(48),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -532,10 +591,25 @@ class _DriverEnCaminoScreenState extends State<DriverEnCaminoScreen> {
                       )
                     else
                       ElevatedButton(
-                        onPressed: _llegandoEncuentro
+                        onPressed:
+                            (_llegandoEncuentro ||
+                                _distanciaAlPasajeroMetros >
+                                    _distanciaPermitidaMetros)
                             ? null
                             : _onLlegarEncuentro,
                         style: ElevatedButton.styleFrom(
+                          backgroundColor: const ui.Color.fromARGB(
+                            248,
+                            34,
+                            150,
+                            243,
+                          ),
+                          foregroundColor: const ui.Color.fromARGB(
+                            255,
+                            255,
+                            255,
+                            255,
+                          ),
                           minimumSize: const Size.fromHeight(48),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),

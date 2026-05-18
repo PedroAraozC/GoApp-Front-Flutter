@@ -458,6 +458,8 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen>
         MaterialPageRoute(
           builder: (_) => BuscandoViajeScreen(
             idViaje: idViaje, // asegúrate que el constructor use esta key
+            direccionOrigen: _origenCtrl.text.trim(),
+            direccionDestino: _destinoCtrl.text.trim(),
           ),
         ),
       );
@@ -477,7 +479,12 @@ class _IniciarViajeScreenState extends State<IniciarViajeScreen>
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Iniciar viaje')),
+      appBar: AppBar(
+        title: const Text('A.C.O.T.T'),
+        centerTitle: true,
+        backgroundColor: const ui.Color.fromARGB(255, 0, 0, 0),
+        foregroundColor: const ui.Color.fromARGB(255, 255, 255, 255),
+      ),
       body: _miUbicacion == null
           ? const Center(child: CircularProgressIndicator())
           : Stack(
@@ -726,7 +733,7 @@ class _RideBottomSheet extends StatelessWidget {
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 10, width: double.infinity),
             FilledButton.icon(
               onPressed: onConfirm,
               icon: const Icon(Icons.local_taxi),

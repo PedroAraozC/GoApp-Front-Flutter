@@ -49,6 +49,9 @@ class _DriverMapScreenState extends State<DriverMapScreen>
   double _bottomButtonsH = 0.0;
   double _incomingCardH = 0.0;
 
+  double _tripDistanceKm = 0.0;
+  String _tripDuration = '-- min';
+
   final _earningsService = EarningsService.instance;
   final _money = NumberFormat.currency(locale: 'es_AR', symbol: '\$');
 
@@ -391,6 +394,7 @@ class _DriverMapScreenState extends State<DriverMapScreen>
 
         await _addPassengerMarker(ride);
         await _fitMapToDriverAndPassenger();
+        await _drawRouteToPassenger();
 
         _showSnack('Nuevo viaje disponible 🚕');
       } catch (e) {
@@ -729,30 +733,57 @@ class _DriverMapScreenState extends State<DriverMapScreen>
 
     final apiKey =
         dotenv.env['GOOGLE_MAPS_API_KEY'] ?? dotenv.env['GOOGLE_API_KEY'];
+
     if (apiKey == null || apiKey.trim().isEmpty) {
-      debugPrint('❌ Google API KEY no encontrada en .env');
+      debugPrint('❌ Google API KEY no encontrada');
       return;
     }
 
     final origin = '${_driverLocation!.latitude},${_driverLocation!.longitude}';
+
     final destination = '${_incomingRide!.latDesde},${_incomingRide!.lonDesde}';
 
     final url = Uri.parse(
       'https://maps.googleapis.com/maps/api/directions/json'
-      '?origin=$origin&destination=$destination&mode=driving&key=$apiKey',
+      '?origin=$origin'
+      '&destination=$destination'
+      '&mode=driving'
+      '&language=es'
+      '&key=$apiKey',
     );
 
     try {
       final response = await http.get(url);
+
       final data = jsonDecode(response.body);
 
-      if (data['status'] != 'OK') return;
+      if (data['status'] != 'OK') {
+        debugPrint('❌ Directions API error: ${data['status']}');
+        return;
+      }
 
-      final route = data['routes'][0]['overview_polyline']['points'];
-      final polylinePoints = _decodePolyline(route);
+      final route = data['routes'][0];
+
+      final leg = route['legs'][0];
+
+      // ✅ DISTANCIA
+      final distanceMeters = leg['distance']['value'];
+      final distanceKm = distanceMeters / 1000;
+
+      // ✅ DURACIÓN
+      final durationText = leg['duration']['text'];
+
+      // ✅ POLYLINE
+      final polyline = route['overview_polyline']['points'];
+
+      final polylinePoints = _decodePolyline(polyline);
 
       setState(() {
+        _tripDistanceKm = distanceKm;
+        _tripDuration = durationText;
+
         _polylines.clear();
+
         _polylines.add(
           Polyline(
             polylineId: const PolylineId('route_to_passenger'),
@@ -764,7 +795,9 @@ class _DriverMapScreenState extends State<DriverMapScreen>
       });
 
       await _fitPolyline(polylinePoints);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('❌ Error ruta: $e');
+    }
   }
 
   List<LatLng> _decodePolyline(String polyline) {
@@ -1049,7 +1082,7 @@ class _DriverMapScreenState extends State<DriverMapScreen>
                   polylines: _polylines,
                   myLocationEnabled: true,
                 ),
-                Positioned(
+                /* Positioned(
                   right: 16,
                   bottom: _panicBottom,
                   child: GestureDetector(
@@ -1079,6 +1112,28 @@ class _DriverMapScreenState extends State<DriverMapScreen>
                           letterSpacing: 1,
                         ),
                       ),
+                    ),
+                  ),
+                ), */
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    height: _incomingRide != null ? 220 : 100,
+                    decoration: const BoxDecoration(
+                      color: ui.Color.fromARGB(255, 255, 255, 255),
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(5),
+                        topRight: Radius.circular(5),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black12,
+                          blurRadius: 10,
+                          offset: Offset(0, -2),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -1199,9 +1254,7 @@ class _DriverMapScreenState extends State<DriverMapScreen>
                               ),
                             ),
                             label: Text(
-                              _isOnline
-                                  ? 'Desconectarse (no recibir viajes)'
-                                  : 'Conectarse (recibir viajes)',
+                              _isOnline ? 'Desconectarse' : 'Conectarse',
                               style: const TextStyle(fontSize: 16),
                             ),
                           ),
@@ -1255,169 +1308,237 @@ class _DriverMapScreenState extends State<DriverMapScreen>
 
   Widget _buildIncomingRideCard() {
     final r = _incomingRide!;
+
     return GestureDetector(
       onTap: () async {
         await _drawRouteToPassenger();
       },
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        padding: const EdgeInsets.all(14),
-        decoration: const BoxDecoration(
+        duration: const Duration(milliseconds: 100),
+        width: double.infinity,
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.all(Radius.circular(16)),
-          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 12)],
+          borderRadius: BorderRadius.circular(26),
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black12,
+              blurRadius: 18,
+              offset: Offset(0, -2),
+            ),
+          ],
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 20,
-                  backgroundColor: _accepted ? Colors.green : Colors.orange,
-                  child: const Icon(Icons.person, color: Colors.white),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Solicitud de viaje #${r.idViajes}',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Barra superior tipo bottom sheet
+              Center(
+                child: Container(
+                  width: 42,
+                  height: 5,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(10),
                   ),
                 ),
-                Text(
-                  _formatCurrency(r.precioMostrado),
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
+              ),
 
-            // ✅ Info del pasajero
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    (r.nombrePasajero.isNotEmpty ||
-                            r.apellidoPasajero.isNotEmpty)
-                        ? '${r.nombrePasajero} ${r.apellidoPasajero}'.trim()
-                        : 'Pasajero',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
+              // HEADER
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 22,
+                    backgroundColor: _accepted ? Colors.green : Colors.orange,
+                    child: const Icon(Icons.person, color: Colors.white),
+                  ),
+
+                  const SizedBox(width: 12),
+
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${r.nombrePasajero} ${r.apellidoPasajero}',
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${_tripDistanceKm.toStringAsFixed(1)} km • $_tripDuration',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.star, size: 18, color: Colors.amber),
-                    const SizedBox(width: 4),
-                    Text(
-                      r.ratingPasajero.toStringAsFixed(1),
-                      style: const TextStyle(fontWeight: FontWeight.w700),
+
+                  Text(
+                    _formatCurrency(r.precioMostrado),
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
                     ),
-                    const SizedBox(width: 12),
-                    const Icon(
-                      Icons.directions_car,
-                      size: 18,
-                      color: Colors.black54,
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 16),
+
+              // INFO PASAJERO
+              Row(
+                children: [
+                  const Icon(Icons.star, size: 18, color: Colors.amber),
+
+                  const SizedBox(width: 4),
+
+                  Text(
+                    r.ratingPasajero.toStringAsFixed(1),
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+
+                  const SizedBox(width: 18),
+
+                  const Icon(Icons.route, size: 18, color: Colors.black54),
+
+                  const SizedBox(width: 4),
+
+                  Text(
+                    '${r.viajesTotalesPasajero} viajes',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+
+                  const Spacer(),
+
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${r.viajesTotalesPasajero}',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    decoration: BoxDecoration(
+                      color: _accepted
+                          ? Colors.green.withOpacity(0.15)
+                          : Colors.orange.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(20),
                     ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Desde',
-                      style: TextStyle(fontSize: 12, color: Colors.black54),
-                    ),
-                    SizedBox(
-                      width: MediaQuery.of(context).size.width * 0.68,
-                      child: Text(
-                        r.direccionDesde,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                    child: Text(
+                      _accepted ? 'ACEPTADO' : 'PENDIENTE',
+                      style: TextStyle(
+                        color: _accepted ? Colors.green : Colors.orange,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Hacia',
-                      style: TextStyle(fontSize: 12, color: Colors.black54),
-                    ),
-                    SizedBox(
-                      width: MediaQuery.of(context).size.width * 0.68,
-                      child: Text(
-                        r.direccionHasta,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 18),
+
+              // ORIGEN
+              const Text(
+                'DESDE',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.black45,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+
+              const SizedBox(height: 4),
+
+              Text(r.direccionDesde, style: const TextStyle(fontSize: 15)),
+
+              const SizedBox(height: 14),
+
+              // DESTINO
+              const Text(
+                'HACIA',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.black45,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+
+              const SizedBox(height: 4),
+
+              Text(r.direccionHasta, style: const TextStyle(fontSize: 15)),
+
+              const SizedBox(height: 20),
+
+              // FOOTER
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _accepted ? null : _rejectRide,
+                      icon: const Icon(
+                        Icons.close,
+                        color: ui.Color.fromARGB(255, 255, 255, 255),
+                      ),
+                      label: const Text(
+                        'Rechazar',
+                        style: TextStyle(
+                          color: ui.Color.fromARGB(255, 255, 255, 255),
+                        ),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: const ui.Color.fromARGB(
+                          255,
+                          255,
+                          29,
+                          29,
+                        ),
+                        minimumSize: const Size.fromHeight(52),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
                       ),
                     ),
-                  ],
-                ),
-                const Spacer(),
-                Column(
-                  children: [
-                    IconButton(
+                  ),
+
+                  const SizedBox(width: 12),
+
+                  Expanded(
+                    child: ElevatedButton.icon(
                       onPressed: _accepted ? null : _acceptRide,
                       icon: _loading
                           ? const SizedBox(
-                              width: 28,
-                              height: 28,
-                              child: CircularProgressIndicator(strokeWidth: 3),
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
                             )
-                          : const Icon(
-                              Icons.check_circle,
-                              size: 36,
-                              color: Colors.green,
-                            ),
-                    ),
-                    IconButton(
-                      onPressed: _accepted ? null : _rejectRide,
-                      icon: const Icon(
-                        Icons.cancel,
-                        size: 36,
-                        color: Colors.red,
+                          : const Icon(Icons.check_circle),
+
+                      label: const Text('Aceptar'),
+
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(52),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
                       ),
                     ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Duración estimada: -- min',
-                  style: TextStyle(color: Colors.grey[600]),
-                ),
-                Text(
-                  'Distancia: -- km',
-                  style: TextStyle(color: Colors.grey[600]),
-                ),
-                Text(
-                  _accepted ? 'ACEPTADO' : 'PENDIENTE',
-                  style: TextStyle(
-                    color: _accepted ? Colors.green : Colors.orange,
-                    fontWeight: FontWeight.bold,
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

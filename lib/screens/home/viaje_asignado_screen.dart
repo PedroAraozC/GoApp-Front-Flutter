@@ -188,6 +188,7 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
           direccionDestino: widget.direccionDestino,
           latConductorInicial: _posConductor?.latitude,
           lngConductorInicial: _posConductor?.longitude,
+          idConductor: data["id_conductor"],
         ),
       ),
     );
@@ -414,7 +415,12 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Viaje asignado')),
+      appBar: AppBar(
+        title: const Text('A.C.O.T.T'),
+        centerTitle: true,
+        backgroundColor: const Color.fromARGB(255, 0, 0, 0),
+        foregroundColor: const Color.fromARGB(255, 255, 255, 255),
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : Stack(
@@ -433,107 +439,121 @@ class _ViajeAsignadoScreenState extends State<ViajeAsignadoScreen> {
                   ),
                 ),
                 Positioned(
-                  left: 16,
-                  right: 16,
-                  bottom: 16,
-                  child: Card(
-                    elevation: 6,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 30),
+                    decoration: const BoxDecoration(
+                      color: Color.fromARGB(255, 0, 0, 0),
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(28),
+                        topRight: Radius.circular(28),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black26,
+                          blurRadius: 12,
+                          offset: Offset(0, -4),
+                        ),
+                      ],
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.place_outlined),
-                              const SizedBox(width: 8),
-                              Expanded(child: Text(widget.direccionOrigen)),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              const Icon(Icons.flag_outlined),
-                              const SizedBox(width: 8),
-                              Expanded(child: Text(widget.direccionDestino)),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              const Icon(Icons.route_outlined),
-                              const SizedBox(width: 8),
-                              Text('Distancia: $_distanceText'),
-                              const SizedBox(width: 14),
-                              Text('Tiempo: $_durationText'),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              const Icon(Icons.attach_money),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Precio final: ${widget.precioFinal.toStringAsFixed(0)}',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
+                    child: SafeArea(
+                      top: false,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.max,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.place_outlined),
+                                const SizedBox(width: 8),
+                                Expanded(child: Text(widget.direccionOrigen)),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                const Icon(Icons.flag_outlined),
+                                const SizedBox(width: 8),
+                                Expanded(child: Text(widget.direccionDestino)),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                const Icon(Icons.route_outlined),
+                                const SizedBox(width: 8),
+                                Text('Distancia: $_distanceText'),
+                                const SizedBox(width: 14),
+                                Text('Tiempo: $_durationText'),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                const Icon(Icons.attach_money),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Precio final: ${widget.precioFinal.toStringAsFixed(0)}',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            ElevatedButton(
+                              onPressed: _cancelando || _passengerId == null
+                                  ? null
+                                  : () async {
+                                      setState(() => _cancelando = true);
+                                      try {
+                                        final ok = await _api.cancelarViaje(
+                                          idViaje: widget.idViaje,
+                                          idUsuario: _passengerId!,
+                                          tipo: 'pasajero',
+                                        );
+                                        if (!ok && mounted) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                'Error al cancelar el viaje',
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      } catch (e) {
+                                        debugPrint('Error al cancelar: $e');
+                                      } finally {
+                                        if (mounted) {
+                                          setState(() => _cancelando = false);
+                                        }
+                                      }
+                                    },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.redAccent,
+                                minimumSize: const Size.fromHeight(48),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-                          ElevatedButton(
-                            onPressed: _cancelando || _passengerId == null
-                                ? null
-                                : () async {
-                                    setState(() => _cancelando = true);
-                                    try {
-                                      final ok = await _api.cancelarViaje(
-                                        idViaje: widget.idViaje,
-                                        idUsuario: _passengerId!,
-                                        tipo: 'pasajero',
-                                      );
-                                      if (!ok && mounted) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              'Error al cancelar el viaje',
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                    } catch (e) {
-                                      debugPrint('Error al cancelar: $e');
-                                    } finally {
-                                      if (mounted) {
-                                        setState(() => _cancelando = false);
-                                      }
-                                    }
-                                  },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.redAccent,
-                              minimumSize: const Size.fromHeight(48),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                              child: _cancelando
+                                  ? const SizedBox(
+                                      height: 18,
+                                      width: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Text("Cancelar viaje"),
                             ),
-                            child: _cancelando
-                                ? const SizedBox(
-                                    height: 18,
-                                    width: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Text("Cancelar viaje"),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),

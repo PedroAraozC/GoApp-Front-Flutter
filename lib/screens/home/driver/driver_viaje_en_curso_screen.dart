@@ -372,12 +372,21 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
       barrierDismissible: false,
       builder: (_) => AlertDialog(
         title: const Text('Cobrar viaje'),
+        backgroundColor: const ui.Color.fromARGB(255, 255, 255, 255),
         content: Text(
           'Total a cobrar: \$${total.toStringAsFixed(0)}',
           style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
         ),
         actions: [
           FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const ui.Color.fromARGB(255, 34, 150, 243),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('OK'),
           ),
@@ -457,7 +466,10 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
     final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Viaje en curso')),
+      appBar: AppBar(
+        title: const Text('Viaje en curso'),
+        backgroundColor: const ui.Color.fromARGB(255, 255, 255, 255),
+      ),
       body: _driverPos == null
           ? const Center(child: CircularProgressIndicator())
           : Stack(
@@ -481,7 +493,7 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
                   left: 16,
                   right: 16,
                   child: Card(
-                    color: cs.surface,
+                    color: const ui.Color.fromARGB(255, 255, 255, 255),
                     elevation: 4,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
@@ -543,7 +555,28 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
                     ),
                   ),
                 ),
-
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    height: 100,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(28),
+                        topRight: Radius.circular(28),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black12,
+                          blurRadius: 10,
+                          offset: Offset(0, -2),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 Positioned(
                   left: 16,
                   right: 16,
@@ -559,6 +592,13 @@ class _DriverViajeEnCursoScreenState extends State<DriverViajeEnCursoScreen> {
                         : const Icon(Icons.flag),
                     label: const Text('Finalizar viaje'),
                     style: FilledButton.styleFrom(
+                      backgroundColor: const ui.Color.fromARGB(
+                        255,
+                        34,
+                        150,
+                        243,
+                      ),
+                      foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                   ),
